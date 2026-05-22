@@ -10,7 +10,7 @@ progs:= $(patsubst %.cpp, run_%, $(progs_cpp))
 ifeq ($(BLAS_LIB), mkl)
 BLAS_LIB:=-lmkl_intel_lp64 -lmkl_intel_thread -lmkl_core -lm -ldl -liomp5 
 BLAS_DEF:=-D_MKL
-BLAS_LDIR:=-L$(BLAS_DIR)/lib/intel64 BLAS_EXTRA_LIB
+BLAS_LDIR:=-L$(BLAS_DIR)/lib/intel64 $(BLAS_EXTRA_LIB)
 endif
 ifeq ($(BLAS_LIB), openblas)
 BLAS_LIB:=-lopenblas
