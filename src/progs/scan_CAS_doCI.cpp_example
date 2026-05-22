@@ -1,0 +1,357 @@
+//standart
+# include <stdio.h>
+# include <omp.h>
+# include <vector>
+
+
+//user
+# include "molecule.h"
+# include "timer.h"
+# include "etc.h"
+# include "doCI_matr.h"
+# include "matr.h"
+# include "SCF.h"
+# include "CAS.h"
+# include "XMCQDPT.h"
+# include "CDAS_PT.h"
+# include "version.h"
+# include "inp_par_read.h"
+# include "common_vars.h"
+# include "nopt_libint_engines.h"
+# include "geom.h"
+# include "RI.h"
+# include "mol_link.h"
+# include "gv_solver.h"
+# include "nopa_pt.h"
+# include "doCI_out_read.h"
+
+
+int main ( int argc , char ** argv ) 
+{ 
+//     char* inp_name1;
+//     char* efrag_name;
+    
+    out_stream =stdout;// fopen("log.log","w");
+
+    nQM=1;
+    molecule *A;
+    molecule *EF;
+    get_start_time();
+    omp_set_dynamic(0);
+    
+    char* efrag_name;
+    int have_efrag=0;
+    int charge;
+    int pharsing_done=1;
+    
+    int ecp=0;
+    
+    char** P_name;
+    
+    inp_par * P;
+    
+    fprintf(out_stream,"\n%s\n",   FULL_NAME);
+    fprintf(out_stream,"                  %s version %s\n\n", PROJ_NAME, VERSION);
+    fprintf(out_stream,"\nsQM - standart QM module.\n\n");
+    fprintf(out_stream,"Comlpilation options:\n");
+    fprintf(out_stream,"1) linear algebra package - ");
+#ifdef _OPENBLAS
+    fprintf(out_stream,"OpenBLAS\n");
+#endif
+#ifdef _MKL
+    fprintf(out_stream,"MKL\n");
+#endif
+#ifdef _NOPT_BLAS_PAR
+    fprintf(out_stream,"2) non-parallel BLAS matrix multiplication in the OMP parallel cycles");
+#endif
+#ifndef _NOPT_BLAS_PAR
+    fprintf(out_stream,"2) parallel BLAS matrix multiplication");
+#endif    
+    fprintf(out_stream,"\n\n");
+
+    P_name = new char*  [4];
+    P      = new inp_par[4];
+    
+    for(int i=1;i<argc;i++){
+            if(strstr(argv[i],"-i")!=NULL){ 
+                P_name[0] = argv[i+1];i++;
+                P_name[1] = argv[i+1];i++;
+                P_name[2] = argv[i+1];i++;
+                P_name[3] = argv[i+1];i++;
+            }
+    };
+    
+    fprintf(out_stream,"selected command  line options:\n");
+    fprintf(out_stream,"-i           %s, %s ,%s, %s\t input files\n\n",P_name[0],P_name[1],P_name[2],P_name[3]);
+    
+    
+    for(int i=0;i<4;i++)P[i].read(P_name[i]);
+    
+    nopt_parallel_init(P[0].num_threads);
+    A = new molecule[4];
+    EF= new molecule[4];
+    
+    for(int i=0;i<4;i++)P[i].write_info();
+    
+    
+    char * out_name=new char[1024];
+    FILE * out_file;
+    int init_RI=RI;
+    
+    for(int i=0;i<4;i++)molecule_read_by_inp_par(A+i,P+i, 0);
+    
+    
+    omp_set_num_threads(num_threads);
+    for(int i=0;i<4;i++)A[i].ecp=ecp;
+    
+    for(int i=0;i<4;i++)if(P[i].have_efrag){
+        if(write_file_name(P[i].efrag_name, 0, EF[i].source_name, 3, 0)==1){
+            printf("Couldn't open '%s'\n",EF[i].source_name[0]);exit(1);
+        }
+        EF[i].efrag_read();
+        sprintf(out_name,"EFQM%d.out\0",i);
+        mol2_fprint(out_name,A+i,EF+i);
+            
+//         mol2_fprint("EFQM1.out",A,EF);
+    }
+
+    int u=0;
+    for(int i=1;i<argc;i++){
+            if(strstr(argv[i],"-u")!=NULL){ u=1;}
+    };
+    
+    nopt_engines_initialize();
+    if(IS_SYM==1)for(int i=0;i<4;i++){
+        A[i].make_symmetry();
+    }
+    
+    double dir[3];
+    dir[0]= 0.0;
+    dir[1]= 0.0;
+    dir[2]=-1.0;
+    
+    char * folder =new char[BUF_LINE_LENGTH];
+    
+    FILE * nopa_pt_scan;
+    
+    nopa_pt_scan = fopen("nopa_pt_scan.log","w");
+    PrintEnergyTable(nopa_pt_scan, P[0].cas.n_s*P[1].cas.n_s+
+                                   P[2].cas.n_s*P[3].cas.n_s+
+                                   P[2].cas.n_s*P[3].cas.n_s);
+        
+    e_scan=nullptr;
+    FILE* diag_file;
+    
+    /*for(*/int i=0;/*i<35;i++){*/
+        
+        
+        sprintf(folder,"step%d",i);
+        
+        struct stat st = {0};
+        if (stat (folder, &st) == -1) {
+            mkdir(folder, 0755);
+        }
+        
+        chdir(folder);
+//         out_stream = fopen("calc.log","w");
+        fprintf(stdout," writing calculation results to %s/\n",folder);
+        
+        diag_file = fopen("diag.log","w");
+        out_stream = diag_file;
+    
+        fprintf(out_stream,"\nDifferent orbitals CI. Version %s:\n", DOCI_VERSION);
+        fprintf(out_stream,"Non-orthogonal eigenvalue solver\n\n");
+    
+        fprintf(out_stream,"Used blocks:\n");
+    
+        gv_solver G;
+        std::vector<int> block_dim;
+        block_dim.resize(3);
+        block_dim[0]=P[0].cas.n_s*P[1].cas.n_s;
+        block_dim[1]=P[2].cas.n_s*P[3].cas.n_s;
+        block_dim[2]=P[2].cas.n_s*P[3].cas.n_s;
+        std::vector<char *>names{{"0"},
+                                 {"1"},
+                                 {"2"}};
+
+        G.get_block_size(block_dim.data(),names.data(),3);
+        G.alloc();
+        fflush(out_stream);
+    
+        grab_HS_data=1;
+        nopa_v_data N;
+        N.alloc2(3,G.CI_dim);
+        for(int i=0;i<4;i++){
+            printf("Calculation of fragment %d in %s\n",i,folder);
+            sprintf(out_name,"F%d.log\0",i);
+            out_stream = fopen(out_name,"w");
+            molecule AQ;
+            mol_link(&AQ,A+i,EF+i,1);
+            
+            nopt_engines_link_mol(&AQ, NULL);
+            if(RI){
+                c_timer el_ints_timer;
+                regen_RI_AA(A+i,&el_ints_timer);
+            }
+        
+            
+            if(P[i].rhf.y)
+                RHF    (A+i,NULL,0, &(P[i].rhf), P[i].wf_name[0]);
+                
+            else{
+                orbital_orthogonalize(A+i);
+                if(IS_SYM==1){
+                    A[i].check_orb_symmetry();
+                }
+            }
+            if(P[i].cas.y)CAS_SCF  (A+i,NULL,0, &(P[i].cas), P[i].wf_name[0]);
+            if(P[i].xmc.y)QDPT2    (A+i,NULL,0, &(P[i].xmc), P[i].wf_name[0]);
+            
+            int r=0;
+            for(int i=1;i<argc;i++){
+                    if(strstr(argv[i],"-r")!=NULL){ r=1;}
+            };
+            
+            int u=0;
+            for(int i=1;i<argc;i++){
+                    if(strstr(argv[i],"-u")!=NULL){ u=1;}
+            };
+            
+            if(P[i].cdas.y){
+                grab_E=1;
+//                 A[i].MO_backup();
+                if(u==0)  CDAS_PT2(A+i,NULL,0, &(P[i].cdas), P[i].wf_name[0]);
+                if(u==1)U_CDAS_PT2(A+i,NULL,0, &(P[i].cdas), P[i].wf_name[0]);
+//                 A[i].MO_restore();
+                grab_E=0;
+            }
+            /*
+            fclose(out_stream);
+            sprintf(out_name,"%d.mp2\0",i);
+            out_stream = fopen(out_name,"w");
+            for(auto &e: E_grabbed)
+                fprintf(out_stream,"E(MP2)= %.10f\n",e);
+            
+            fclose(out_stream);
+            out_stream=stdout;
+            //make it ne cherez zhopu
+            A[i].n_states[0]=P[i].cas.n_s;
+            alloc_HS_grabber(P[i].cas.n_s,P[i].cas.n_s);
+            
+            sprintf(out_name,"%d.out\0",i);
+//             printf("\n\nStart calculation for %d.out\n\n",i);
+            out_file=fopen(out_name,"w");
+            fprintf(out_file, "Different orbitals CI. Version %s:\n\n\n", DOCI_VERSION);
+            fprintf(out_file, "Hamiltonian block [%d]\n",0);//i,j);
+            fprintf(out_file, "Generated by %s -i %s\n\n",argv[0],P_name[i]);
+            fprintf(out_file, "_______________________________________________________________\n\n");
+                
+//             RI=0;
+            make_doCI_matr(A+i,A+i,EF+i,1, out_file, 0);
+//             RI=init_RI;
+            out_stream = diag_file;
+            N.get_V_from_global_memory(i/2,i%2);
+            fflush(out_stream);*/
+        }
+        
+        /*
+    
+        N.copy_V(2,1);
+        out_stream=stdout;
+
+     
+//         RI=0;
+        molecule * AB = new molecule[2];
+    
+        mol_link(AB  ,A  ,A+1,1);
+        mol_link(AB+1,A+2,A+3,1);
+    
+        nopt_libint_refresh(AB, nullptr);
+        if(RI){
+            c_timer el_ints_timer;
+            regen_RI_AA(AB,&el_ints_timer);
+        }
+    
+        grab_HS_data=1;
+        
+        
+        for(int i=0;i<2;i++)
+        for(int j=i;j<2;j++){
+            
+            alloc_HS_grabber(block_dim[i], block_dim[j]);
+            sprintf(out_name,"%s%d%d.out\0","./"//P.out_folder_name,
+                                           ,i //P.wf_name[i]
+                                           ,j //P.wf_name[j]
+                    );
+            printf("\n\nStart calculation for %s%d%d.out\n\n","./"//P.out_folder_name
+                                                             ,i //P.wf_name[i]
+                                                             ,j //P.wf_name[j]
+                   );
+            out_file=fopen(out_name,"w");
+//             if(out_file==NULL){
+//                 printf("ERROR: couldn't create output file\n");
+//                 printf("       may be folder %s doesn't exist\n",P.out_folder_name);
+//                 exit(1);
+//             }
+            fprintf(out_file, "Different orbitals CI. Version %s:\n\n\n", DOCI_VERSION);
+            fprintf(out_file, "Hamiltonian block [%d,%d]\n",0,0);//i,j);
+            fprintf(out_file, "Generated by %s -i <F%d.inp F%d.inp | F%d.inp F%d.inp >\n\n",argv[0],2*i,2*i+1,2*j,2*j+1);
+            fprintf(out_file, "_______________________________________________________________\n\n");
+            
+//             make_doCI_matr(A+i,A+j,&EF,P.have_efrag, out_file, P.doci_dec);
+            make_doCI_matr(AB+i,AB+j,NULL,0, out_file, 1);
+            //testing block for 4.5.4 function
+//             make_doCI_matr_with_1_order_decomp(A+i, A+j,&EF,P.have_efrag, out_file);
+//             exit(0);
+            //end of testing block for 4.5.4 function
+            fclose(out_file);
+            fprintf(out_stream,"H:\n");
+            fPrintMatr(out_stream,H_grabbed,block_dim[i], block_dim[j],0);
+            fprintf(out_stream,"S:\n");
+            fPrintMatr(out_stream,S_grabbed,block_dim[i], block_dim[j],0);
+            G.get_HS_from_global_memory(i, j);
+        }
+        G.copy_HS    (0,2,0,1);
+        G.set_zero_HS(1,2);
+        G.copy_HS    (2,2,1,1);
+        
+        out_stream=diag_file;
+//         G.print_init_data(1,1,1,1);
+        N.H_update_leow_G(G.H, G.S, G.CI_dim, G.dim, G.block_dim);
+        G.print_init_data(1,1,0,1);
+        
+        e_scan=nopa_pt_scan;
+        G.calc();
+        e_scan=nullptr;
+        
+//         RI=1;
+        
+        shift_molecule(EF  ,dir,0.5);
+        shift_molecule(A +1,dir,0.5);
+        shift_molecule(EF+2,dir,0.5);
+        shift_molecule(A +3,dir,0.5);
+
+
+//         shift_molecule(EF+0,dir,0.5);
+//         shift_molecule(EF+1,dir,0.5);
+//         shift_molecule(EF+2,dir,0.5);
+//         shift_molecule(EF+3,dir,0.5);
+//         shift_molecule(A +0,dir,0.5);
+//         shift_molecule(A +1,dir,0.5);
+//         shift_molecule(A +2,dir,0.5);
+//         shift_molecule(A +3,dir,0.5);
+
+
+
+        chdir("../");
+        fclose(out_stream);
+        delete[] AB;
+    }
+    */
+             out_stream=stdout;
+    delete[] A;
+    delete[] out_name;
+    
+    return 0;;
+}
+ 

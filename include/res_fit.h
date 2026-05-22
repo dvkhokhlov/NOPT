@@ -1,0 +1,102 @@
+#ifndef RES_FIT_H
+#define RES_FIT_H
+
+# include "RI.h"
+# include "aldet.h"
+
+class res_fit_data;
+
+class res_fit_data 
+{
+    public:
+        
+        //external parameters
+        aldet_data * ci; 
+        double * E0; 
+        int n_s; 
+        RI_data * RI; 
+        double * e_c; 
+        double * e_a; 
+        double * e_v;
+        int n_c; 
+        int n_a;
+        int n_v;
+        double * H_AV;
+        double * H_CA;
+        double * H_CV;
+        double edshift;
+        int N_fit;
+//         int n_fit_pol;
+        
+        
+        //grid data
+        double * E_fit   ;
+        int    * S_fit   ;
+        int    * L_fit   ;
+        double * C_fit   ;
+        int    * S_fit_tr;
+        int    * L_fit_tr;
+        double * C_fit_tr; 
+        
+        // RF operator tables
+        double * RF_PV   ;
+        double * RF_PH   ;
+
+        double * RF_PS;
+        double * RF_PV_JK;
+        double * RF_PV_AB;
+        
+        double * RF_P3_JK;
+        double * RF_P3_AB;
+        
+        
+        //functions
+        int set_par(aldet_data * ext_ci, double * ext_E0, int ext_n_s, RI_data * ext_RI, 
+                    double * ext_eps, int ext_n_c, int ext_n_a, int ext_n_v, 
+                    double * ext_H_AV, double * ext_H_CA, double * ext_H_CV,
+                    double ext_edshift);
+        
+        int gen_grid(int ext_N_fit, int ext_n_fit_pol);
+        
+        //1-el properties table generators
+        int calc_RF_1_AV(double * P_AV);
+        int calc_RF_1_CA(double * P_CA);
+        int calc_RF_1_CV(double * P_CV);
+
+        //energy table generators
+        int calc_RF_2_CV();        
+        int calc_RF_2_AV();        
+        int calc_RF_2_CA();
+        int calc_RF_2_CCVV();
+        int calc_RF_2_CAVV();
+        int calc_RF_2_AAVV();
+        int calc_RF_2_CCAV();
+        int calc_RF_2_CCAA();
+        
+        //N-body operators
+        int calc_0body(double * E2, int i_th, int n_th);
+        int calc_1body_A(double * E2, int i_th, int n_th);
+        int calc_1body_B(double * E2, int i_th, int n_th);
+        int calc_2body_AA(double * E2, int i_th, int n_th);
+        int calc_2body_AB(double * E2, int i_th, int n_th);
+        int calc_2body_BB(double * E2, int i_th, int n_th);
+        int calc_3body_AAA(double * E2, int i_th, int n_th);
+        int calc_3body_AAB(double * E2, int i_th, int n_th);
+        int calc_3body_ABB(double * E2, int i_th, int n_th);
+        int calc_3body_BBB(double * E2, int i_th, int n_th);
+        
+        
+        //main functions
+        int P1_calc(double * P1, double * P_AV, double * P_CA, double * P_CV, int AV, int CV, int CA);
+        
+        int E2_calc(double * E2);
+        
+        ~res_fit_data();
+       
+       
+};
+
+
+
+
+#endif

@@ -1,0 +1,9 @@
+ $MOL
+ _CHARGE=0;
+ _BASIS=aug-cc-pvqz-PP.gbs;
+ _RI_BASIS=def2-qzvppd-rifit.gbs;
+ _UNITS= bohr;
+ _xyz INP=CaO_3_40_au.xyz 
+ $END
+ $act_space n_alp=4 n_bet=4 n_val=11 mult=1 p_n=10 reorder=0 orbitals=7 8 9 19 20 28 10 17 18 31 6; $end 
+ $VEC INP=CDAS_CaO_3_438_au_CAS.orb $end

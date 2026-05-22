@@ -1,0 +1,19 @@
+
+$PAR NUM_THREADS=4 N_MOL=1 RHF=0 CAS=1 CDAS=1 D5=1 RI=1 SO=1 
+NAME=Ce_SO
+$PAREND
+$MOL
+ _CHARGE=2;
+ _BASIS =Ce_contracted_6s_7p_7d_6f_5g_4h_3i.exp
+ _ECP =Ce_grpp.grp 
+ _SO=Ce/Ce_grpp.grp lib
+ _RI_BASIS=def2-universal-jkfit;
+ _UNITS= ang;
+ _xyz INP=Ce.xyz 
+ _MO INP=Ce_CAS.orb
+$END
+$act_space n_alp=1 n_bet=1 n_val=12 mult=0 $END
+$CAS n_s=144 w_state = all_1; maxit=150 dE=-1e-12 grad=1e-6 p_cutoff =0.03 $END
+$CDAS IPEA $END
+$RHF maxit=50 dE=1e-9 grad=1e-12 $END
+$PROP DIPOLE=0 DISP=0 MULLIKEN=0 QUAD=0 $END

@@ -1,0 +1,5 @@
+$PAR NUM_THREADS=4 N_MOL=1 RHF=1 CAS=0 CIS=1 CQD=0 D5=1 RI=1 NAME=C6H8 $PAREND
+#include=c6h8_cis.inp
+$RHF maxit=50 dE=1e-9 grad=1e-12 $END
+$PROP DIPOLE=0 DISP=1 MULLIKEN=0 QUAD=0 $END
+$CIS n_s=10 n_f=0 method=1 nat_orb=1 wstate=1 1; $END

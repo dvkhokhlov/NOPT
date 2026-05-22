@@ -1,0 +1,165 @@
+#include <vector>
+
+using namespace std;
+
+extern vector<const char *>rhf_kw               ;
+extern vector<const char *>rhf_group_start      ;
+extern vector<const char *>rhf_group_end        ;
+extern vector<const char *>rhf_huckel           ;
+extern vector<const char *>rhf_h_core           ;
+extern vector<const char *>rhf_read             ;
+extern vector<const char *>max_it_kw            ;
+extern vector<const char *>e_conv_kw            ;
+extern vector<const char *>g_conv_kw            ;
+extern vector<const char *>s_conv_kw            ;
+extern vector<const char *>x_max_kw             ;
+extern vector<const char *>r_conv_kw            ;
+extern vector<const char *>cas_kw               ;
+extern vector<const char *>cas_SA_kw            ;
+extern vector<const char *>cas_SD_kw            ;
+extern vector<const char *>cas_SM_kw            ;
+extern vector<const char *>cas_group_start      ;
+extern vector<const char *>cas_group_end        ;
+extern vector<const char *>num_state_kw         ;
+
+extern vector<const char *>num_frozen_orb_kw    ;
+extern vector<const char *>method_kw            ;
+extern vector<const char *>nat_orb_kw           ;
+extern vector<const char *>cis_kw               ;
+extern vector<const char *>cis_group_start      ;
+extern vector<const char *>cis_group_end        ;
+
+extern vector<const char *>w_state_kw           ;
+extern vector<const char *>w_state_eq_kw        ;
+extern vector<const char *>w_state_irrep_kw     ;
+extern vector<const char *>cas_track_kw         ;
+extern vector<const char *>cas_rotate_orbs_kw   ;
+extern vector<const char *>w_state_group_end    ;
+extern vector<const char *>w_state_group_start  ;
+extern vector<const char *>w_linear_L_kw        ;
+extern vector<const char *>w_linear_sign_kw     ;
+extern vector<const char *>mult_kw              ;
+extern vector<const char *>print_number_kw      ;
+extern vector<const char *>reorder_kw           ;
+extern vector<const char *>orbitals_kw          ;
+extern vector<const char *>dav_group_start      ;
+// extern vector<const char *>max_dav_it_kw        ;
+extern vector<const char *>dav_se_kw            ;
+extern vector<const char *>dav_n_bf_kw          ;
+extern vector<const char *>dav_sparsed_HC_kw    ;
+extern vector<const char *>dav_group_end        ;
+extern vector<const char *>MO_group_start       ;
+extern vector<const char *>MO_text_group_start  ;
+extern vector<const char *>MO_group_b_start     ;
+extern vector<const char *>MO_group_end         ;
+extern vector<const char *>basis_kw             ;
+extern vector<const char *>ri_basis_kw          ;
+extern vector<const char *>auto_aux_kw          ;
+extern vector<const char *>basis_end_kw         ;
+extern vector<const char *>ecp_kw               ;
+extern vector<const char *>so_kw                ;
+extern vector<const char *>so_lib_kw            ;
+extern vector<const char *>ecp_so_end_kw        ;
+extern vector<const char *>read_basis_kw        ;
+extern vector<const char *>geom_group_start     ;
+extern vector<const char *>z_mat_kw             ;
+extern vector<const char *>act_space_group_start;
+extern vector<const char *>act_space_group_end  ;
+extern vector<const char *>geom_dim_unit        ;
+extern vector<const char *>geom_dim_au          ;
+extern vector<const char *>geom_dim_nm          ;
+extern vector<const char *>geom_dim_ang         ;                   
+extern vector<const char *>wf_type              ;
+extern vector<const char *>wf_type_end          ; 
+extern vector<const char *>uhf                  ;
+extern vector<const char *>wide                 ;
+extern vector<const char *>energy_group_start   ;
+extern vector<const char *>energy_group_b_start ;
+extern vector<const char *>energy_group_end     ;
+extern vector<const char *>par_group            ;
+extern vector<const char *>par_group_end        ;
+extern vector<const char *>mol_group            ;
+extern vector<const char *>mol_group_end        ;
+extern vector<const char *>num_threads_kw       ;
+extern vector<const char *>out_folder_kw        ;
+extern vector<const char *>n_mol_kw             ;
+extern vector<const char *>doci_dec_kw          ;
+extern vector<const char *>n_frags_kw           ;
+extern vector<const char *>inp_kw               ;
+extern vector<const char *>charge_kw            ;
+extern vector<const char *>name_kw              ;
+extern vector<const char *>occ_group_start      ;
+extern vector<const char *>occ_group_end        ;
+extern vector<const char *>xmc_kw               ;
+extern vector<const char *>xmc_group_start      ;
+extern vector<const char *>xmc_group_end        ;
+extern vector<const char *>edshift_kw           ;
+extern vector<const char *>avecoe_kw            ;
+extern vector<const char *>ifitd_kw             ;
+extern vector<const char *>xmc_d_only_kw        ;
+extern vector<const char *>xmc_n_fit_kw         ;
+extern vector<const char *>xmc_n_fit_pol_kw     ;   
+extern vector<const char *>cdas_kw              ;
+extern vector<const char *>cdas_group_start     ;
+extern vector<const char *>cdas_group_end       ;
+extern vector<const char *>cdas_ipea_kw         ;
+extern vector<const char *>cdas_mppt_kw         ;
+extern vector<const char *>cdas_homo_kw         ;
+extern vector<const char *>cdas_actual_kw       ;
+extern vector<const char *>cdas_sing_en_kw      ;
+extern vector<const char *>cdas_mult_en_kw      ;
+extern vector<const char *>cdas_orb_en_kw       ;
+extern vector<const char *>cdas_fit_en_kw       ;
+extern vector<const char *>cdas_rot_orbs        ;
+extern vector<const char *>pt1_dipole_kw        ;
+extern vector<const char *>d5_kw                ;
+extern vector<const char *>ri_kw                ;
+extern vector<const char *>n_st_kw              ;
+extern vector<const char *>n_act_kw             ;
+extern vector<const char *>n_alp_kw             ;
+extern vector<const char *>n_bet_kw             ;
+extern vector<const char *>backup_group_start   ;
+extern vector<const char *>backup_group_end     ;
+extern vector<const char *>n_bet_kw             ;
+extern vector<const char *>h1_backup_kw         ;
+extern vector<const char *>h2_backup_kw         ;
+extern vector<const char *>ri_backup_kw         ;
+extern vector<const char *>prefix_backup_kw     ;
+extern vector<const char *>n_bfgs_vec_kw        ;
+extern vector<const char *>prop_group           ;
+extern vector<const char *>prop_group_end       ;
+extern vector<const char *>print_dipole_kw      ;
+extern vector<const char *>print_dispersion_kw  ;
+extern vector<const char *>print_quadrupole_kw  ;
+extern vector<const char *>print_mulliken_kw    ;
+extern vector<const char *>symm_group_start     ;
+extern vector<const char *>symm_group_end       ;
+extern vector<const char *>symm_point_group_kw  ;
+extern vector<const char *>linear_kw            ;
+// extern vector<const char *>linear_L_kw          ;
+extern vector<const char *>include_kw           ;
+extern vector<const char *>lib_kw               ;
+
+
+
+int key_word_comp(char * str, vector<const char *> keywords);
+
+char *key_word_find(char * str, vector<const char *> keywords);
+
+int kw_to_i(char * inp, vector<const char *> keywords, int def_val);
+
+float kw_to_f(char * inp, vector<const char *> keywords, float def_val);
+
+int kw_to_kw(char * inp, vector<const char *> keywords, vector<const char *> keywords_2);
+
+int kw_to_s(char ** name, char * inp, vector<const char *> keywords);
+
+int kw_to_s_w_def(char ** name, char * inp, vector<const char *> keywords, char * def_val);
+
+int kw_to_s_v(std::vector<char*>* name, char * inp, vector<const char *> keywords, int n);
+
+int kw_to_i_v(std::vector<int>*      c, char * inp, vector<const char *> keywords, int n);
+
+int kw_to_d_v(std::vector<double>*      c, char * inp, vector<const char *> keywords, int n);
+
+int kw_count(char * inp, vector<const char *> keywords, char end);
