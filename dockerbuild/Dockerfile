@@ -71,7 +71,10 @@ RUN set -eux; MARCH=$(cat /opt/arch/march_flags); \
     make -j"$(nproc)"
 
 # ----- libint (shared; copied into runtime stage) -----------------------
-RUN git clone --depth 1 https://github.com/evaleev/libint.git
+# Full clone (no --depth 1): libint's CMakeLists uses dynamic_version, which
+# runs `git describe` against tags. A shallow clone strips tags and configure
+# fails with "No names found, cannot describe anything."
+RUN git clone https://github.com/evaleev/libint.git
 RUN set -eux; MARCH=$(cat /opt/arch/march_flags); \
     cd libint && cmake -S . -B build -G Ninja \
         -D CMAKE_CXX_COMPILER=g++ \
