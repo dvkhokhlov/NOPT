@@ -5,7 +5,13 @@
 # Build args (override with --build-arg):
 #   ARCH            target microarchitecture (see table below); default: native
 #   LIBINT_MAX_AM   libint angular-momentum max (and ERI3/ERI2); default: 7
-#   UBUNTU_VERSION  base image tag; default: 24.04
+#   GCC_SERIES      major compiler series (gcc-N, g++-N, gfortran-N). Default: 13.
+#   FIXED           "true" (default) additionally pins the Ubuntu base image
+#                   digest and the libgrpp/libint git commits. "false" lets
+#                   those float to upstream HEAD / latest official tag.
+#   UBUNTU_BASE     full base image ref. Default: ubuntu:24.04 pinned by
+#                   digest (see ARG below). Override with --build-arg
+#                   UBUNTU_BASE=ubuntu:24.04 to use the floating tag.
 #
 # ARCH values:
 #   native        -> -march=native -mtune=native        (binary tied to build host)
@@ -14,22 +20,57 @@
 #   x86-64-v3     -> -march=x86-64-v3    -mtune=generic (~Haswell, AVX2)
 #   x86-64-v4     -> -march=x86-64-v4    -mtune=generic (AVX-512)
 #   arm64-v8-a    -> -march=armv8-a      -mtune=generic !!!!!!!!!! ARM architectures were not tested at all
-#   arm64-v8.2-a  -> -march=armv8.2-a    -mtune=generic 
+#   arm64-v8.2-a  -> -march=armv8.2-a    -mtune=generic
 #   arm64-v9-a    -> -march=armv9-a      -mtune=generic
+#
+# Reproducibility model
+# ---------------------
+# Always pinned (major-version level — survives security updates):
+#   * Compilers          -> versioned meta-packages: gcc-${GCC_SERIES} etc.
+#                           (default GCC_SERIES=13, the default on 24.04 LTS)
+#   * Runtime libraries  -> SOVERSION-named packages (libgfortran5,
+#                           libopenblas0-pthread, libstdc++6, ...).
+#                           Ubuntu LTS guarantees ABI stability within these.
+#
+# FIXED=true (default) additionally pins:
+#   * Ubuntu base image  -> pinned by sha256 digest in UBUNTU_BASE below.
+#   * libgrpp / libint   -> pinned to specific git commits (LIB*_GIT_REF).
+#
+# NOPT itself is NEVER pinned — always cloned at master HEAD.
+#
+# With FIXED=false the RUN steps fall back to upstream branch tips. The FROM
+# line cannot read FIXED, so unpinning the base image needs an explicit
+# UBUNTU_BASE override (build-all.sh handles this automatically).
+#
+# Why no exact apt version pins: pinning gcc=4:13.2.0-7ubuntu1 breaks the
+# moment Ubuntu publishes a security update; the old build is purged from the
+# archive. Pinning via package name (gcc-13, libgfortran5) survives that.
 #
 # Runtime: mount the working directory and run; the entrypoint drops to the
 # host user so generated files inherit the caller's uid/gid:
 #   docker run --rm -v "$PWD:/data" nopt -i input.inp
 #
-ARG UBUNTU_VERSION=24.04
+
+# ---- base image (read by both FROM lines) ----------------------------------
+# Pinned to ubuntu:24.04 as of 2026-05; override to unpin.
+ARG UBUNTU_BASE=ubuntu:24.04@sha256:c4a8d5503dfb2a3eb8ab5f807da5bc69a85730fb49b5cfca2330194ebcc41c7b
 
 ############################################################
 # Stage 1: builder
 ############################################################
-FROM ubuntu:${UBUNTU_VERSION} AS builder
+FROM ${UBUNTU_BASE} AS builder
 
 ARG ARCH=native
+ARG FIXED=true
 ARG LIBINT_MAX_AM=7
+
+# Compiler major-version series. 13 is the default on 24.04 LTS.
+ARG GCC_SERIES=13
+
+# Pinned upstream refs (honoured only when FIXED=true).
+ARG LIBGRPP_GIT_REF=6e63e88f75385b811837efbbb143b2dcd83b00e8
+ARG LIBINT_GIT_REF=5fb07b4862f219749c51d59ee08073d20a56d506
+# libint commit above corresponds to release tag v2.13.1 (2026-02-03).
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -51,21 +92,36 @@ RUN set -eux; \
     printf '%s\n' "$MARCH" > /opt/arch/march_flags; \
     echo "ARCH=${ARCH}  ->  $MARCH"
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        gcc g++ gfortran build-essential git cmake ninja-build \
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+        gcc-${GCC_SERIES} g++-${GCC_SERIES} gfortran-${GCC_SERIES} \
+        libc6-dev make \
+        git cmake ninja-build \
         libeigen3-dev libboost-dev \
         libopenblas-dev liblapacke-dev libgmp-dev \
-        ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+        ca-certificates; \
+    rm -rf /var/lib/apt/lists/*
+
+# Compiler names used by every downstream build. Set via ENV so they survive
+# across RUN layers. The versioned binaries (gcc-13 etc.) guarantee that
+# GCC_SERIES is actually honoured — the plain `gcc`/`g++`/`gfortran` aliases
+# from the meta-packages always point at the distro default and ignore it.
+ENV CC=gcc-${GCC_SERIES}
+ENV CXX=g++-${GCC_SERIES}
+ENV FC=gfortran-${GCC_SERIES}
 
 WORKDIR /deps
 
 # ----- libgrpp (static; gets embedded in run_sQM) -----------------------
-RUN git clone --depth 1 https://github.com/aoleynichenko/libgrpp.git
+RUN set -eux; \
+    git clone https://github.com/aoleynichenko/libgrpp.git; \
+    if [ "$FIXED" = "true" ]; then cd libgrpp && git checkout --quiet "$LIBGRPP_GIT_REF"; fi
 RUN set -eux; MARCH=$(cat /opt/arch/march_flags); \
     mkdir libgrpp/build && cd libgrpp/build && \
-    CC=gcc FC=gfortran \
     cmake .. \
+        -DCMAKE_C_COMPILER="${CC}" \
+        -DCMAKE_Fortran_COMPILER="${FC}" \
         -DCMAKE_C_FLAGS="${MARCH}" \
         -DCMAKE_Fortran_FLAGS="${MARCH}" && \
     make -j"$(nproc)"
@@ -74,10 +130,12 @@ RUN set -eux; MARCH=$(cat /opt/arch/march_flags); \
 # Full clone (no --depth 1): libint's CMakeLists uses dynamic_version, which
 # runs `git describe` against tags. A shallow clone strips tags and configure
 # fails with "No names found, cannot describe anything."
-RUN git clone https://github.com/evaleev/libint.git
+RUN set -eux; \
+    git clone https://github.com/evaleev/libint.git; \
+    if [ "$FIXED" = "true" ]; then cd libint && git checkout --quiet "$LIBINT_GIT_REF"; fi
 RUN set -eux; MARCH=$(cat /opt/arch/march_flags); \
     cd libint && cmake -S . -B build -G Ninja \
-        -D CMAKE_CXX_COMPILER=g++ \
+        -D CMAKE_CXX_COMPILER="${CXX}" \
         -D CMAKE_INSTALL_PREFIX=/opt/libint \
         -D CMAKE_BUILD_TYPE=Release \
         -D CMAKE_CXX_FLAGS="${MARCH}" \
@@ -90,7 +148,7 @@ RUN set -eux; MARCH=$(cat /opt/arch/march_flags); \
         -D BUILD_SHARED_LIBS=ON && \
     cmake --build build --target install -j "$(nproc)"
 
-# ----- NOPT --------------------------------------------------------------
+# ----- NOPT (intentionally unpinned — always cloned at master HEAD) -----
 RUN git clone https://github.com/glebov-io/NOPT.git
 WORKDIR /deps/NOPT
 
@@ -116,26 +174,30 @@ OPT_LEVEL:=-O3 -g $(NOPT_ARCH_FLAGS) -Wno-sign-compare -Wreturn-type -std=c++17 
 EOF
 
 RUN set -eux; MARCH=$(cat /opt/arch/march_flags); \
-    NOPT_ARCH_FLAGS="${MARCH}" make run_sQM -j"$(nproc)"
+    NOPT_ARCH_FLAGS="${MARCH}" make CXX="${CXX}" run_sQM -j"$(nproc)"
 
 ############################################################
 # Stage 2: runtime (slim — only shared libs the binary actually loads)
 ############################################################
-FROM ubuntu:${UBUNTU_VERSION} AS runtime
+FROM ${UBUNTU_BASE} AS runtime
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Runtime closure of run_sQM:
+# Runtime closure of run_sQM. All packages are SOVERSION-named, so the
+# package name itself pins the ABI-relevant major version; security updates
+# inside that series are picked up freely.
 #   libstdc++6, libgcc-s1       — C++/runtime support
 #   libgomp1                    — OpenMP
 #   libgfortran5                — Fortran runtime (libgfortran linked in)
 #   libopenblas0-pthread        — cblas_* used by NOPT (matches build-side variant)
 #   libint2 shared lib          — copied from builder under /opt/libint
 # libgrpp is statically linked into run_sQM, so nothing to ship for it.
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
         libstdc++6 libgcc-s1 libgomp1 libgfortran5 libopenblas0-pthread \
-        gosu ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+        gosu ca-certificates; \
+    rm -rf /var/lib/apt/lists/*
 
 # libint shared libraries
 COPY --from=builder /opt/libint/lib /opt/libint/lib
