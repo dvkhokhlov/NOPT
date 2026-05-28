@@ -30,6 +30,12 @@ Instal standard QM module
 make run_sQM
 ```
 
+## Docker image
+
+See [dockerbuild/README.md](dockerbuild/README.md) on how to pull the existing image of the NOPT.
+ 
+Or build a native image using [Dockerfile](dockerbuild/Dockerfile)
+
 # How to Use
 ```
 run_sQM -i input.inp
