@@ -31,7 +31,7 @@ Pull whichever microarchitecture level matches your CPU:
 docker pull pupeza/nopt:x86-64-v1     # baseline x86_64 (any AMD64 CPU)
 docker pull pupeza/nopt:x86-64-v2     # Nehalem+ (SSE4.2) — covers most hardware in service today
 docker pull pupeza/nopt:x86-64-v3     # Haswell+ (AVX2)
-docker pull pupeza/nopt:x86-64-v4     # AVX-512 capable CPUs
+docker pull pupeza/nopt:x86-64-v4     # AVX-512 capable CPUs (TO BE ADDED)
 docker pull pupeza/nopt:latest        # alias for x86-64-v2
 ```
 
