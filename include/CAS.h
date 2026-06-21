@@ -5,6 +5,8 @@
 # include "molecule2.h"
 # include "inp_par_read.h"
 # include "davidson.h"
+# include "casci_solver.h"
+# include <memory>
 
 class CAS_engine;
 
@@ -27,8 +29,8 @@ class CAS_engine{
         
         //for CI
         int n_CI;
-        aldet_data * CI;
-        davidson_solver DAV;
+        casci_solver * CI;                        // drives any CI backend (aldet, DMRG, …)
+        std::unique_ptr<casci_solver> CI_owner;   // owns the concrete backend instance
         dav_par dav;
         
         molecule * M;

@@ -233,14 +233,14 @@ int CDAS_PT2(molecule * M, cdas_par * cdas, char * job_name){
     T.set_par(&R, eps, n_cor, n_act, n_virt, H_AV, H_CA, H_CV, cdas->edshift);
     
     //calculation of IP/EA Fockian matrix
-    CAS.CI->simple_import_data(act_INTS, act_INTS, H_AA, 0);
+    CAS.CI->as_aldet()->simple_import_data(act_INTS, act_INTS, H_AA, 0);
     
     if(cdas->IPEA){
-        T.IPEA(CAS.CI, 0,cdas->cas->w_state);
+        T.IPEA(CAS.CI->as_aldet(), 0,cdas->cas->w_state);
         T.E2_calc_IPEA();
     }
     else if(cdas->MPPT){
-        T.MPPT(CAS.CI, 0,cdas->cas->w_state);
+        T.MPPT(CAS.CI->as_aldet(), 0,cdas->cas->w_state);
         T.E2_calc_EE();
     }
     else{
@@ -251,7 +251,7 @@ int CDAS_PT2(molecule * M, cdas_par * cdas, char * job_name){
     fprintf(out_stream,"_______________________________________________________________________\n\n\n");
     
     
-    CAS.CI->PT2_import_data(T.RF_P3_JK,
+    CAS.CI->as_aldet()->PT2_import_data(T.RF_P3_JK,
                             T.RF_P3_AB,
                             T.RF_PV_JK,
                             T.RF_PV_AB,
@@ -264,7 +264,7 @@ int CDAS_PT2(molecule * M, cdas_par * cdas, char * job_name){
 
 //    }
     fprintf(out_stream,"\n\nCDAS-PT2 Energy summary:\n");
-    PrintEnergy(CAS.CI->E_states[0],CAS.n_s,1);
+    PrintEnergy(CAS.CI->as_aldet()->E_states[0],CAS.n_s,1);
     
     double * print_d[3];
     print_d[0]=CAS.Prop_value                  ;
@@ -285,7 +285,7 @@ int CDAS_PT2(molecule * M, cdas_par * cdas, char * job_name){
     if(write_ci){
         fprintf(out_stream,"Writing CDAS-PT2 WaveFunctions:\n");
         sprintf(name,"%s_CDAS.ci\0",job_name);
-        CAS.CI->write_civec(0, name);
+        CAS.CI->as_aldet()->write_civec(0, name);
         fprintf(out_stream,"data file         : %s\n",name);
     }
     
@@ -304,14 +304,14 @@ int CDAS_PT2(molecule * M, cdas_par * cdas, char * job_name){
     if(print_dipole)if(cdas->pt1_d){
         fprintf(out_stream,"PT1 dipole moment - d(1):\n\n");
         if(cdas->IPEA){
-            T.P1_calc_IPEA(d_x1, CAS.CI, d_x_AV, d_x_CA, d_x_CV, 1, 1, 1);
-            T.P1_calc_IPEA(d_y1, CAS.CI, d_y_AV, d_y_CA, d_y_CV, 1, 1, 1);
-            T.P1_calc_IPEA(d_z1, CAS.CI, d_z_AV, d_z_CA, d_z_CV, 1, 1, 1);
+            T.P1_calc_IPEA(d_x1, CAS.CI->as_aldet(), d_x_AV, d_x_CA, d_x_CV, 1, 1, 1);
+            T.P1_calc_IPEA(d_y1, CAS.CI->as_aldet(), d_y_AV, d_y_CA, d_y_CV, 1, 1, 1);
+            T.P1_calc_IPEA(d_z1, CAS.CI->as_aldet(), d_z_AV, d_z_CA, d_z_CV, 1, 1, 1);
         }
         else{
-            T.P1_calc_EE(d_x1, CAS.CI, d_x_AV, d_x_CA, d_x_CV, 1, 1, 1);
-            T.P1_calc_EE(d_y1, CAS.CI, d_y_AV, d_y_CA, d_y_CV, 1, 1, 1);
-            T.P1_calc_EE(d_z1, CAS.CI, d_z_AV, d_z_CA, d_z_CV, 1, 1, 1);
+            T.P1_calc_EE(d_x1, CAS.CI->as_aldet(), d_x_AV, d_x_CA, d_x_CV, 1, 1, 1);
+            T.P1_calc_EE(d_y1, CAS.CI->as_aldet(), d_y_AV, d_y_CA, d_y_CV, 1, 1, 1);
+            T.P1_calc_EE(d_z1, CAS.CI->as_aldet(), d_z_AV, d_z_CA, d_z_CV, 1, 1, 1);
         }
         
         symmetrization_with_scaling(d_x1,n_s,2.0);
