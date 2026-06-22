@@ -1,0 +1,7 @@
+# Build artifacts (universal — anyone building NOPT generates these)
+*.o
+*.gcda
+*.gcno
+/run_sQM
+/run_hessian
+/run_optimization
