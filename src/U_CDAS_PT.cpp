@@ -515,11 +515,11 @@ int U_CDAS_PT2(molecule * M, cdas_par * cdas, char * job_name){
 //                  -E_1el_calc(    K  , D.DM_C, n_ao, n_ao)  
 //                  +M->V_nuc ;
 // 
-//     CAS.CI-> (act_INTS_A, act_INTS_AB, act_INTS_B, 
+//     CAS.CI->as_aldet()-> (act_INTS_A, act_INTS_AB, act_INTS_B, 
 //                                  H_AA_A,H_AA_B,
 //                                  CAS.E_core);
 //     
-    CAS.CI->UPT2_import_data(T.RF_P3_JK_A,   
+    CAS.CI->as_aldet()->UPT2_import_data(T.RF_P3_JK_A,   
                              T.RF_P3_AB,
                              T.RF_P3_BA,
                              T.RF_P3_JK_B,   
@@ -533,12 +533,12 @@ int U_CDAS_PT2(molecule * M, cdas_par * cdas, char * job_name){
     CAS.CI_calc(1,0,1);
     
     fprintf(out_stream,"\n\nCDAS-PT2 Energy summary:\n");
-    PrintEnergy(CAS.CI->E_states[0],CAS.n_s,1);
+    PrintEnergy(CAS.CI->as_aldet()->E_states[0],CAS.n_s,1);
 
                  
 //     davidson_solver DAV2;
 //     
-//     DAV2.set_par(CAS.CI,CAS.dav);
+//     DAV2.set_par(CAS.CI->as_aldet(),CAS.dav);
 //     DAV2.V.H_diag_calc();
     
 // //     PrintMatr(DAV2.V.H_diag,DAV2.V.Nd,1,0);
@@ -548,14 +548,14 @@ int U_CDAS_PT2(molecule * M, cdas_par * cdas, char * job_name){
 //     n = DAV2.run(1,0);
 //     
 //     printf("\n\nU-CDAS-PT2 Energy summary:\n");
-//     PrintEnergy(CAS.CI->E_states[0],CAS.n_s,1);
+//     PrintEnergy(CAS.CI->as_aldet()->E_states[0],CAS.n_s,1);
 //         
 //     CAS.Prop_calc();
 // //     getchar();
 //     printf("\n");
 //     printf("Writing CDAS-PT2 WaveFunctions:\n");
 //     sprintf(name,"%s_CDAS.ci\0",job_name);
-//     CAS.CI->write_civec(0, name);
+//     CAS.CI->as_aldet()->write_civec(0, name);
 //     printf("data file         : %s\n",name);
 // 
 //     
@@ -566,7 +566,7 @@ int U_CDAS_PT2(molecule * M, cdas_par * cdas, char * job_name){
 // //         double * act_INTS_2_bc = new double[n_act*n_act*n_act*n_act];
 // // //         double * bc_orb_der   = new double[n_act*n_s];
 // //         aldet_data CI_bc;
-// //         CI_bc.get_dim(CAS.CI->n_act, CAS.CI->na, CAS.CI->nb, 1, CAS.CI->mult, CAS.CI->print_number);
+// //         CI_bc.get_dim(CAS.CI->as_aldet()->n_act, CAS.CI->as_aldet()->na, CAS.CI->as_aldet()->nb, 1, CAS.CI->as_aldet()->mult, CAS.CI->as_aldet()->print_number);
 // //         CI_bc.init_zero_vec(n_s,0);
 // //         
 // //         double E_core_bc=0;
@@ -594,7 +594,7 @@ int U_CDAS_PT2(molecule * M, cdas_par * cdas, char * job_name){
 // //         CI_bc.H_diag_calc();
 // //         CI_bc.do_PT=1;
 // //         CI_bc.PT_update();
-// //         memcpy(CI_bc.coef[0],CAS.CI->coef[0],n_s*CI_bc.Nd*sizeof(double));
+// //         memcpy(CI_bc.coef[0],CAS.CI->as_aldet()->coef[0],n_s*CI_bc.Nd*sizeof(double));
 // //         CI_bc.transpose_ci(0);
 // //         CI_bc.H_mult(0,CAS.n_s);
 // //         cblas_dgemm(CblasRowMajor,CblasTrans,CblasNoTrans,
@@ -602,7 +602,7 @@ int U_CDAS_PT2(molecule * M, cdas_par * cdas, char * job_name){
 // //                     CI_bc.coef[0],n_s,
 // //                     CI_bc.Hv,n_s,0.0,
 // //                     H_bc,n_s);
-// //         PrintEnergy_derivative_corrected(CAS.CI->E_states[0],H_bc,CAS.n_s,0);
+// //         PrintEnergy_derivative_corrected(CAS.CI->as_aldet()->E_states[0],H_bc,CAS.n_s,0);
 // //         
 // //         delete[] F_act_bc     ;
 // //         delete[] act_INTS_bc  ;

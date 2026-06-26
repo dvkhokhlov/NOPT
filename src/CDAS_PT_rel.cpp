@@ -415,7 +415,7 @@ int CDAS_PT2_rel(molecule * M, cdas_par * cdas, char * job_name){
         fprintf(out_stream,"_______________________________________________________________________\n\n\n");
         
 //                 fPrintMatr(out_stream,T.RF_PH,n_act,n_act,1);
-        CAS.CI->PT2_import_data(T.RF_P3_JK,
+        CAS.CI->as_aldet()->PT2_import_data(T.RF_P3_JK,
                                 T.RF_P3_AB,
                                 T.RF_PV_JK,
                                 T.RF_PV_AB,
@@ -424,7 +424,7 @@ int CDAS_PT2_rel(molecule * M, cdas_par * cdas, char * job_name){
          CAS.tensors_recalc(0);
 //         CAS.CI_calc(1,1);
         
-        double E0 = CAS.CI->E_core;//+CAS.CI->T0;
+        double E0 = CAS.CI->as_aldet()->E_core;//+CAS.CI->as_aldet()->T0;
 //         for(int i=0;i<n_act*n_act;i++)H_AA[i]+=T.RF_PH[i];
         
         double * so_x_vv = new double[n_act*n_act];
@@ -471,18 +471,18 @@ int CDAS_PT2_rel(molecule * M, cdas_par * cdas, char * job_name){
         
         aldet_rel_data CI_rel;
         
-        CI_rel.get_dim(CAS.CI->n_act,CAS.CI->na, CAS.CI->nb, 2, CAS.CI->print_number);
+        CI_rel.get_dim(CAS.CI->as_aldet()->n_act,CAS.CI->as_aldet()->na, CAS.CI->as_aldet()->nb, 2, CAS.CI->as_aldet()->print_number);
         CI_rel.init_zero_vec(-1,0);
         
         double * AA = new double[n_act*n_act*n_act*n_act];
         double * AB = new double[n_act*n_act*n_act*n_act];
         
-        for(int i=0; i<n_act*n_act*n_act*n_act;i++)AA[i]=CAS.CI->act_INTS_AA[i];//+T.RF_PV_JK[i];
-        for(int i=0; i<n_act*n_act*n_act*n_act;i++)AB[i]=CAS.CI->act_INTS_AB[i];//+T.RF_PV_AB[i];
+        for(int i=0; i<n_act*n_act*n_act*n_act;i++)AA[i]=CAS.CI->as_aldet()->act_INTS_AA[i];//+T.RF_PV_JK[i];
+        for(int i=0; i<n_act*n_act*n_act*n_act;i++)AB[i]=CAS.CI->as_aldet()->act_INTS_AB[i];//+T.RF_PV_AB[i];
         
         CI_rel.simple_import_data(AA,
                                   AB,
-                                  CAS.CI->F_act_A,
+                                  CAS.CI->as_aldet()->F_act_A,
                                   E0);
         CI_rel.SO_update(so_x_vv,so_y_vv,so_z_vv);
         
@@ -524,7 +524,7 @@ int CDAS_PT2_rel(molecule * M, cdas_par * cdas, char * job_name){
     // if(write_ci){
         // fprintf(out_stream,"Writing CDAS-PT2 WaveFunctions:\n");
         // sprintf(name,"%s_CDAS.ci\0",job_name);
-        // CAS.CI->write_civec(0, name);
+        // CAS.CI->as_aldet()->write_civec(0, name);
         // fprintf(out_stream,"data file         : %s\n",name);
     // }
     
@@ -543,13 +543,13 @@ int CDAS_PT2_rel(molecule * M, cdas_par * cdas, char * job_name){
 //     {
 //         fprintf(out_stream,"PT1 dipole moment - d(1):\n\n");
 //         fprintf(out_stream,"d_x(1)\n");
-//         T.P1_calc(d_x1, CAS.CI, d_x_AV, d_x_CA, d_x_CV, 1, 1, 1);
+//         T.P1_calc(d_x1, CAS.CI->as_aldet(), d_x_AV, d_x_CA, d_x_CV, 1, 1, 1);
 //         fprintf(out_stream,"\n");
 //         fprintf(out_stream,"d_y(1)\n");
-//         T.P1_calc(d_y1, CAS.CI, d_y_AV, d_y_CA, d_y_CV, 1, 1, 1);
+//         T.P1_calc(d_y1, CAS.CI->as_aldet(), d_y_AV, d_y_CA, d_y_CV, 1, 1, 1);
 //         fprintf(out_stream,"\n");
 //         fprintf(out_stream,"d_z(1)\n");
-//         T.P1_calc(d_z1, CAS.CI, d_z_AV, d_z_CA, d_z_CV, 1, 1, 1);
+//         T.P1_calc(d_z1, CAS.CI->as_aldet(), d_z_AV, d_z_CA, d_z_CV, 1, 1, 1);
 //         
 //         symmetrization_with_scaling(d_x1,n_s,2.0);
 //         symmetrization_with_scaling(d_y1,n_s,2.0);

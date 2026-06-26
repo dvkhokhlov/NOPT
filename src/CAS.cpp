@@ -9,6 +9,7 @@
 # include "libint_link.h"
 # include "converger_2_1.h"
 # include "CAS.h"
+# include "aldet_casci_wrap.h"
 # include "defaults.h"
 # include "RI.h"
 # include "inp_out.h"
@@ -147,13 +148,16 @@ int CAS_engine::init(cas_par * cas, molecule * ext_M){
     
     
     n_CI=M->n_CI;
-    CI=M->CI+0;
-    
-    /*if(n_CI==1)*/ //if not previous CI data - alloc and set zero
-    if(CI[0].coef[0]==NULL)CI[0].init_zero_vec(n_s,0);
-    for(int i=0;i<n_CI;i++){
-        CI[i].act_rep_num = rep_num+n_core;
+    if(n_CI!=1){
+        fprintf(out_stream,"ERROR: n_CI=%d is not supported by the casci_solver\n",n_CI);
+        exit(0);
     }
+    CI_owner = std::make_unique<aldet_casci_wrap>(M->CI+0, &dav, n_s);
+    CI = CI_owner.get();
+
+    /*if(n_CI==1)*/ //if not previous CI data - alloc and set zero
+    if(!CI->has_coef(0))CI->init_state_storage(n_s,0);
+    CI->set_act_rep_num(rep_num+n_core);
     
     dav = cas->dav;
     
@@ -178,7 +182,11 @@ int CAS_engine::init(cas_par * cas, molecule * ext_M){
         track=1;
         fprintf(out_stream,"\nWARNING: states are selected by Lambda, tracking is disabled\n\n");
     }
-    
+    if(track && !CI->supports_civec_rotation()){
+        fprintf(out_stream,"ERROR: state tracking requested but the CI backend does not support it\n");
+        exit(0);
+    }
+
     i_s_opt.resize(0);
     for(int i=0;i<wstate.size();i++)
         if(wstate[i]>1e-10)i_s_opt.push_back(i);
@@ -246,7 +254,7 @@ int CAS_engine::init(cas_par * cas, molecule * ext_M){
 int CAS_engine::SCF_alloc(){
     
     //allocate memory
-    int n_s=CI[0].n_states[0];
+    int n_s=CI->n_states();
     aaag_ints = new double[n_act*n_act*n_act*n_ao];
     F_tot     = new double[n_ao*n_ao*n_s_opt];
     G_ga      = new double[n_act*n_ao*n_s_opt];
@@ -285,8 +293,7 @@ int CAS_engine::tensors_recalc(int n){
     
     if(LINEAR){
         transform_from_col_MO(Lambda_act, M->Lambda_AO, n_ao, ACT_CVEC, n_act, ACT_CVEC, n_act);
-        CI[n].Lambda_act=Lambda_act;
-        CI[n].Lambda_core=E_1el_calc(M->Lambda_AO, DM_C, n_ao, n_ao);
+        CI->import_lambda(Lambda_act, E_1el_calc(M->Lambda_AO, DM_C, n_ao, n_ao));
         
     }
     
@@ -295,7 +302,7 @@ int CAS_engine::tensors_recalc(int n){
              -E_1el_calc(    K   , DM_C, n_ao, n_ao)  
              +M->V_nuc ;
              
-    CI[n].simple_import_data(aaaa_ints, aaaa_ints, F_act, E_core);
+    CI->import_integrals(aaaa_ints, F_act, E_core);
    
     return 0;
 }
@@ -303,31 +310,13 @@ int CAS_engine::tensors_recalc(int n){
 int CAS_engine::CI_calc(int primary, int create_track_data,int read){
     
     int n;
-    davidson_solver DAV;
-    if(n_CI==1){
-        tensors_recalc(0);
-        if(create_track_data==0)CI[0].copy_coef(1,CI,n_s,0,0);
-    
-        DAV.set_par(CI,dav);
-        DAV.V.H_diag_calc();
-    
-        n = DAV.run(primary,read);
-    }
-    else{
-        DAV.set_par_m(CI,dav,n_CI);
-//         DAV.V.H_diag_calc();
-    
-        n = DAV.run_m(primary,read);
-        
-        exit(0);
-    }
+    tensors_recalc(0);
+    n = CI->solve(primary, read, create_track_data==0);
     if(primary==-1){
         return n;
     }
-    if(n_CI!=1) return 0;
-    
-    if(primary==0)if(create_track_data==0)if(track){
-        CI[0].calc_S(S_track,0,1);
+    if(primary==0)if(create_track_data==0)if(track){   // track implies supports_civec_rotation() (checked in init)
+        CI->calc_S(S_track,0,1);
         
 //         fprintf(out_stream,"tracking\n");
 //         PrintMatr(S_track, n_s,n_s,0);
@@ -367,11 +356,11 @@ int CAS_engine::CI_calc(int primary, int create_track_data,int read){
 //             printf("l[i] = %d\n",Lambda[i_l]);
             int j=0;
             for(int i=0;i<n_s;i++){
-                double dE = CI[0].E_states[0][i] - CI[0].E_states[0][0];
-                if(fabs(CI[0].S2[0][i]-S_rep[i_l]*(S_rep[i_l]+1))<1e-1)
-                if(fabs(CI[0].L2[0][i]-Lambda_rep[i_l]*Lambda_rep[i_l])<1e-1){
+                double dE = CI->E_state(i) - CI->E_state(0);
+                if(fabs(CI->S2_state(i)-S_rep[i_l]*(S_rep[i_l]+1))<1e-1)
+                if(fabs(CI->L2_state(i)-Lambda_rep[i_l]*Lambda_rep[i_l])<1e-1){
                     if(Lambda_rep[i_l]==0){
-                        if(fabs(CI[0].P[0][i]-P_rep[i_l])<1e-1){
+                        if(fabs(CI->P_state(i)-P_rep[i_l])<1e-1){
                             wstate_actual[i]=wstate_rep[i_l][j];
 //                          wstate_actual[i]=4.0/(exp(dE)+exp(-dE))/(exp(dE)+exp(-dE)); // dyn weight
                             j++;
@@ -460,7 +449,7 @@ int CAS_engine::AO_to_MO(double *M_out, double *M_in){
 int CAS_engine::calc_gamma(){
     
     set_zero_matr(gamma,n_act*n_act*n_s);
-    CI[0].calc_DM_diag(gamma,0);
+    CI->calc_DM_diag(gamma,0);
     
     return 0;
 }
@@ -630,6 +619,10 @@ double CAS_engine::av_DM_and_F_calc(int perform_diag){
         M->diag_X_MO_block(F_tot, 0           , n_core, nullptr);
         M->diag_X_MO_block(F_tot, n_core      , n_act , U);
         M->diag_X_MO_block(F_tot, n_core+n_act, n_vac , nullptr);
+        if(!CI->supports_civec_rotation()){
+            fprintf(out_stream,"ERROR: orbital canonicalization needs CI-vector rotation, unsupported by the CI backend\n");
+            exit(0);
+        }
         CI->malmqvist(0, U);
     }
     
@@ -639,7 +632,7 @@ double CAS_engine::av_DM_and_F_calc(int perform_diag){
 
 double CAS_engine::SA_grad_hess_calc(int no_rot_v){
     
-    int n_s=CI[0].n_states[0];
+    int n_s=CI->n_states();
     
 
     if(no_rot_v==0)if(rotate_orbs==1)av_DM_and_F_calc(1);
@@ -655,7 +648,7 @@ double CAS_engine::SA_grad_hess_calc(int no_rot_v){
     }
     
     //calc 2DM
-    CI[0].G_calc(GAMMA);
+    CI->G_calc(GAMMA);
     average_DM(GAMMA,wstate_actual,n_act*n_act*n_act*n_act,n_s);
     
     
@@ -673,7 +666,7 @@ double CAS_engine::SA_grad_hess_calc(int no_rot_v){
 
 double CAS_engine::SM_grad_hess_calc(int no_rot_v){
     
-    int n_s=CI[0].n_states[0];
+    int n_s=CI->n_states();
     
     double ** gamma_state = new double*[n_s_opt];
     double ** GAMMA_state = new double*[n_s_opt];
@@ -715,7 +708,7 @@ double CAS_engine::SM_grad_hess_calc(int no_rot_v){
     }
     
     //calc 2DM
-    CI[0].G_calc(GAMMA);
+    CI->G_calc(GAMMA);
     for(int i=0;i<n_s_opt;i++)calc_G(G_ga_state[i], gamma_state[i], GAMMA_state[i]);
     
     
@@ -800,8 +793,8 @@ int CAS_engine::Prop_calc_with_num(int n_calc_prop){
         transform_from_col_MO(Prop_Act+i*n_act*n_act, Prop_AO[i], n_ao, ACT_CVEC, n_act, ACT_CVEC, n_act);
     
     set_zero_matr(gamma,n_act*n_act*n_s*n_s);
-    CI[0].calc_DMA(gamma,0,0);
-    CI[0].calc_DMB(gamma,0,0);
+    CI->calc_DMA(gamma,0,0);
+    CI->calc_DMB(gamma,0,0);
     for(int i=0; i<n_calc_prop; i++)
     for(int j=0; j<n_s   ; j++){
         Prop_value[i*n_s*n_s+j*(n_s+1)]=Prop_Core[i]+Prop_nuc[i];
@@ -818,8 +811,8 @@ int CAS_engine::TrDM(int a, int b){
     
     double * gamma_ab = new double [n_act*n_act];
     set_zero_matr(gamma,n_act*n_act*n_s*n_s);
-    CI[0].calc_DMA(gamma,0,0);
-    CI[0].calc_DMB(gamma,0,0);
+    CI->calc_DMA(gamma,0,0);
+    CI->calc_DMB(gamma,0,0);
     
     for(int j=0;j<n_act*n_act;j++){
         gamma_ab[j]=gamma[(a*n_s+b)*n_act*n_act+j];
@@ -922,11 +915,11 @@ int CAS_engine::rotate(){
 
     for(int i=0;i<wstate_actual.size();i++){
        
-        if(CI->L2[0][i]<1e-3)
+        if(CI->L2_state(i)<1e-3)
             if (counter_first_sigma==-1) 
                 counter_first_sigma=i;
         
-        if((fabs(CI->L2[0][i]-1))<1e-3){
+        if((fabs(CI->L2_state(i)-1))<1e-3){
             ind_pi_states[counter_for_number_of_Pi_states]=i;
             counter_for_number_of_Pi_states++;
             //// get number of pi pairs and their indices
@@ -943,7 +936,11 @@ int CAS_engine::rotate(){
         cos_phi_rot_Pi = dipole_second_in_pi_pair_x/(sqrt(dipole_first_in_pi_pair_x*dipole_first_in_pi_pair_x+dipole_second_in_pi_pair_x*dipole_second_in_pi_pair_x));
            //// x component comes first
 
-        ci_rotate_Pi_pair(CI, 0, sin_phi_rot_Pi, cos_phi_rot_Pi, new_iterator, ind_pi_states); //// see end of aldet.cpp
+        if(!CI->supports_civec_rotation()){
+            fprintf(out_stream,"ERROR: Pi-pair rotation needs CI-vector rotation, unsupported by the CI backend\n");
+            exit(0);
+        }
+        CI->rotate_pi_pair(0, sin_phi_rot_Pi, cos_phi_rot_Pi, new_iterator, ind_pi_states); //// see end of aldet.cpp
     }
     
     return 0;
@@ -982,12 +979,12 @@ int CAS_engine::print_av_table_with_prop(const char* type_of_calc, int num_prop,
     for(int i=0; i<num_prop;i++)fprintf(out_stream,"_______________|");
     fprintf(out_stream,"\n");
     for(int i=0;i<wstate_actual.size();i++)/*if(fabs(wstate_actual[i])>1e-10)*/{
-        fprintf(out_stream,"  %3d |% 18.10f | %.2f |",i,CI[0].E_states[0][i],CI[0].S2[0][i]);
+        fprintf(out_stream,"  %3d |% 18.10f | %.2f |",i,CI->E_state(i),CI->S2_state(i));
         if(LINEAR){
-            fprintf(out_stream," %.2f",CI[0].L2[0][i]);
-            if(CI[0].L2[0][i]<1e-3){
-                if     (fabs(CI[0].P[0][i]-1.0)<1e-8)printf(" (+)");
-                else if(fabs(CI[0].P[0][i]+1.0)<1e-8)printf(" (-)");
+            fprintf(out_stream," %.2f",CI->L2_state(i));
+            if(CI->L2_state(i)<1e-3){
+                if     (fabs(CI->P_state(i)-1.0)<1e-8)printf(" (+)");
+                else if(fabs(CI->P_state(i)+1.0)<1e-8)printf(" (-)");
                 else                               printf(" (?)");
             }
             else
@@ -1171,8 +1168,8 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
     printf_timer("Preparation of canonical orbitals");
     
     fprintf(out_stream,"CAS_SCF WaveFunctions:\n\n");
-    CAS.CI[0].gen_ext_ind();
-    CAS.CI[0].print_states(0,CAS.n_s,1);
+    CAS.CI->gen_ext_ind();
+    CAS.CI->print_states(0,CAS.n_s,1);
     
     CAS.print_av_table("CAS_SCF density averaging:");
     
@@ -1180,7 +1177,7 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
         
     
     fprintf(out_stream,"\n\nCAS_SCF Energy summary:\n");
-    PrintEnergy(CAS.CI[0].E_states[0],CAS.n_s, 1);
+    PrintEnergy(CAS.CI->E_states_ptr(),CAS.n_s, 1);
     
     CAS.print_properties("CAS_SCF");
 
@@ -1208,7 +1205,7 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
     if(write_ci){
         fprintf(out_stream,"Writing CAS_SCF WaveFunctions:\n");
         sprintf(name,"%s_CAS.ci\0",job_name);
-        CAS.CI[0].write_civec(0, name);
+        CAS.CI->write_civec(0, name);
         fprintf(out_stream,"data file         : %s\n",name);
     }
     
