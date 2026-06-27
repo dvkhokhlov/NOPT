@@ -1,5 +1,6 @@
 #include <cstring>
 #include <cstdio>
+#include <cctype>
 #include <vector>
 #include <stdlib.h>
 #include "common_vars.h"
@@ -782,17 +783,32 @@ int valid_pointer(char * a, char *b){
     return is_splitter(a[-1]);
 }
 
+// case-insensitive strstr - avoids keyword duplication and related errors
+char* ci_strstr(char* h, const char* n){
+    for(;*h;h++){
+        char *a=h; const char *b=n;
+        while(*b&&tolower((unsigned char)*a)==tolower((unsigned char)*b)){a++;b++;}
+        if(*b==0) return h;
+    }
+    return nullptr;
+}
+
 char *key_word_find(char * str, vector<const char *> keywords){
-    
-    char *f;
+
     std::vector<char *> vf;
     vf.resize(0);
-    
+
     for(const auto&k:keywords){
-        f=strstr(str,k);
-        if(valid_pointer(f,str)){
-            if(vf.size()==0) vf.push_back(f);
-            else if(f!=vf[0])vf.push_back(f);
+        // Accept k only as a whole token: bounded by a splitter (or string
+        // start) on the LEFT and by a splitter or end-of-string on the RIGHT.
+        size_t kl = strlen(k);
+        for(char *f=ci_strstr(str,k); f!=nullptr; f=ci_strstr(f+1,k)){
+            char r = f[kl];
+            if(valid_pointer(f,str)&&(r=='\0'||is_splitter(r))){
+                if(vf.size()==0) vf.push_back(f);
+                else if(f!=vf[0]) vf.push_back(f);
+                break;
+            }
         }
     }
     // fprintf(out_stream,"%d\n",vf.size());
@@ -834,7 +850,7 @@ int key_word_eq(char * str, vector<const char *> keywords){
     char *f;
     
     for(const auto&k:keywords){
-        f=strstr(str,k);
+        f=ci_strstr(str,k);
         if(f==str) return 1;
     }
     return 0;
