@@ -7,213 +7,133 @@
 
 using namespace std;
 
-vector<const char *>rhf_kw{{"rhf"},
-                                 {"RHF"}};
+vector<const char *>rhf_kw{{"rhf"}};
 
-vector<const char *>rhf_group_start{{"$rhf"},
-                                    {"$RHF"}};
+vector<const char *>rhf_group_start{{"$rhf"}};
 
 vector<const char *>rhf_group_end{{"$rhfend"},
-                                  {"$RHFEND"},
-                                  {"$end"},
-                                  {"$END"}};
+                                  {"$end"}};
 
-vector<const char *>rhf_huckel{{"huckel"},
-                               {"Huckel"},
-                               {"HUCKEL"}};
+vector<const char *>rhf_huckel{{"huckel"}};
                          
-vector<const char *>rhf_h_core{{"h_core"},
-                               {"H_CORE"}};
+vector<const char *>rhf_h_core{{"h_core"}};
                   
 vector<const char *>rhf_read{{"read"},
-                             {"READ"},
                              {"moread"},
-                             {"MOREAD"},
                              {"readmo"},
-                             {"READMO"},
                              {"read_orb"},
-                             {"READ_ORB"},
-                             {"read_orbs"},
-                             {"READ_ORBS"}};                         
+                             {"read_orbs"}};
                          
 vector<const char *>max_it_kw{{"maxit"},
-                              {"MAXIT"},
                               {"max_iter"},
-                              {"MAX_ITER"},
-                              {"max_iters"},
-                              {"MAX_ITERS"}};
+                              {"max_iters"}};
 
-vector<const char *>e_conv_kw{{"dE"},
-                              {"DE"},
-                              {"deltaE"},
-                              {"DELTAE"},
-                              {"delta_E"},
-                              {"DELTA_E"}};
+vector<const char *>e_conv_kw{{"de"},
+                              {"deltae"},
+                              {"delta_e"}};
                         
 vector<const char *>g_conv_kw{{"grad"},
-                              {"GRAD"},
-                              {"orb_grad"},
-                              {"ORB_GRAD"}};                        
+                              {"orb_grad"}};
                               
-vector<const char *>s_conv_kw{{"step"},
-                              {"STEP"}};                        
+vector<const char *>s_conv_kw{{"step"}};
                               
-vector<const char *>x_max_kw{{"x_max"},
-                             {"X_MAX"}};                        
+vector<const char *>x_max_kw{{"x_max"}};
 
                               
-vector<const char *>r_conv_kw{{"dR"},
-                              {"DR"},
-                              {"deltaR"},
-                              {"DELTAR"},
-                              {"delta_R"},
-                              {"DELTA_R"}};
+vector<const char *>r_conv_kw{{"dr"},
+                              {"deltar"},
+                              {"delta_r"}};
                         
 vector<const char *>cas_kw{{"cas"},
-                           {"CAS"},
-                           {"casscf"},
-                           {"CASSCF"}};
+                           {"casscf"}};
 
-vector<const char *>cas_SA_kw{{"SA"},
-                              {"averaged"},
-                              {"AVERAGED"}};
+vector<const char *>cas_SA_kw{{"sa"},
+                              {"averaged"}};
                            
-vector<const char *>cas_DA_kw{{"DA"},
-                              {"density_averaged"},
-                              {"DENSITY_AVERAGED"}};
+vector<const char *>cas_DA_kw{{"da"},
+                              {"density_averaged"}};
                            
-vector<const char *>cas_SM_kw{{"SM"},
+vector<const char *>cas_SM_kw{{"sm"},
                               {"separete"},
-                              {"SEPARATE"}};
+                              {"separate"}};
                            
                            
 vector<const char *>cas_group_start{{"$cas"},
-                                    {"$CAS"},
-                                    {"$casscf"},
-                                    {"$CASSCF"}};                        
+                                    {"$casscf"}};
 
 vector<const char *>cas_group_end{{"cas_end"},
-                                  {"CAS_END"},
                                   {"casend"},
-                                  {"CASEND"},
                                   {"casscf_end"},
-                                  {"CASSCF_END"},
                                   {"casscfend"},
-                                  {"CASSCFEND"},
-                                  {"$end"},
-                                  {"$END"}};
+                                  {"$end"}};
                         
 vector<const char *>num_state_kw{{"n_s"},
-                                 {"N_S"},
                                  {"numstate"},
-                                 {"NUMSTATE"},
-                                 {"num_state"},
-                                 {"NUM_STATE"}};
+                                 {"num_state"}};
 
 vector<const char *>num_frozen_orb_kw{{"n_f"},
-                                      {"N_F"},
                                       {"num_frozen_orb"},
-                                      {"NUM_FROZEN_ORB"},
-                                      {"num_frozen_orbitals"},
-                                      {"NUM_FROZEN_ORBITALS"}};
+                                      {"num_frozen_orbitals"}};
 
-vector<const char *>method_kw{{"method"},
-                              {"METHOD"},
-                              {"Method"}};
+vector<const char *>method_kw{{"method"}};
 
 vector<const char *>nat_orb_kw{{"no"},
-			       {"NO"},
 			       {"nat_orb"},
-                               {"NAT_ORB"},
-                               {"natural_orbitals"},
-                               {"NATURAL_ORBITALS"}};
+                               {"natural_orbitals"}};
 
-vector<const char *>cis_kw{{"cis"},
-                           {"CIS"}};
+vector<const char *>cis_kw{{"cis"}};
 
-vector<const char *>cis_group_start{{"$cis"},
-                                    {"$CIS"}};
+vector<const char *>cis_group_start{{"$cis"}};
 
 vector<const char *>cis_group_end{{"cis_end"},
-                                  {"CIS_END"},
                                   {"cisend"},
-                                  {"CISEND"},
-                                  {"$end"},
-                                  {"$END"}};
+                                  {"$end"}};
                            
 vector<const char *>w_state_kw{{"wstate"},
-                               {"WSTATE"},
-                               {"w_state"},
-                               {"W_STATE"}};
+                               {"w_state"}};
                                
 vector<const char *>w_state_eq_kw{{"all_1"},
-                                  {"ALL_1"},
                                   {"eq"},
-                                  {"EQ"},
-                                  {"equal"},
-                                  {"EQUAL"}};
+                                  {"equal"}};
                                   
 vector<const char *>w_state_irrep_kw{{"rep"},
-                                     {"REP"},
                                      {"ir.rep"},
-                                     {"IR.REP"},
-                                     {"irrep"},
-                                     {"IRREP"}};
+                                     {"irrep"}};
                                   
 vector<const char *>cas_track_kw{{"track"},
-                                 {"TRACK"},
-                                 {"tracking"},
-                                 {"TRACKING"}};
+                                 {"tracking"}};
 
-vector<const char *>cas_rotate_orbs_kw{{"rotate"},
-                                       {"ROTATE"}};
+vector<const char *>cas_rotate_orbs_kw{{"rotate"}};
 
 vector<const char *>w_state_group_start{{"$state"},
-                                        {"$WSTATE"},
-                                        {"$w_state"},
-                                        {"$W_STATE"}};
+                                        {"$wstate"},
+                                        {"$w_state"}};
 
 vector<const char *>w_state_group_end{{"$stateend"},
-                                      {"$WSTATEEND"},
+                                      {"$wstateend"},
                                       {"$w_state_end"},
-                                      {"$W_STATE_END"},
-                                      {"$end"},
-                                      {"$END"}};
+                                      {"$end"}};
 
-vector<const char *>w_linear_L_kw{{"lambda"},
-                                  {"Lambda"},
-                                  {"LAMBDA"}};
+vector<const char *>w_linear_L_kw{{"lambda"}};
 
-vector<const char *>w_linear_sign_kw{{"sign"},
-                                     {"Sign"},
-                                     {"SIGN"}};
+vector<const char *>w_linear_sign_kw{{"sign"}};
 
                                  
-vector<const char *>mult_kw{{"mult"},
-                            {"MULT"}};
+vector<const char *>mult_kw{{"mult"}};
 
 vector<const char *>print_number_kw{{"p_n"},
-                                    {"P_N"},
                                     {"p_num"},
-                                    {"P_NUM"},
-                                    {"print_number"},
-                                    {"PRINT_NUMBER"}};
+                                    {"print_number"}};
 
 vector<const char *>reorder_kw{{"reorder"},
-                               {"REORDER"},
-                               {"norder"},
-                               {"NORDER"}};
+                               {"norder"}};
                          
 vector<const char *>orbitals_kw{{"orbitals"},
-                                {"ORBITALS"},
                                 {"act_orb"},
-                                {"ACT_ORB"},
-                                {"active"},
-                                {"ACTIVE"}};
+                                {"active"}};
                          
                               
-vector<const char *>dav_group_start{{"$dav"},
-                                    {"$DAV"}};
+vector<const char *>dav_group_start{{"$dav"}};
 
                               
 // vector<const char *>max_dav_it_kw{{"dav_it"},
@@ -222,525 +142,321 @@ vector<const char *>dav_group_start{{"$dav"},
 //                                   {"DAVIT"}};
 
 vector<const char *>dav_se_kw{{"s_ev"},
-                              {"s_eval"},
-                              {"S_EV"},
-                              {"S_EVAL"}};
+                              {"s_eval"}};
 
-vector<const char *>dav_n_bf_kw{{"n_bf"},
-                                {"N_BF"}};
+vector<const char *>dav_n_bf_kw{{"n_bf"}};
 
-vector<const char *>dav_sparsed_HC_kw{{"sparsed_Hc"}};
+vector<const char *>dav_sparsed_HC_kw{{"sparsed_hc"}};
                           
 vector<const char *>dav_group_end{{"dav_end"},
-                                  {"DAV_END"},
                                   {"davend"},
-                                  {"DAVEND"},
-                                  {"$end"},
-                                  {"$END"}};
+                                  {"$end"}};
                                   
-vector<const char *>MO_group_start{{"$VEC1"},
-                                   {"$vec1"},
-                                   {"$VEC"},
+vector<const char *>MO_group_start{{"$vec1"},
                                    {"$vec"},
-                                   {"$VEC_A_1"},
                                    {"$vec_a_1"},
-                                   {"$VEC_A"},
                                    {"$vec_a"},
-                                   {"_MO"},
                                    {"_mo"},
-                                   {"[MO]"}};
+                                   {"[mo]"}};
                                    
-vector<const char *>MO_text_group_start{{"$VEC1"},
-                                        {"$vec1"},
-                                        {"$VEC"},
+vector<const char *>MO_text_group_start{{"$vec1"},
                                         {"$vec"},
-                                        {"$VEC_A_1"},
                                         {"$vec_a_1"},
-                                        {"$VEC_A"},
                                         {"$vec_a"},
-                                        {"[MO]"},};
+                                        {"[mo]"}};
 
 
-vector<const char *>MO_group_b_start{{"$VEC_B_1"},
-                                     {"$vec_b_1"},
-                                     {"$MO_B"},
+vector<const char *>MO_group_b_start{{"$vec_b_1"},
                                      {"$mo_b"},
-                                     {"$VEC_B"},
                                      {"$vec_b"}};
 
 vector<const char *>MO_group_end{{"$vecend1"},
-                                 {"$VECEND1"},
                                  {"$vecend"},
-                                 {"$VECEND"},
-                                 {"$END"},
                                  {"$end"}};
 
-vector<const char *>basis_kw{{"_basis"},
-                             {"_BASIS"}};
+vector<const char *>basis_kw{{"_basis"}};
                        
 vector<const char *>basis_end_kw{{"basisend"},
-                                 {"BASISEND"},
-                                 {"basis_end"},
-                                 {"BASIS_END"}};
+                                 {"basis_end"}};
 
 vector<const char *>ri_basis_kw{{"_ribasis"},
-                                {"_RIBASIS"},
                                 {"_ri_basis"},
-                                {"_RI_BASIS"},
                                 {"_auxbasis"},
-                                {"_AUXBASIS"},
-                                {"_aux_basis"},
-                                {"_AUX_BASIS"}};
+                                {"_aux_basis"}};
                                 
 vector<const char *>auto_aux_kw{{"auto_aux"},
-                                {"AUTO_AUX"},
                                 {"auto"},
-                                {"AUTO"},
-                                {"ri_auto"},
-                                {"RI_AUTO"}};
+                                {"ri_auto"}};
 
-vector<const char *>ecp_kw{{"_ecp"},
-                           {"_ECP"}};
+vector<const char *>ecp_kw{{"_ecp"}};
                                 
-vector<const char *>so_kw{{"SO"},
-                          {"so"},
-                          {"spin_orbit"},
-                          {"SPIN_ORBIT"}};
+vector<const char *>so_kw{{"so"},
+                          {"spin_orbit"}};
 
-vector<const char *>so_lib_kw{{"_SO"},
-                              {"_so"},
-                              {"_spin_orbit"},
-                              {"_SPIN_ORBIT"}};
+vector<const char *>so_lib_kw{{"_so"},
+                              {"_spin_orbit"}};
 
                           
 vector<const char *>ecp_so_end_kw{{"ecp_end"},
-                                  {"ECP_END"},
                                   {"so_end"},
-                                  {"SO_END"},
                                   {"ecpend"},
-                                  {"ECPEND"},
-                                  {"soend"},
-                                  {"SOEND"}};
+                                  {"soend"}};
 
 vector<const char *>read_basis_kw{{"_fbasis"},
-                                  {"_FBASIS"},
-                                  {"_f_basis"},
-                                  {"_F_BASIS"}};
+                                  {"_f_basis"}};
 
                           
                           
 vector<const char *>geom_group_start{{"$geom1"},
-                                     {"$GEOM1"},
                                      {"$geom"},
-                                     {"$GEOM"},
                                      {"$geometry"},
-                                     {"$GEOMETRY"},
                                      {"_geom1"},
-                                     {"_GEOM1"},
                                      {"_geom"},
-                                     {"_GEOM"},
                                      {"_geometry"},
-                                     {"_GEOMETRY"},
                                      {"_xyz"},
-                                     {"_XYZ"},
                                      {"_zmat"},
                                      {"_z-mat"},
-                                     {"_Zmat"},
-                                     {"_Z-mat"},
-                                     {"_ZMAT"},
-                                     {"_Z-MAT"},
-                                     {"[Atoms]"}};    
+                                     {"[atoms]"}};
                                
 vector<const char *>z_mat_kw{{"zmat"},
-                             {"z-mat"},
-                             {"Zmat"},
-                             {"Z-mat"},
-                             {"ZMAT"},
-                             {"Z-MAT"}};    
+                             {"z-mat"}};
                              
 vector<const char *>act_space_group_start{{"$act_space"},
-                                          {"$ACT_SPACE"},
                                           {"$active_space"},
-                                          {"$ACTIVE_SPACE"},
                                           {"$states1"},
-                                          {"$STATES1"},
-                                          {"$states"},
-                                          {"$STATES"}};    
+                                          {"$states"}};
                              
 vector<const char *>act_space_group_end{{"$act_space_end"},
-                                        {"$ACT_SPACE_END"},
                                         {"$active_space_end"},
-                                        {"$ACTIVE_SPACE_END"},
                                         {"$statesend1"},
-                                        {"$STATESEND1"},
                                         {"$statesend"},
-                                        {"$STATESEND"},
-                                        {"$END"},
                                         {"$end"}};
 
-vector<const char *>geom_dim_unit{{"_unit"}, 
-                                  {"_units"}, 
-                                  {"_UNIT"},
-                                  {"_UNITS"}};
+vector<const char *>geom_dim_unit{{"_unit"},
+                                  {"_units"}};
 
                                
-vector<const char *>geom_dim_au{{"au"}, 
-                                {"AU"}, 
-                                {"bohr"},
-                                {"BOHR"}};
+vector<const char *>geom_dim_au{{"au"},
+                                {"bohr"}};
 
 
-vector<const char *>geom_dim_nm{{"nm"}, 
-                                {"NM"}, 
-                                {"nanometer"},
-                                {"NANOMETER"}};
+vector<const char *>geom_dim_nm{{"nm"},
+                                {"nanometer"}};
 
-vector<const char *>geom_dim_ang{{"ang"}, 
-                                 {"ANG"}, 
-                                 {"angstrom"},
-                                 {"ANGSTROM"}};
+vector<const char *>geom_dim_ang{{"ang"},
+                                 {"angstrom"}};
                            
-vector<const char *>wf_type{{"$wf_type"}, 
-                            {"$WF_TYPE"}};
+vector<const char *>wf_type{{"$wf_type"}};
 
-vector<const char *>wf_type_end{{"$wf_type_end"}, 
-                                {"$WF_TYPE_END"}};
+vector<const char *>wf_type_end{{"$wf_type_end"}};
 
-vector<const char *>uhf{{"uhf"}, 
-                        {"UHF"}};
+vector<const char *>uhf{{"uhf"}};
 
-vector<const char *>wide{{"wide"}, 
-                         {"WIDE"}};
+vector<const char *>wide{{"wide"}};
 
-vector<const char *>energy_group_start{{"$ENERGY1"},
-                                       {"$energy1"},
-                                       {"$ENERGY"},
+vector<const char *>energy_group_start{{"$energy1"},
                                        {"$energy"},
-                                       {"$ENERGY_A_1"},
                                        {"$energy_a_1"},
-                                       {"$ENERGY_A"},
                                        {"$energy_a"}};
 
-vector<const char *>energy_group_b_start{{"$ENERGY_B_1"},
-                                         {"$energy_b_1"},
-                                         {"$ENERGY_B"},
+vector<const char *>energy_group_b_start{{"$energy_b_1"},
                                          {"$energy_b"}};
 
 vector<const char *>energy_group_end{{"$energy_end"},
-                                     {"$ENERGY_END"},
                                      {"$energyend"},
-                                     {"$ENERGYEND"},
-                                     {"$END"},
                                      {"$end"}};
                                
                                
-vector<const char *>par_group{{"$par"},
-                              {"$PAR"}};
+vector<const char *>par_group{{"$par"}};
                     
-vector<const char *>mol_group{{"$mol"},
-                              {"$MOL"}};
+vector<const char *>mol_group{{"$mol"}};
                         
 vector<const char *>par_group_end{{"$par_end"},
-                                  {"$PAR_END"},
                                   {"$parend"},
-                                  {"$PAREND"},
-                                  {"$end"},
-                                  {"$END"}};
+                                  {"$end"}};
                             
 vector<const char *>mol_group_end{{"$molend"},
                                   {"$molend1"},
-                                  {"$MOLEND"},
-                                  {"$MOLEND1"},
                                   {"$end"},
-                                  {"$end1"},
-                                  {"$END"},
-                                  {"$END1"}};
+                                  {"$end1"}};
 
 vector<const char *>num_threads_kw{{"num_threads"},
-                                   {"NUM_THREAD"},
+                                   {"num_thread"},
                                    {"numthreads"},
-                                   {"NUMTHREAD"},
+                                   {"numthread"},
                                    {"n_threads"},
-                                   {"N_THREAD"},
+                                   {"n_thread"},
                                    {"nthreads"},
-                                   {"NTHREAD"}};
+                                   {"nthread"}};
                        
 vector<const char *>n_mol_kw{{"n_mol"},
-                             {"N_MOL"},
                              {"num_mol"},
-                             {"NUM_MOL"},
                              {"nmol"},
-                             {"NMOL"},
                              {"nummol"},
-                             {"NUMMOL"},
                              {"n_mols"},
-                             {"N_MOLS"},
                              {"num_mols"},
-                             {"NUM_MOLS"},
                              {"nmols"},
-                             {"NMOLS"},
-                             {"nummols"},
-                             {"NUMMOLS"}};
+                             {"nummols"}};
                        
-vector<const char *>doci_dec_kw{{"dec"},
-                                {"DEC"}};
+vector<const char *>doci_dec_kw{{"dec"}};
                        
 vector<const char *>out_folder_kw{{"outfolder"},
-                                  {"OUTFOLDER"},
-                                  {"out_folder"},
-                                  {"OUT_FOLDER"}};
+                                  {"out_folder"}};
                             
 vector<const char *>n_frags_kw{{"n_frag"},
-                               {"N_FRAG"},
                                {"num_frag"},
-                               {"NUM_FRAG"},
                                {"nfrag"},
-                               {"NFRAG"},
                                {"numfrag"},
-                               {"NUMFRAG"},
                                {"n_frags"},
-                               {"N_FRAGS"},
                                {"num_frags"},
-                               {"NUM_FRAGS"},
                                {"nfrags"},
-                               {"NFRAGS"},
-                               {"numfrags"},
-                               {"NUMFRAGS"}};
+                               {"numfrags"}};
                          
-vector<const char *>inp_kw{{"INPS"},
-                           {"inps"},
-                           {"INP"}};
+vector<const char *>inp_kw{{"inps"},
+                           {"inp"}};
 
 vector<const char *>charge_kw{{"_charge"},
-                              {"_CHARGE"},
-                              {"_charges"},
-                              {"_CHARGES"}};
+                              {"_charges"}};
                         
-vector<const char *>name_kw{{"name"},
-                            {"NAME"}};
+vector<const char *>name_kw{{"name"}};
 
 vector<const char *>occ_group_start{{"$occ1"},
-                                    {"$OCC1"},
-                                    {"$occ"},
-                                    {"$OCC"}};
+                                    {"$occ"}};
                               
 vector<const char *>occ_group_end{{"$occend1"},
-                                  {"$OCCEND1"},
                                   {"$occend"},
-                                  {"$OCCEND"},
-                                  {"$END"},
                                   {"$end"}};
                       
 vector<const char *>xmc_kw{{"xmc"},
-                           {"XMC"},
-                           {"xmcqdpt"},
-                           {"XMCQDPT"}};
+                           {"xmcqdpt"}};
                      
 vector<const char *>xmc_group_start{{"$xmc"},
-                                    {"$XMC"},
-                                    {"$xmcqdpt"},
-                                    {"$XMCQDPT"}};
+                                    {"$xmcqdpt"}};
 
 vector<const char *>xmc_group_end{{"$xmcend"},
-                                  {"$XMCEND"},
                                   {"$xmcqdptend"},
-                                  {"$XMCQDPTEND"},
-                                  {"$END"},
                                   {"$end"}};
                             
-vector<const char *>edshift_kw{{"edshift"},
-                               {"EDSHIFT"}};
+vector<const char *>edshift_kw{{"edshift"}};
 
-vector<const char *>avecoe_kw{{"avecoe"},
-                              {"AVECOE"}};
+vector<const char *>avecoe_kw{{"avecoe"}};
 
-vector<const char *>ifitd_kw{{"ifitd"},
-                             {"IFITD"}};
+vector<const char *>ifitd_kw{{"ifitd"}};
 
-vector<const char *>xmc_d_only_kw{{"d_only"},
-                                  {"D_ONLY"}};
+vector<const char *>xmc_d_only_kw{{"d_only"}};
                             
-vector<const char *>xmc_n_fit_kw{{"n_fit"},
-                                 {"N_FIT"}};
+vector<const char *>xmc_n_fit_kw{{"n_fit"}};
                             
-vector<const char *>xmc_n_fit_pol_kw{{"n_fit_pol"},
-                                     {"N_FIT_POL"}};
+vector<const char *>xmc_n_fit_pol_kw{{"n_fit_pol"}};
                             
 vector<const char *>cdas_kw{{"cdas"},
-                            {"CDAS"},
                             {"cqd"},
-                            {"CQD"},
-                            {"cqdas"},
-                            {"CQDAS"}};
+                            {"cqdas"}};
                      
 vector<const char *>cdas_group_start{{"$cdas"},
-                                     {"$CDAS"},
                                      {"$cqd"},
-                                     {"$CQD"},
-                                     {"$cqdas"},
-                                     {"$CQDAS"}};
+                                     {"$cqdas"}};
 
 vector<const char *>cdas_group_end{{"$cdas_end"},
-                                   {"$CDAS_END"},
                                    {"$cqd_end"},
-                                   {"$CQD_END"},
                                    {"$cqdas_end"},
-                                   {"$CQDAS_END"},
-                                   {"$END"},
                                    {"$end"}};
                             
-vector<const char *>cdas_ipea_kw{{"IPEA"},
-                                 {"ipea"}};
+vector<const char *>cdas_ipea_kw{{"ipea"}};
                           
-vector<const char *>cdas_mppt_kw{{"MPPT"},
-                                 {"mppt"}};
+vector<const char *>cdas_mppt_kw{{"mppt"}};
                           
-vector<const char *>cdas_homo_kw{{"HOMO"},
-                                 {"homo"}};
+vector<const char *>cdas_homo_kw{{"homo"}};
                           
-vector<const char *>cdas_actual_kw{{"ACTUAL"},
-                                   {"actual"}};
+vector<const char *>cdas_actual_kw{{"actual"}};
                             
-vector<const char *>cdas_sing_en_kw{{"ENERGY"},
-                                    {"energy"}};
+vector<const char *>cdas_sing_en_kw{{"energy"}};
                             
-vector<const char *>cdas_mult_en_kw{{"ENERGIES"},                            
-                                    {"energies"}};
+vector<const char *>cdas_mult_en_kw{{"energies"}};
                              
-vector<const char *>cdas_orb_en_kw{{"USE_ORB_FOR_ENERGY"},
-                                   {"use_orb_for_energy"}};
+vector<const char *>cdas_orb_en_kw{{"use_orb_for_energy"}};
                             
-vector<const char *>cdas_fit_en_kw{{"USE_FIREFLY_FIT_ENERGY"},
-                                   {"use_firefly_fit_energy"}};
+vector<const char *>cdas_fit_en_kw{{"use_firefly_fit_energy"}};
                                    
-vector<const char *>cdas_rot_orbs{{"rotate"},
-                                  {"ROTATE"}};
+vector<const char *>cdas_rot_orbs{{"rotate"}};
                             
-vector<const char *>pt1_dipole_kw{{"pt1_dipole"},
-                                  {"PT1_dipole"},
-                                  {"PT1_DIPOLE"}};
+vector<const char *>pt1_dipole_kw{{"pt1_dipole"}};
 
-vector<const char *>d5_kw{{"d5"},
-                          {"D5"}};
+vector<const char *>d5_kw{{"d5"}};
                             
-vector<const char *>ri_kw{{"ri"},
-                          {"RI"}};
+vector<const char *>ri_kw{{"ri"}};
 
 vector<const char *>n_st_kw{{"n_st"},
-                            {"N_ST"},
                             {"num_st"},
-                            {"NUM_ST"},
                             {"nst"},
-                            {"NST"},
                             {"numst"},
-                            {"NUMST"},
                             {"n_sts"},
-                            {"N_STS"},
                             {"num_sts"},
-                            {"NUM_STS"},
                             {"nsts"},
-                            {"NSTS"},
-                            {"numsts"},
-                            {"NUMSTS"}};
+                            {"numsts"}};
                         
 vector<const char *>n_act_kw{{"n_act"},
-                             {"N_ACT"},
                              {"nact"},
-                             {"NACT"},
                              {"n_val"},
-                             {"N_VAL"},
-                             {"nval"},
-                             {"NVAL"}};
+                             {"nval"}};
                         
 vector<const char *>n_alp_kw{{"n_alp"},
-                             {"N_ALP"},
-                             {"nalp"},
-                             {"NALP"}};                        
+                             {"nalp"}};
 
 
 vector<const char *>n_bet_kw{{"n_bet"},
-                             {"N_BET"},
-                             {"nbet"},
-                             {"NBET"}};                        
+                             {"nbet"}};
 
-vector<const char *>backup_group_start{{"$backup"},
-                                       {"$BACKUP"}};
+vector<const char *>backup_group_start{{"$backup"}};
 
 vector<const char *>backup_group_end{{"$backupend"},
-                                     {"$BACKUPEND"},
-                                     {"$END"},
                                      {"$end"}};
 
-vector<const char *>h1_backup_kw{{"h1"},
-                                 {"H1"}};
+vector<const char *>h1_backup_kw{{"h1"}};
                        
-vector<const char *>h2_backup_kw{{"h2"},
-                                 {"H2"}};
+vector<const char *>h2_backup_kw{{"h2"}};
                         
-vector<const char *>ri_backup_kw{{"ri"},
-                                 {"RI"}};
+vector<const char *>ri_backup_kw{{"ri"}};
 
 
                         
-vector<const char *>prefix_backup_kw{{"prefix"},
-                                     {"PREFIX"}};
+vector<const char *>prefix_backup_kw{{"prefix"}};
 
 vector<const char *>n_bfgs_vec_kw{{"n_bfgs_vec"},
-                                  {"N_BFGS_VEC"},
                                   {"n_bfgs"},
-                                  {"N_BFGS"},
                                   {"num_bfgs_vec"},
-                                  {"NUM_BFGS_VEC"},
-                                  {"num_bfgs"},
-                                  {"NUM_BFGS"}};
+                                  {"num_bfgs"}};
 
-vector<const char *>prop_group{{"$prop"},
-                               {"$PROP"}};
+vector<const char *>prop_group{{"$prop"}};
                          
 vector<const char *>prop_group_end{{"$propend"},
-                                   {"$PROPEND"},
                                    {"$prop_end"},
-                                   {"$PROP_END"},
-                                   {"$end"},
-                                   {"$END"}};
+                                   {"$end"}};
                              
-vector<const char *>print_dipole_kw{{"dipole"},
-                                    {"DIPOLE"}};
+vector<const char *>print_dipole_kw{{"dipole"}};
                          
 // vector<const char *>first_order_property_kw{{"dipole1"},
 //                                             {"DIPOLE1"}};
 //                                             {"CDAS_FO"}};
 //                                             {"DIPOLE"}};
 
-vector<const char *>print_dispersion_kw{{"disp"},
-                                        {"DISP"}};
+vector<const char *>print_dispersion_kw{{"disp"}};
 
-vector<const char *>print_quadrupole_kw{{"quad"},
-                                        {"QUAD"}};
+vector<const char *>print_quadrupole_kw{{"quad"}};
 
-vector<const char *>print_mulliken_kw{{"mulliken"},
-                                      {"MULLIKEN"}};
+vector<const char *>print_mulliken_kw{{"mulliken"}};
                                 
 vector<const char *>symm_group_start{{"$symm"},
-                                     {"$SYMM"},
-                                     {"$sym"},
-                                     {"$SYM"}
-};
+                                     {"$sym"}};
                                 
 vector<const char *>symm_group_end{{"$symmend"},
-                                   {"$SYMMEND"},
                                    {"$symm_end"},
-                                   {"$SYMM_END"},
-                                   {"$end"},
-                                   {"$END"}};
+                                   {"$end"}};
                              
-vector<const char *>symm_point_group_kw{{"group"},
-                                        {"GROUP"}};
+vector<const char *>symm_point_group_kw{{"group"}};
 
 vector<const char *>linear_kw{{"lin"},
-                              {"LIN"},
-                              {"linear"},
-                              {"LINEAR"}};
+                              {"linear"}};
 
 
 vector<const char *>include_kw{{"#include"}};
@@ -748,9 +464,7 @@ vector<const char *>include_kw{{"#include"}};
 
 
 vector<const char *>lib_kw{{"lib"},
-                           {"LIB"},
-                           {"library"},
-                           {"LIBRARY"}};
+                           {"library"}};
                               
                             
 int failed_find_symbol(char * inp, vector<const char *> keywords, char s){
