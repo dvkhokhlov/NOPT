@@ -2,6 +2,7 @@
 #define IPR_H
 
 # include <vector>
+# include <string>
 
 class backup_par // read/write/calc
 {
@@ -63,10 +64,38 @@ class dav_par
 };
 
 
+// CI backend driving the CAS-SCF active-space solve.
+enum cisolver_kind { CISOLVER_ALDET = 0, CISOLVER_DMRG = 1 };
+
+// $DMRG group — value sets validated against keyword lists (dmrg_par::read_line).
+enum dmrg_hf_occ_kind   { DMRG_HF_OCC_UNKNOWN = -1, DMRG_HF_OCC_INTEGRAL = 0 };
+enum dmrg_schedule_kind { DMRG_SCHED_UNKNOWN  = -1, DMRG_SCHED_DEFAULT   = 0 };
+
+class dmrg_par // settings for the DMRG (block2) CI backend; see $DMRG group
+{
+    public:
+        int    m;          // bond dimension (required, > 0)
+        int    sweeps;     // maximum number of DMRG sweeps
+        double sweep_tol;  // sweep energy convergence tolerance
+        int    hf_occ;     // initial occupancy scheme (dmrg_hf_occ_kind)
+        int    schedule;   // sweep schedule (dmrg_schedule_kind)
+        std::string save_dir;  // block2 scratch root (renormalized ops / MPS)
+
+        dmrg_par();
+        int read_group(char * inp);
+        int read_line(char * inp);
+        int validate();        // enforces the value checks; exits loudly on a bad value
+        int write_info();
+        ~dmrg_par();
+
+};
+
 class cas_par
 {
     public:
         int y;
+        //CI backend
+        int ci_solver;     // cisolver_kind: ALDET (default) | DMRG
         //convergence
         int max_it;
         double e_conv;
@@ -99,7 +128,9 @@ class cas_par
         
         //davidson
         dav_par dav;
-        
+        //dmrg (when ci_solver == CISOLVER_DMRG)
+        dmrg_par dmrg;
+
         cas_par();
         int read_group(char * inp); 
         int read_line(char * inp); 

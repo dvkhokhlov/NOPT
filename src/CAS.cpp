@@ -152,7 +152,19 @@ int CAS_engine::init(cas_par * cas, molecule * ext_M){
         fprintf(out_stream,"ERROR: n_CI=%d is not supported by the casci_solver\n",n_CI);
         exit(0);
     }
-    CI_owner = std::make_unique<aldet_casci_wrap>(M->CI+0, &dav, n_s);
+    if      (cas->ci_solver==CISOLVER_ALDET){
+        CI_owner = std::make_unique<aldet_casci_wrap>(M->CI+0, &dav, n_s);
+    }
+    else if (cas->ci_solver==CISOLVER_DMRG){
+        // Phase 2 wires the block2 DMRG backend here:
+        //   CI_owner = std::make_unique<block2_casci_wrap>(cas->dmrg, ...);
+        fprintf(out_stream,"ERROR: CISOLVER=dmrg selected, but this build has no DMRG (block2) backend yet\n");
+        exit(0);
+    }
+    else{
+        fprintf(out_stream,"ERROR: unknown CISOLVER (%d); accepted: aldet, dmrg\n",cas->ci_solver);
+        exit(0);
+    }
     CI = CI_owner.get();
 
     /*if(n_CI==1)*/ //if not previous CI data - alloc and set zero

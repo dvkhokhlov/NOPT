@@ -67,6 +67,12 @@ vector<const char *>cas_group_end{{"cas_end"},
                                   {"casscfend"},
                                   {"$end"}};
                         
+vector<const char *>cisolver_kw{{"cisolver"}};
+
+vector<const char *>cisolver_aldet_kw{{"aldet"}};
+
+vector<const char *>cisolver_dmrg_kw{{"dmrg"}};
+
 vector<const char *>num_state_kw{{"n_s"},
                                  {"numstate"},
                                  {"num_state"}};
@@ -151,6 +157,28 @@ vector<const char *>dav_sparsed_HC_kw{{"sparsed_hc"}};
 vector<const char *>dav_group_end{{"dav_end"},
                                   {"davend"},
                                   {"$end"}};
+
+vector<const char *>dmrg_group_start{{"$dmrg"}};
+
+vector<const char *>dmrg_group_end{{"$dmrgend"},
+                                   {"$dmrg_end"},
+                                   {"$end"}};
+
+vector<const char *>dmrg_m_kw{{"m"}};
+
+vector<const char *>dmrg_sweeps_kw{{"sweeps"}};
+
+vector<const char *>dmrg_sweep_tol_kw{{"sweep_tol"}};
+
+vector<const char *>dmrg_hf_occ_kw{{"hf_occ"}};
+
+vector<const char *>dmrg_hf_occ_integral_kw{{"integral"}};
+
+vector<const char *>dmrg_schedule_kw{{"schedule"}};
+
+vector<const char *>dmrg_schedule_default_kw{{"default"}};
+
+vector<const char *>dmrg_save_dir_kw{{"save_dir"}};
                                   
 vector<const char *>MO_group_start{{"$vec1"},
                                    {"$vec"},
