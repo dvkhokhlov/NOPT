@@ -160,7 +160,8 @@ int CAS_engine::init(cas_par * cas, molecule * ext_M){
     }
     else if (cas->ci_solver==CISOLVER_DMRG){
 #ifdef NOPT_HAS_BLOCK2
-        CI_owner = std::make_unique<block2_casci_wrap>(cas->dmrg);
+        CI_owner = std::make_unique<block2_casci_wrap>(
+            n_act, M->CI[0].na, M->CI[0].nb, M->CI[0].mult, n_s, cas->dmrg);
 #else
         fprintf(out_stream,"ERROR: CISOLVER=dmrg selected, but this build was compiled without block2 (set USE_BLOCK2=yes)\n");
         exit(0);
@@ -224,6 +225,11 @@ int CAS_engine::init(cas_par * cas, molecule * ext_M){
     
     
     rotate_orbs=cas->rotate_orbs;
+    if(rotate_orbs && !CI->supports_civec_rotation()){
+        fprintf(out_stream,"WARNING: orbital canonicalization (rotate) disabled - the CI "
+                           "backend does not support CI-vector rotation\n");
+        rotate_orbs=0;
+    }
     
     for(int i=0;i<n_s;i++)if(fabs(wstate[i])>1e-8)
         w_num.push_back(i);
@@ -634,13 +640,14 @@ double CAS_engine::av_DM_and_F_calc(int perform_diag){
     if(perform_diag){
         double * U =new double[n_act*n_act];
         M->diag_X_MO_block(F_tot, 0           , n_core, nullptr);
-        M->diag_X_MO_block(F_tot, n_core      , n_act , U);
         M->diag_X_MO_block(F_tot, n_core+n_act, n_vac , nullptr);
-        if(!CI->supports_civec_rotation()){
-            fprintf(out_stream,"ERROR: orbital canonicalization needs CI-vector rotation, unsupported by the CI backend\n");
-            exit(0);
+        // Active-block canonicalization rotates the active orbitals, so the CI vector must
+        // follow via malmqvist. A backend that can't rotate its CI vector (e.g. DMRG) skips
+        // it and keeps the current active basis (cold-start re-solves the next macro-iter);
+        if(CI->supports_civec_rotation()){
+            M->diag_X_MO_block(F_tot, n_core   , n_act , U);
+            CI->malmqvist(0, U);
         }
-        CI->malmqvist(0, U);
     }
     
     
