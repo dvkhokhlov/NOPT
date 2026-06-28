@@ -1,0 +1,51 @@
+#pragma once
+//
+// block2_casci_wrap — casci_solver backend driving an external block2 DMRG-CI
+
+#include <memory>
+
+#include "casci_solver.h"
+#include "inp_par_read.h"   // dmrg_par
+
+struct dmrgci_engine;       // opaque; defined in the .cpp (holds all block2 state)
+
+class block2_casci_wrap final : public casci_solver {
+    std::unique_ptr<dmrgci_engine> impl_;   // pimpl; complete type only in the .cpp
+
+public:
+    explicit block2_casci_wrap(const dmrg_par& cfg);   // inits the block2 runtime once
+    ~block2_casci_wrap() override;
+
+    // --- configuration / lifecycle ---
+    void init_state_storage(int n_s, int i_set) override;
+    bool has_coef(int i_set) const override;
+    void set_act_rep_num(int* rep_num) override;
+    void import_integrals(double* aaaa, double* f_act, double e_core) override;
+
+    // --- solve ---
+    int solve(int primary, int read, bool use_prev_guess) override;
+
+    // --- reduced density matrices ---
+    void calc_DM_diag(double* gamma, int a) override;
+    void G_calc(double* GAMMA) override;
+    void calc_DMA(double* g, int a, int b) override;
+    void calc_DMB(double* g, int a, int b) override;
+
+    // --- queries ---
+    int    n_states()      const override;
+    int    mult()          const override;
+    double E_state(int i)   const override;
+    double S2_state(int i)  const override;
+    double L2_state(int i)  const override;
+    double P_state(int i)   const override;
+    double* E_states_ptr()  const override;
+
+    // --- IO / diagnostics ---
+    void gen_ext_ind() override;
+    void print_states(int a, int n_s, int print) override;
+    void write_civec(int i_s, char* name) override;
+
+    // supports_civec_rotation() stays false (base default): DMRG re-solves rather than
+    // rotating CI vectors; tracking/malmqvist/calc_S therefore stay no-ops. as_aldet()
+    // stays nullptr
+};
