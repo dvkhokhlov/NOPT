@@ -10,6 +10,9 @@
 # include "converger_2_1.h"
 # include "CAS.h"
 # include "aldet_casci_wrap.h"
+#ifdef NOPT_HAS_BLOCK2
+# include "block2_casci_wrap.h"
+#endif
 # include "defaults.h"
 # include "RI.h"
 # include "inp_out.h"
@@ -156,10 +159,12 @@ int CAS_engine::init(cas_par * cas, molecule * ext_M){
         CI_owner = std::make_unique<aldet_casci_wrap>(M->CI+0, &dav, n_s);
     }
     else if (cas->ci_solver==CISOLVER_DMRG){
-        // Phase 2 wires the block2 DMRG backend here:
-        //   CI_owner = std::make_unique<block2_casci_wrap>(cas->dmrg, ...);
-        fprintf(out_stream,"ERROR: CISOLVER=dmrg selected, but this build has no DMRG (block2) backend yet\n");
+#ifdef NOPT_HAS_BLOCK2
+        CI_owner = std::make_unique<block2_casci_wrap>(cas->dmrg);
+#else
+        fprintf(out_stream,"ERROR: CISOLVER=dmrg selected, but this build was compiled without block2 (set USE_BLOCK2=yes)\n");
         exit(0);
+#endif
     }
     else{
         fprintf(out_stream,"ERROR: unknown CISOLVER (%d); accepted: aldet, dmrg\n",cas->ci_solver);
