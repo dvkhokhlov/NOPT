@@ -13,7 +13,8 @@ class block2_casci_wrap final : public casci_solver {
     std::unique_ptr<dmrgci_engine> impl_;   // pimpl; complete type only in the .cpp
 
 public:
-    explicit block2_casci_wrap(const dmrg_par& cfg);   // inits the block2 runtime once
+    // active-space dims (from M->CI[0]) + DMRG config; inits the block2 runtime once.
+    block2_casci_wrap(int n_act, int na, int nb, int mult, int n_s, const dmrg_par& cfg);
     ~block2_casci_wrap() override;
 
     // --- configuration / lifecycle ---
