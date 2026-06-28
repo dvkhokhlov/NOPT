@@ -199,6 +199,7 @@ rhf_par::~rhf_par(){
 //CAS
 cas_par::cas_par(){
     y=0;
+    ci_solver = CISOLVER_ALDET;
     //convergence
     max_it = CAS_MAX_IT_DEFAULT;
     e_conv = CAS_EN_CON_DEFAULT;
@@ -308,9 +309,10 @@ int cas_par::w_state_by_rep_read(char * inp){
 
 }
 int cas_par::read_group(char * inp){
-    
+
     dav.read_group(inp);
-    
+    dmrg.read_group(inp);
+
     recursive_file P;
     char line[BUF_LINE_LENGTH];
     
@@ -350,7 +352,9 @@ int cas_par::read_group(char * inp){
     }
     method--;
     if(method==-1)method=CAS_METHOD_DEFAULT;
-        
+
+    if(ci_solver==CISOLVER_DMRG) dmrg.validate();
+
     return 0;
 }
 
@@ -362,6 +366,15 @@ int cas_par::read_line(char * inp){
     
     
     
+    if(key_word_comp(inp, cisolver_kw)){
+        if      (kw_to_kw(inp, cisolver_kw, cisolver_aldet_kw)) ci_solver = CISOLVER_ALDET;
+        else if (kw_to_kw(inp, cisolver_kw, cisolver_dmrg_kw )) ci_solver = CISOLVER_DMRG;
+        else{
+            fprintf(out_stream,"ERROR: unknown CISOLVER value; accepted: aldet, dmrg\n");
+            exit(1);
+        }
+    }
+
     if(key_word_comp(inp, cas_track_kw)){
         track=1;
     }
@@ -475,7 +488,17 @@ int cas_par::write_info(int n_a, int n_b, int n_o, int n_c, int mult){
     fprintf(out_stream,"Maximum number of iterations:     %d\n",max_it);
     fprintf(out_stream,"Maximum SOSCF step          :     %e\n",x_max);
     fprintf(out_stream,"\n");
-    dav.write_info();
+    if      (ci_solver==CISOLVER_ALDET){
+        fprintf(out_stream,"CI solver:                        determinant CI (aldet)\n");
+        dav.write_info();
+    }
+    else if (ci_solver==CISOLVER_DMRG){
+        fprintf(out_stream,"CI solver:                        DMRG\n");
+        dmrg.write_info();
+    }
+    else{
+        fprintf(out_stream,"CI solver:                        unknown (%d)\n",ci_solver);
+    }
     
 //     fprintf(out_stream,"Folder for output files: %s\n",out_folder_name);
     fprintf(out_stream,"_______________________________________________________________________\n\n\n");
@@ -695,7 +718,130 @@ int dav_par::write_info(){
 }
 
 dav_par::~dav_par(){
-    
+
+}
+
+//-----------------------------------------------------------------------------------------------------
+
+//DMRG
+dmrg_par::dmrg_par(){
+
+    m         = DMRG_M_DEFAULT;          // 0 = unset; required when CISOLVER=dmrg
+    sweeps    = DMRG_SWEEPS_DEFAULT;
+    sweep_tol = DMRG_SWEEP_TOL_DEFAULT;
+    hf_occ    = DMRG_HF_OCC_INTEGRAL;
+    schedule  = DMRG_SCHED_DEFAULT;
+    save_dir  = DMRG_SAVE_DIR_DEFAULT;
+
+}
+
+int dmrg_par::read_group(char * inp){
+
+    recursive_file P;
+    char line[BUF_LINE_LENGTH];
+
+    P.r_open(inp);
+
+    P.r_gets(line,BUF_LINE_LENGTH);;
+    while((key_word_comp(line, dmrg_group_start)==0)&&(!P.r_eof()))P.r_gets(line,BUF_LINE_LENGTH);;
+    if(key_word_comp(line, dmrg_group_start)==0){
+        return 0;
+    }
+
+    while(!P.r_eof()){
+        read_line(line);
+        if(key_word_comp(line, dmrg_group_end))break;
+        P.r_gets(line,BUF_LINE_LENGTH);;
+    }
+
+    return 0;
+}
+
+int dmrg_par::read_line(char * inp){
+
+    if(key_word_comp(inp, dmrg_m_kw)){
+        m = kw_to_i(inp, dmrg_m_kw, DMRG_M_DEFAULT);
+    }
+
+    if(key_word_comp(inp, dmrg_sweeps_kw)){
+        sweeps = kw_to_i(inp, dmrg_sweeps_kw, DMRG_SWEEPS_DEFAULT);
+    }
+
+    if(key_word_comp(inp, dmrg_sweep_tol_kw)){
+        sweep_tol = kw_to_f(inp, dmrg_sweep_tol_kw, DMRG_SWEEP_TOL_DEFAULT);
+    }
+
+    if(key_word_comp(inp, dmrg_hf_occ_kw)){
+        if(kw_to_kw(inp, dmrg_hf_occ_kw, dmrg_hf_occ_integral_kw)) hf_occ = DMRG_HF_OCC_INTEGRAL;
+        else                                                       hf_occ = DMRG_HF_OCC_UNKNOWN;
+    }
+
+    if(key_word_comp(inp, dmrg_schedule_kw)){
+        if(kw_to_kw(inp, dmrg_schedule_kw, dmrg_schedule_default_kw)) schedule = DMRG_SCHED_DEFAULT;
+        else                                                          schedule = DMRG_SCHED_UNKNOWN;
+    }
+
+    if(key_word_comp(inp, dmrg_save_dir_kw)){
+        char* tmp=nullptr;
+        kw_to_s(&tmp, inp, dmrg_save_dir_kw);
+        if(tmp){ save_dir=tmp; delete[] tmp; }
+    }
+
+    return 0;
+}
+
+int dmrg_par::validate(){
+
+    int ok=1;
+
+    if(m<=0){
+        fprintf(out_stream,"ERROR: $DMRG bond dimension m=%d must be > 0 (set 'm' in $DMRG)\n",m);
+        ok=0;
+    }
+    if(sweeps<=0){
+        fprintf(out_stream,"ERROR: $DMRG sweeps=%d must be > 0\n",sweeps);
+        ok=0;
+    }
+    if(sweep_tol<=0){
+        fprintf(out_stream,"ERROR: $DMRG sweep_tol=%e must be > 0\n",sweep_tol);
+        ok=0;
+    }
+    if(hf_occ==DMRG_HF_OCC_UNKNOWN){
+        fprintf(out_stream,"ERROR: $DMRG unknown hf_occ value; accepted: integral\n");
+        ok=0;
+    }
+    if(schedule==DMRG_SCHED_UNKNOWN){
+        fprintf(out_stream,"ERROR: $DMRG unknown schedule value; accepted: default\n");
+        ok=0;
+    }
+    if(save_dir.empty()){
+        fprintf(out_stream,"ERROR: $DMRG save_dir must not be empty\n");
+        ok=0;
+    }
+
+    if(!ok)exit(1);
+
+    return 0;
+}
+
+int dmrg_par::write_info(){
+
+    fprintf(out_stream,"DMRG settings:\n");
+    fprintf(out_stream,"Bond dimension (m):               %d\n",m);
+    fprintf(out_stream,"Maximum number of sweeps:         %d\n",sweeps);
+    fprintf(out_stream,"Sweep energy convergence:         %e\n",sweep_tol);
+    if(hf_occ==DMRG_HF_OCC_INTEGRAL)
+        fprintf(out_stream,"Initial occupancy:                integral\n");
+    if(schedule==DMRG_SCHED_DEFAULT)
+        fprintf(out_stream,"Sweep schedule:                   default\n");
+    fprintf(out_stream,"Scratch directory (save_dir):     %s\n",save_dir.c_str());
+    fprintf(out_stream,"\n");
+
+    return 0;
+}
+
+dmrg_par::~dmrg_par(){
+
 }
 
 //XMC
