@@ -7,11 +7,13 @@
 #include "block2_dmrg.hpp"
 
 #include <algorithm>
+#include <cassert>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
-#include <mutex>
+#include <filesystem>
 #include <string>
+#include <system_error>
 #include <unistd.h>     // getpid
 #include <omp.h>
 
@@ -22,17 +24,18 @@ using namespace block2;
 // ---- process-global block2 runtime ---------------------------------------------------
 namespace {
 
-std::once_flag g_b2_once;
+// Process-global block2 runtime: owns the frame_/threading_ globals and the per-process scratch
+// dir, and tears all of it down (RAII) at program exit.
+struct Block2Runtime {
+    std::string scratch;
 
-void ensure_block2_runtime(const std::string &save_dir_root, int n_threads) {
-    std::call_once(g_b2_once, [&] {
+    Block2Runtime(const std::string &save_dir_root, int n_threads) {
         // Per-process scratch subdir under the configured root (default /dev/shm), so
-        // concurrent/!repeated runs never share block2's renormalized-operator files.
-        const std::string scratch =
-            save_dir_root + "/nopt_dmrg_" + std::to_string((long)getpid());
+        // concurrent/repeated runs never share block2's renormalized-operator files.
+        scratch = save_dir_root + "/nopt_dmrg_" + std::to_string((long)getpid());
 
         Random::rand_seed(0);
-        // isize/dsize are BYTE sizes of the integer/double stacks 
+        // isize/dsize are BYTE sizes of the integer/double stacks
         frame_<double>() = std::make_shared<DataFrame<double>>(
             (size_t)1 << 24, (size_t)1 << 30, scratch);
         frame_<double>()->use_main_stack = false;
@@ -43,7 +46,75 @@ void ensure_block2_runtime(const std::string &save_dir_root, int n_threads) {
             ThreadingTypes::OperatorBatchedGEMM | ThreadingTypes::Global,
             n_threads, n_threads, 1);
         threading_()->seq_type = SeqTypes::Tasked;
-    });
+    }
+
+    ~Block2Runtime() {
+        // Release block2's hold on the DataFrame, then remove the scratch
+        if (frame_<double>() != nullptr) {
+            frame_<double>()->activate(0);
+            frame_<double>() = nullptr;
+        }
+        threading_() = nullptr;
+        std::error_code ec;
+        std::filesystem::remove_all(scratch, ec); // best-effort; never throw from a dtor
+    }
+
+    Block2Runtime(const Block2Runtime &) = delete;
+    Block2Runtime &operator=(const Block2Runtime &) = delete;
+};
+
+// Build the runtime once, on first use; its destructor runs at program exit (see above).
+void ensure_block2_runtime(const std::string &save_dir_root, int n_threads) {
+    static Block2Runtime runtime(save_dir_root, n_threads);
+    (void)runtime;
+}
+
+// Best-effort removal of all scratch files belonging to one MPS tag. Correctness does not depend
+// on this — each solve writes a fresh unique tag, so a stale file can never be read back — but it
+// keeps the per-process scratch dir from growing across macro-iterations. block2 embeds the tag,
+// always delimited, in every per-tag filename (mps.hpp get_filename):
+//   <prefix>.MPS.<tag>.<i>        MPS site tensors
+//   <prefix>.MPS.INFO.<tag>.*     MPSInfo bond dims
+//   <tag>-mps_info.bin            serialized MPSInfo
+// The trailing '.' on the tensor/info prefixes keeps tag "work_1" from matching "work_10".
+void remove_tag_files(const std::string &tag) {
+    auto fr = frame_<double>();
+    if (fr == nullptr)
+        return;
+    std::error_code ec;
+    const std::string t_mps  = fr->prefix + ".MPS." + tag + ".";
+    const std::string t_info = fr->prefix + ".MPS.INFO." + tag + ".";
+    const std::string t_bin  = tag + "-mps_info.bin";
+    std::vector<std::filesystem::path> victims;
+    for (auto &de : std::filesystem::directory_iterator(fr->mps_dir, ec)) {
+        const std::string name = de.path().filename().string();
+        if (name.rfind(t_mps, 0) == 0 || name.rfind(t_info, 0) == 0 || name == t_bin)
+            victims.push_back(de.path());
+    }
+    for (auto &p : victims)
+        std::filesystem::remove(p, ec);
+}
+
+// save NOPT OpenMP/BLAS thread counts on entering a block2 region and restore them on exit
+struct host_threads_guard {
+    int omp_saved;
+    host_threads_guard() : omp_saved(omp_get_max_threads()) {}
+    ~host_threads_guard() {
+        omp_set_num_threads(omp_saved);
+        openblas_set_num_threads(omp_saved);
+    }
+    host_threads_guard(const host_threads_guard &) = delete;
+    host_threads_guard &operator=(const host_threads_guard &) = delete;
+};
+
+// Invariant guard: block2's LIFO int/double stacks must be empty at each macro-iteration boundary.
+void assert_stack_clean(const char *where) {
+    const size_t du = dalloc_<double>()->used, iu = ialloc_()->used;
+    if (du != 0 || iu != 0) {
+        fprintf(out_stream, "ERROR: block2 stack leak at %s (dalloc=%zu ialloc=%zu)\n", where, du,
+                iu);
+        assert(false && "block2 LIFO stack leak");
+    }
 }
 
 // Build + simplify the conventional quantum-chemistry MPO 
@@ -141,6 +212,7 @@ struct dmrgci_engine {
     std::shared_ptr<MPS<SU2, double>> mps;      // the converged wavefunction
     std::vector<double> d2_cache;               // block2 spatial 2-RDM D2[p,q,r,s], n^4
     bool d2_valid = false;                      // is d2_cache current for this solve?
+    int solve_count = 0;                        // macro-iteration index -> unique MPS tag
 
     dmrgci_engine(int n_act_, int n_elec_, int twos_, int mult_, int n_s_, const dmrg_par &c)
         : cfg(c), n_act(n_act_), n_elec(n_elec_), twos(twos_), mult(mult_), n_s(n_s_),
@@ -159,6 +231,7 @@ struct dmrgci_engine {
 static void ensure_2rdm(dmrgci_engine &e) {
     if (e.d2_valid)
         return;
+    host_threads_guard htg;
     const int n = e.n_act;
     std::shared_ptr<MPO<SU2, double>> p2mpo =
         std::make_shared<PDM2MPOQC<SU2, double>>(e.hamil);
@@ -182,12 +255,14 @@ static void ensure_2rdm(dmrgci_engine &e) {
 
     p2me->remove_partition_files();
     p2mpo->deallocate();
+    assert_stack_clean("2-RDM read"); // the Expect sweep must leave the LIFO stacks as it found them
 }
 
 // ---- ctor / dtor ---------------------------------------------------------------------
 block2_casci_wrap::block2_casci_wrap(int n_act, int na, int nb, int mult, int n_s,
                                      const dmrg_par &cfg)
     : impl_(std::make_unique<dmrgci_engine>(n_act, na + nb, na - nb, mult, n_s, cfg)) {
+    host_threads_guard htg;
     int nthr = omp_get_max_threads();
     if (nthr < 1) nthr = 1;
     ensure_block2_runtime(cfg.save_dir, nthr);
@@ -227,7 +302,13 @@ int block2_casci_wrap::solve(int, int, bool) {
                 "ERROR: DMRG state averaging (n_s=%d) not implemented yet (P2.2)\n", e.n_s);
         exit(0);
     }
+    host_threads_guard htg;
+    assert_stack_clean("solve entry"); // block2 LIFO stacks must be empty between macro-iterations
     e.d2_valid = false; // new wavefunction -> any cached 2-RDM is stale
+
+    // remove previous step MPS
+    if (e.mps_info != nullptr)
+        remove_tag_files(e.mps_info->tag);
 
     // --- sweep schedule (only "default" built; others provisioned) ---
     dmrg_schedule sch;
@@ -242,6 +323,7 @@ int block2_casci_wrap::solve(int, int, bool) {
     Random::rand_seed(0);
     e.mps_info = std::make_shared<MPSInfo<SU2>>(e.mpo->n_sites, e.hamil->vacuum, e.target,
                                                 e.mpo->basis);
+    e.mps_info->tag = "work_" + std::to_string(e.solve_count++); // unique per macro-iteration
     // --- initial MPS occupancy (only hf_occ=integral built; others provisioned) ---
     if (e.cfg.hf_occ == DMRG_HF_OCC_INTEGRAL) {
         e.mps_info->set_bond_dimension((ubond_t)e.cfg.m); // full FCI envelope
