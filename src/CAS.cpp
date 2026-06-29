@@ -160,6 +160,13 @@ int CAS_engine::init(cas_par * cas, molecule * ext_M){
     }
     else if (cas->ci_solver==CISOLVER_DMRG){
 #ifdef NOPT_HAS_BLOCK2
+        // block2 state averaging shares one renormalized basis with EQUAL root weights
+        if(n_s>1 && cas->w_state_type!=1)
+            for(size_t i=1;i<cas->w_state.size();i++)
+                if(fabs(cas->w_state[i]-cas->w_state[0])>1e-10){
+                    fprintf(out_stream,"ERROR: DMRG state averaging requires equal weights\n");
+                    exit(0);
+                }
         CI_owner = std::make_unique<block2_casci_wrap>(
             n_act, M->CI[0].na, M->CI[0].nb, M->CI[0].mult, n_s, cas->dmrg);
 #else

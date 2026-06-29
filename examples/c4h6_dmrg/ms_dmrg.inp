@@ -1,0 +1,5 @@
+$PAR NUM_THREADS=4 N_MOL=1 RHF=0 CAS=1 D5=1 RI=1 NAME=c4h6-ms-dmrg $PAREND
+#include=c4h6_pt.inp
+$RHF maxit=50 dE=1e-9 grad=1e-12 huckel $END
+$CAS n_s=4 w_state=all_1; cisolver=dmrg maxit=50 dE=1e-9 grad=1e-12 p_cutoff=0.03 $END
+$DMRG m=200 sweep_tol=1e-10 $END

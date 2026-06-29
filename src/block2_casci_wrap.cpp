@@ -208,10 +208,10 @@ struct dmrgci_engine {
     std::shared_ptr<FCIDUMP<double>> fcidump;
     std::shared_ptr<HamiltonianQC<SU2, double>> hamil;
     std::shared_ptr<MPO<SU2, double>> mpo;
-    std::shared_ptr<MPSInfo<SU2>> mps_info;     // persists solve -> RDM read-out
-    std::shared_ptr<MPS<SU2, double>> mps;      // the converged wavefunction
-    std::vector<double> d2_cache;               // block2 spatial 2-RDM D2[p,q,r,s], n^4
-    bool d2_valid = false;                      // is d2_cache current for this solve?
+    std::shared_ptr<MultiMPSInfo<SU2>> mps_info;  // persists solve -> RDM read-out
+    std::shared_ptr<MultiMPS<SU2, double>> mps;   // the converged (state-averaged) wavefunction
+    std::vector<double> d2_cache;                 // per-state block2 2-RDM: n_s blocks of n_act^4
+    bool d2_valid = false;                        // is d2_cache current for this solve?
     int solve_count = 0;                        // macro-iteration index -> unique MPS tag
 
     dmrgci_engine(int n_act_, int n_elec_, int twos_, int mult_, int n_s_, const dmrg_par &c)
@@ -226,36 +226,47 @@ struct dmrgci_engine {
     exit(0);
 }
 
-// Compute the spatial 2-RDM once per solve (the expensive Expect sweep) and cache it as
-// block2 D2[p,q,r,s]. The 1-RDM is a partial trace of this, so CASSCF needs only one sweep.
+// Compute every state's spatial 2-RDM once per solve and cache them as n_s consecutive block2
+// D2[p,q,r,s] blocks. Each root is extracted from the state-averaged MultiMPS to its own single-root
+// MPS, then one Expect sweep reads that root's 2-RDM (1-RDM is a partial trace of it, so CASSCF
+// needs only this one sweep per root). A single sweep per root means the stale-`forward` landmine
+// (consecutive sweeps flipping the center) never arises.
 static void ensure_2rdm(dmrgci_engine &e) {
     if (e.d2_valid)
         return;
     host_threads_guard htg;
     const int n = e.n_act;
-    std::shared_ptr<MPO<SU2, double>> p2mpo =
-        std::make_shared<PDM2MPOQC<SU2, double>>(e.hamil);
-    p2mpo = std::make_shared<SimplifiedMPO<SU2, double>>(
-        p2mpo, std::make_shared<RuleQC<SU2, double>>(), true, true,
-        OpNamesSet({OpNames::R, OpNames::RD}));
-    auto p2me = std::make_shared<MovingEnvironment<SU2, double, double>>(p2mpo, e.mps, e.mps,
-                                                                         "2PDM");
-    p2me->init_environments(false);
-    auto ex2 = std::make_shared<Expect<SU2, double, double>>(p2me, (ubond_t)e.cfg.m,
-                                                             (ubond_t)e.cfg.m);
-    ex2->iprint = 0; // silence the per-site Expect sweep log
-    ex2->solve(true, e.mps->center == 0);
-    std::shared_ptr<GTensor<double>> d2 = ex2->get_2pdm_spatial(); // shape {n,n,n,n}
+    const size_t blk = (size_t)n * n * n * n;
+    e.d2_cache.assign(blk * e.n_s, 0.0);
 
-    // GTensor keeps its data contiguous in row-major [p,q,r,s] order — exactly the block2
-    // D2 layout we cache — so copy the flat buffer directly (no per-element accessor, no
-    // block2 index type leaking into NOPT code).
-    e.d2_cache = *d2->data;
+    for (int st = 0; st < e.n_s; st++) {
+        const std::string xtag = e.mps_info->tag + "-" + std::to_string(st);
+        std::shared_ptr<MultiMPS<SU2, double>> imps = e.mps->extract(st, xtag);
+
+        std::shared_ptr<MPO<SU2, double>> p2mpo =
+            std::make_shared<PDM2MPOQC<SU2, double>>(e.hamil);
+        p2mpo = std::make_shared<SimplifiedMPO<SU2, double>>(
+            p2mpo, std::make_shared<RuleQC<SU2, double>>(), true, true,
+            OpNamesSet({OpNames::R, OpNames::RD}));
+        auto p2me = std::make_shared<MovingEnvironment<SU2, double, double>>(p2mpo, imps, imps,
+                                                                             "2PDM");
+        p2me->init_environments(false);
+        auto ex2 = std::make_shared<Expect<SU2, double, double>>(p2me, (ubond_t)e.cfg.m,
+                                                                 (ubond_t)e.cfg.m);
+        ex2->iprint = 0; // silence the per-site Expect sweep log
+        ex2->solve(true, imps->center == 0);
+        std::shared_ptr<GTensor<double>> d2 = ex2->get_2pdm_spatial(); // shape {n,n,n,n}
+
+        // GTensor data is contiguous row-major [p,q,r,s] = the block2 D2 layout we cache; copy the
+        // flat buffer straight into this state's block (no per-element accessor, no index leak).
+        std::copy(d2->data->begin(), d2->data->end(), e.d2_cache.begin() + (size_t)st * blk);
+
+        p2me->remove_partition_files();
+        p2mpo->deallocate();
+        remove_tag_files(xtag); // the per-root extract is transient
+    }
     e.d2_valid = true;
-
-    p2me->remove_partition_files();
-    p2mpo->deallocate();
-    assert_stack_clean("2-RDM read"); // the Expect sweep must leave the LIFO stacks as it found them
+    assert_stack_clean("2-RDM read"); // the Expect sweeps must leave the LIFO stacks as they found them
 }
 
 // ---- ctor / dtor ---------------------------------------------------------------------
@@ -297,11 +308,6 @@ void block2_casci_wrap::import_integrals(double *aaaa, double *f_act, double e_c
 }
 int block2_casci_wrap::solve(int, int, bool) {
     dmrgci_engine &e = *impl_;
-    if (e.n_s != 1) {
-        fprintf(out_stream,
-                "ERROR: DMRG state averaging (n_s=%d) not implemented yet (P2.2)\n", e.n_s);
-        exit(0);
-    }
     host_threads_guard htg;
     assert_stack_clean("solve entry"); // block2 LIFO stacks must be empty between macro-iterations
     e.d2_valid = false; // new wavefunction -> any cached 2-RDM is stale
@@ -320,9 +326,12 @@ int block2_casci_wrap::solve(int, int, bool) {
         exit(0);
     }
 
+    // State-averaged MultiMPS over the single target sector with nroots = n_s (n_s = 1 is just the
+    // single-state case). state_specific stays off (block2 default), so the n_s roots share one
+    // renormalized basis built from the equal-weight average density matrix -- exactly SA-CASSCF.
     Random::rand_seed(0);
-    e.mps_info = std::make_shared<MPSInfo<SU2>>(e.mpo->n_sites, e.hamil->vacuum, e.target,
-                                                e.mpo->basis);
+    e.mps_info = std::make_shared<MultiMPSInfo<SU2>>(e.mpo->n_sites, e.hamil->vacuum,
+                                                     std::vector<SU2>{e.target}, e.mpo->basis);
     e.mps_info->tag = "work_" + std::to_string(e.solve_count++); // unique per macro-iteration
     // --- initial MPS occupancy (only hf_occ=integral built; others provisioned) ---
     if (e.cfg.hf_occ == DMRG_HF_OCC_INTEGRAL) {
@@ -332,7 +341,7 @@ int block2_casci_wrap::solve(int, int, bool) {
                 "ERROR: DMRG hf_occ option not implemented yet (only 'integral')\n");
         exit(0);
     }
-    e.mps = std::make_shared<MPS<SU2, double>>(e.mpo->n_sites, 0, 2);
+    e.mps = std::make_shared<MultiMPS<SU2, double>>(e.mpo->n_sites, 0, 2, e.n_s);
     e.mps->initialize(e.mps_info);
     e.mps->random_canonicalize();
     e.mps->save_mutable();
@@ -348,12 +357,19 @@ int block2_casci_wrap::solve(int, int, bool) {
 
     auto dmrg = std::make_shared<DMRG<SU2, double, double>>(me, sch.bond_dims, sch.noises);
     dmrg->davidson_conv_thrds = sch.dav_thrds;
-    dmrg->noise_type = NoiseTypes::ReducedPerturbative;
+    dmrg->noise_type = NoiseTypes::ReducedPerturbativeCollected; // state-averaged perturbative noise
+    dmrg->trunc_type = dmrg->trunc_type | TruncationTypes::RealDensityMatrix;
     dmrg->decomp_type = DecompositionTypes::DensityMatrix;
     dmrg->davidson_soft_max_iter = 200;
     dmrg->iprint = 0;
-    const double energy = dmrg->solve(sch.n_sweeps, e.mps->center == 0, e.cfg.sweep_tol);
-    e.E_states.assign(e.n_s, energy);
+    dmrg->solve(sch.n_sweeps, e.mps->center == 0, e.cfg.sweep_tol);
+
+    // per-root energies (ascending; root 0 = ground state). block2's energy precision is FPLS
+    // (long double for FL=double), so bind via auto and narrow to NOPT's double.
+    const auto &eng = dmrg->energies.back();
+    e.E_states.assign(e.n_s, 0.0);
+    for (int s = 0; s < e.n_s && s < (int)eng.size(); s++)
+        e.E_states[s] = (double)eng[s];
 
     me->remove_partition_files(); // keep mps/mps_info alive for the RDM read-out
     return sch.n_sweeps;
@@ -367,34 +383,46 @@ void block2_casci_wrap::calc_DM_diag(double *gamma, int /*i_set*/) {
         exit(0);
     }
     ensure_2rdm(e);
-    // 1-RDM as a partial trace of the spatial 2-RDM:
+    // Per state: 1-RDM as a partial trace of that state's spatial 2-RDM:
     //   D1[p,s] = 1/(N-1) * sum_k D2[p,k,k,s]   (block2 D2 = <a+_p a+_q a_r a_s>)
+    // gamma holds n_s consecutive n_act^2 blocks (CAS_engine averages them with the weights).
     const double inv = 1.0 / (e.n_elec - 1);
-    for (int p = 0; p < n; p++)
-        for (int s = 0; s < n; s++) {
-            double g = 0.0;
-            for (int k = 0; k < n; k++)
-                g += e.d2_cache[(((size_t)p * n + k) * n + k) * n + s];
-            gamma[p * n + s] = inv * g;
-        }
-    // symmetrize (finite-M DMRG mildly breaks it)
-    for (int p = 0; p < n; p++)
-        for (int q = p + 1; q < n; q++) {
-            double a = 0.5 * (gamma[p * n + q] + gamma[q * n + p]);
-            gamma[p * n + q] = gamma[q * n + p] = a;
-        }
+    const size_t blk = (size_t)n * n * n * n;
+    for (int st = 0; st < e.n_s; st++) {
+        const double *d2 = e.d2_cache.data() + (size_t)st * blk;
+        double *g = gamma + (size_t)st * n * n;
+        for (int p = 0; p < n; p++)
+            for (int s = 0; s < n; s++) {
+                double v = 0.0;
+                for (int k = 0; k < n; k++)
+                    v += d2[(((size_t)p * n + k) * n + k) * n + s];
+                g[p * n + s] = inv * v;
+            }
+        // symmetrize (finite-M DMRG mildly breaks it)
+        for (int p = 0; p < n; p++)
+            for (int q = p + 1; q < n; q++) {
+                double a = 0.5 * (g[p * n + q] + g[q * n + p]);
+                g[p * n + q] = g[q * n + p] = a;
+            }
+    }
 }
 void block2_casci_wrap::G_calc(double *GAMMA) {
     dmrgci_engine &e = *impl_;
     const int n = e.n_act;
     ensure_2rdm(e);
-    // NOPT layout GAMMA[p,q,r,s] = block2 D2[p,r,s,q] (verified by tests/block case 022).
-    for (int p = 0; p < n; p++)
-        for (int q = 0; q < n; q++)
-            for (int r = 0; r < n; r++)
-                for (int s = 0; s < n; s++)
-                    GAMMA[(((size_t)p * n + q) * n + r) * n + s] =
-                        e.d2_cache[(((size_t)p * n + r) * n + s) * n + q];
+    // Per state, NOPT layout GAMMA[p,q,r,s] = block2 D2[p,r,s,q]
+    // GAMMA holds n_s consecutive n_act^4 blocks (CAS_engine averages them with the weights).
+    const size_t blk = (size_t)n * n * n * n;
+    for (int st = 0; st < e.n_s; st++) {
+        const double *d2 = e.d2_cache.data() + (size_t)st * blk;
+        double *G = GAMMA + (size_t)st * blk;
+        for (int p = 0; p < n; p++)
+            for (int q = 0; q < n; q++)
+                for (int r = 0; r < n; r++)
+                    for (int s = 0; s < n; s++)
+                        G[(((size_t)p * n + q) * n + r) * n + s] =
+                            d2[(((size_t)p * n + r) * n + s) * n + q];
+    }
 }
 void block2_casci_wrap::calc_DMA(double *, int, int) {
     fprintf(out_stream,
