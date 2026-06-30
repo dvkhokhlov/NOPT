@@ -734,6 +734,7 @@ dmrg_par::dmrg_par(){
     save_dir  = DMRG_SAVE_DIR_DEFAULT;
     localize  = DMRG_LOC_OFF;
     dump_loc_orbs = 0;
+    loc_order = DMRG_LOCORDER_FIEDLER;
 
 }
 
@@ -800,6 +801,13 @@ int dmrg_par::read_line(char * inp){
         dump_loc_orbs = 1;
     }
 
+    if(key_word_comp(inp, dmrg_loc_order_kw)){
+        if     (kw_to_kw(inp, dmrg_loc_order_kw, dmrg_loc_order_fiedler_kw)) loc_order = DMRG_LOCORDER_FIEDLER;
+        else if(kw_to_kw(inp, dmrg_loc_order_kw, dmrg_loc_order_gaopt_kw))   loc_order = DMRG_LOCORDER_GAOPT;
+        else if(kw_to_kw(inp, dmrg_loc_order_kw, dmrg_loc_order_none_kw))    loc_order = DMRG_LOCORDER_NONE;
+        else                                                                loc_order = DMRG_LOCORDER_UNKNOWN;
+    }
+
     return 0;
 }
 
@@ -835,6 +843,14 @@ int dmrg_par::validate(){
         fprintf(out_stream,"ERROR: $DMRG localize=boys not implemented yet; accepted: off, pm\n");
         ok=0;
     }
+    if(loc_order==DMRG_LOCORDER_UNKNOWN){
+        fprintf(out_stream,"ERROR: $DMRG unknown loc_order value; accepted: fiedler, none\n");
+        ok=0;
+    }
+    if(loc_order==DMRG_LOCORDER_GAOPT){
+        fprintf(out_stream,"ERROR: $DMRG loc_order=gaopt not implemented yet; accepted: fiedler, none\n");
+        ok=0;
+    }
     if(save_dir.empty()){
         fprintf(out_stream,"ERROR: $DMRG save_dir must not be empty\n");
         ok=0;
@@ -861,6 +877,10 @@ int dmrg_par::write_info(){
         fprintf(out_stream,"Active-space localization:        Pipek-Mezey\n");
     if(dump_loc_orbs)
         fprintf(out_stream,"Dump localized orbitals:          yes\n");
+    if(loc_order==DMRG_LOCORDER_FIEDLER)
+        fprintf(out_stream,"DMRG orbital ordering:            Fiedler\n");
+    if(loc_order==DMRG_LOCORDER_NONE)
+        fprintf(out_stream,"DMRG orbital ordering:            none (input order)\n");
     fprintf(out_stream,"Scratch directory (save_dir):     %s\n",save_dir.c_str());
     fprintf(out_stream,"\n");
 
