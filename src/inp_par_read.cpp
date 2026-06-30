@@ -732,6 +732,8 @@ dmrg_par::dmrg_par(){
     hf_occ    = DMRG_HF_OCC_INTEGRAL;
     schedule  = DMRG_SCHED_DEFAULT;
     save_dir  = DMRG_SAVE_DIR_DEFAULT;
+    localize  = DMRG_LOC_OFF;
+    dump_loc_orbs = 0;
 
 }
 
@@ -787,6 +789,17 @@ int dmrg_par::read_line(char * inp){
         if(tmp){ save_dir=tmp; delete[] tmp; }
     }
 
+    if(key_word_comp(inp, dmrg_localize_kw)){
+        if     (kw_to_kw(inp, dmrg_localize_kw, dmrg_localize_off_kw))  localize = DMRG_LOC_OFF;
+        else if(kw_to_kw(inp, dmrg_localize_kw, dmrg_localize_pm_kw))   localize = DMRG_LOC_PM;
+        else if(kw_to_kw(inp, dmrg_localize_kw, dmrg_localize_boys_kw)) localize = DMRG_LOC_BOYS;
+        else                                                           localize = DMRG_LOC_UNKNOWN;
+    }
+
+    if(key_word_comp(inp, dmrg_dump_loc_kw)){
+        dump_loc_orbs = 1;
+    }
+
     return 0;
 }
 
@@ -814,6 +827,14 @@ int dmrg_par::validate(){
         fprintf(out_stream,"ERROR: $DMRG unknown schedule value; accepted: default\n");
         ok=0;
     }
+    if(localize==DMRG_LOC_UNKNOWN){
+        fprintf(out_stream,"ERROR: $DMRG unknown localize value; accepted: off, pm, boys\n");
+        ok=0;
+    }
+    if(localize==DMRG_LOC_BOYS){
+        fprintf(out_stream,"ERROR: $DMRG localize=boys not implemented yet; accepted: off, pm\n");
+        ok=0;
+    }
     if(save_dir.empty()){
         fprintf(out_stream,"ERROR: $DMRG save_dir must not be empty\n");
         ok=0;
@@ -834,6 +855,12 @@ int dmrg_par::write_info(){
         fprintf(out_stream,"Initial occupancy:                integral\n");
     if(schedule==DMRG_SCHED_DEFAULT)
         fprintf(out_stream,"Sweep schedule:                   default\n");
+    if(localize==DMRG_LOC_OFF)
+        fprintf(out_stream,"Active-space localization:        off\n");
+    if(localize==DMRG_LOC_PM)
+        fprintf(out_stream,"Active-space localization:        Pipek-Mezey\n");
+    if(dump_loc_orbs)
+        fprintf(out_stream,"Dump localized orbitals:          yes\n");
     fprintf(out_stream,"Scratch directory (save_dir):     %s\n",save_dir.c_str());
     fprintf(out_stream,"\n");
 

@@ -179,7 +179,13 @@ vector<const char *>dmrg_schedule_kw{{"schedule"}};
 vector<const char *>dmrg_schedule_default_kw{{"default"}};
 
 vector<const char *>dmrg_save_dir_kw{{"save_dir"}};
-                                  
+
+vector<const char *>dmrg_localize_kw{{"localize"}};
+vector<const char *>dmrg_localize_off_kw{{"off"}};
+vector<const char *>dmrg_localize_pm_kw{{"pm"}};
+vector<const char *>dmrg_localize_boys_kw{{"boys"}};
+vector<const char *>dmrg_dump_loc_kw{{"dump_loc_orbs"}};
+
 vector<const char *>MO_group_start{{"$vec1"},
                                    {"$vec"},
                                    {"$vec_a_1"},

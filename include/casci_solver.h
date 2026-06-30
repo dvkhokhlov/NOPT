@@ -30,6 +30,10 @@ public:
                                   double e_core) = 0;          // inactive + nuclear scalar
     virtual void import_lambda(double* lambda_act,             // linear-molecule Lambda machinery (optional;
                                double lambda_core) {}          //   no-op unless the backend supports it)
+    // Active-space localizing rotation U (n_act x n_act, [a*n_act+p], C_loc=C*U, U^T U=I). The
+    // backend solves in the rotated basis and reports RDMs back in the original basis; nullptr or
+    // never-called means solve in the supplied basis. aldet ignores it.
+    virtual void set_localization(const double* U) {}
 
     // --- solve ---
     // Encapsulates the full diagonalisation (aldet: copy_coef -> set_par -> H_diag_calc -> run).
@@ -55,6 +59,9 @@ public:
     virtual double L2_state(int i)   const = 0;                // linear molecules
     virtual double P_state(int i)    const = 0;                // parity (linear molecules)
     virtual double* E_states_ptr() const = 0;                 // contiguous state-energy block (raw view, for PrintEnergy)
+    // Energy convergence actually achieved by the last solve (DMRG: |dE| between the final two
+    // sweeps; iterative CI: final residual). 0 if not tracked. Reported in the CAS-SCF table.
+    virtual double last_solve_resid() const { return 0.0; }
 
     // --- relating the wavefunction across an active-orbital-basis change (capability-gated) ---
     // All three operations need the same thing: representing/comparing the wavefunction

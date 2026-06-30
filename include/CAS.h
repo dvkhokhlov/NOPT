@@ -9,6 +9,7 @@
 # include <memory>
 
 class CAS_engine;
+class orbital_localizer;   // active-space localizer
 
 class CAS_engine{
     public:
@@ -32,7 +33,11 @@ class CAS_engine{
         casci_solver * CI;                        // drives any CI backend (aldet, DMRG, …)
         std::unique_ptr<casci_solver> CI_owner;   // owns the concrete backend instance
         dav_par dav;
-        
+
+        // active-space localization (DMRG, localize=pm)
+        std::unique_ptr<orbital_localizer> localizer_;
+        std::vector<double> U_loc;                // n_act^2, [a*n_act+p]; C_loc = ACT_CVEC * U_loc
+
         molecule * M;
         
         //H_calc data
