@@ -185,6 +185,10 @@ vector<const char *>dmrg_localize_off_kw{{"off"}};
 vector<const char *>dmrg_localize_pm_kw{{"pm"}};
 vector<const char *>dmrg_localize_boys_kw{{"boys"}};
 vector<const char *>dmrg_dump_loc_kw{{"dump_loc_orbs"}};
+vector<const char *>dmrg_loc_order_kw{{"loc_order"}};
+vector<const char *>dmrg_loc_order_fiedler_kw{{"fiedler"}};
+vector<const char *>dmrg_loc_order_gaopt_kw{{"gaopt"}};
+vector<const char *>dmrg_loc_order_none_kw{{"none"}};
 
 vector<const char *>MO_group_start{{"$vec1"},
                                    {"$vec"},

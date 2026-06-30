@@ -224,6 +224,7 @@ struct dmrgci_engine {
     int solve_count = 0;                        // macro-iteration index -> unique MPS tag
     int last_n_sweeps = 0;                      // sweeps actually run in the last solve
     double last_sweep_dE = 0.0;                 // |dE| between the final two sweeps (achieved convergence)
+    std::vector<uint16_t> reorder_perm;         // DMRG lattice order (Fiedler); empty => input order
 
     dmrgci_engine(int n_act_, int n_elec_, int twos_, int mult_, int n_s_, const dmrg_par &c)
         : cfg(c), n_act(n_act_), n_elec(n_elec_), twos(twos_), mult(mult_), n_s(n_s_),
@@ -251,6 +252,13 @@ static void ensure_2rdm(dmrgci_engine &e) {
     e.d2_cache.assign(blk * e.n_s, 0.0);
     std::vector<double> bt_scratch;
     if (e.localize_on) bt_scratch.resize(blk); // back-transform target (rotate2 forbids aliasing)
+    std::vector<double> ro_scratch;            // un-permute target (Fiedler lattice order -> input)
+    std::vector<int> iperm;                    // inverse of reorder_perm
+    if (!e.reorder_perm.empty()) {
+        ro_scratch.resize(blk);
+        iperm.resize(n);
+        for (int i = 0; i < n; i++) iperm[e.reorder_perm[i]] = i;
+    }
 
     for (int st = 0; st < e.n_s; st++) {
         const std::string xtag = e.mps_info->tag + "-" + std::to_string(st);
@@ -273,6 +281,18 @@ static void ensure_2rdm(dmrgci_engine &e) {
         // GTensor data is contiguous row-major [p,q,r,s] = the block2 D2 layout we cache; copy the
         // flat buffer straight into this state's block (no per-element accessor, no index leak).
         std::copy(d2->data->begin(), d2->data->end(), e.d2_cache.begin() + (size_t)st * blk);
+
+        if (!e.reorder_perm.empty()) { // map the 2-RDM out of block2's Fiedler lattice order
+            double *blkp = e.d2_cache.data() + (size_t)st * blk;
+            for (int p = 0; p < n; p++)
+                for (int q = 0; q < n; q++)
+                    for (int r = 0; r < n; r++)
+                        for (int s = 0; s < n; s++)
+                            ro_scratch[(((size_t)p * n + q) * n + r) * n + s] =
+                                blkp[(((size_t)iperm[p] * n + iperm[q]) * n + iperm[r]) * n +
+                                     iperm[s]];
+            std::copy(ro_scratch.begin(), ro_scratch.end(), blkp);
+        }
 
         if (e.localize_on) { // rotate this state's 2-RDM back to the delocalized basis
             double *blkptr = e.d2_cache.data() + (size_t)st * blk;
@@ -337,6 +357,23 @@ void block2_casci_wrap::import_integrals(double *aaaa, double *f_act, double e_c
                               h1, (size_t)n * n,
                               h2, (size_t)n * n * n * n);
     e.fcidump->set_orb_sym<int>(std::vector<int>(n, 0)); // C1
+
+    // DMRG lattice order. block2's low-level path strings orbitals on the lattice in raw FCIDUMP
+    // order; localized orbitals come out scrambled, so order them with block2's own Fiedler on the
+    // exchange matrix K_ij = |(ij|ji)| and apply it via FCIDUMP::reorder. RDMs come back in this
+    // order and are un-permuted in ensure_2rdm.
+    e.reorder_perm.clear();
+    if (e.cfg.loc_order == DMRG_LOCORDER_FIEDLER) {
+        std::vector<double> kmat((size_t)n * n, 0.0);
+        for (int i = 0; i < n; i++)
+            for (int j = 0; j < n; j++)
+                if (i != j)
+                    kmat[(size_t)i * n + j] =
+                        std::fabs(h2[(((size_t)i * n + j) * n + j) * n + i]);
+        e.reorder_perm = OrbitalOrdering::fiedler((uint16_t)n, kmat);
+        e.fcidump->reorder(e.reorder_perm);
+    }
+
     SU2 vacuum(0);
     e.hamil = std::make_shared<HamiltonianQC<SU2, double>>(vacuum, n, e.orbsym, e.fcidump);
     e.hamil->opf->seq->mode = SeqTypes::Tasked;
