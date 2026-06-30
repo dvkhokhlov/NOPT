@@ -9,6 +9,7 @@
 # include "libint_link.h"
 # include "converger_2_1.h"
 # include "CAS.h"
+# include "localizer.h"
 # include "aldet_casci_wrap.h"
 #ifdef NOPT_HAS_BLOCK2
 # include "block2_casci_wrap.h"
@@ -180,6 +181,13 @@ int CAS_engine::init(cas_par * cas, molecule * ext_M){
     }
     CI = CI_owner.get();
 
+    // Active-space localizer (PM): atomic overlap blocks are orbital-independent, so build once;
+    // U is recomputed from the current orbitals each iteration in tensors_recalc.
+    if(cas->ci_solver==CISOLVER_DMRG && cas->dmrg.localize==DMRG_LOC_PM){
+        localizer_ = std::make_unique<pm_localizer>(*M);
+        U_loc.resize((size_t)n_act*n_act);
+    }
+
     /*if(n_CI==1)*/ //if not previous CI data - alloc and set zero
     if(!CI->has_coef(0))CI->init_state_storage(n_s,0);
     CI->set_act_rep_num(rep_num+n_core);
@@ -332,8 +340,14 @@ int CAS_engine::tensors_recalc(int n){
              -E_1el_calc(    K   , DM_C, n_ao, n_ao)  
              +M->V_nuc ;
              
+    if(localizer_){
+        loc_result lr = localizer_->localize(ACT_CVEC, n_ao, n_act, nullptr, U_loc.data());
+        if(!lr.converged)
+            fprintf(out_stream,"WARNING: active-space localization did not converge; running delocalized\n");
+        CI->set_localization(U_loc.data());
+    }
     CI->import_integrals(aaaa_ints, F_act, E_core);
-   
+
     return 0;
 }
 
@@ -1136,15 +1150,20 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
     CAS.av_DM_and_F_calc(1);
     n_dav_conv = CAS.CI_calc(0,1,1);
 //     CAS.F_vac();
+
+    if(cas->dmrg.dump_loc_orbs && CAS.localizer_){
+        fprintf(out_stream,"\nDumping localized active orbitals:\n");
+        M->LOC_print(job_name, CAS.U_loc.data());
+    }
     
     
     
     CAS.print_av_table("CAS_SCF density averaging:");
     fprintf(out_stream,"\n");
     fprintf(out_stream,"Start CAS_SCF iterations\n");
-    fprintf(out_stream,"_____________________________________________________________________\n");
-    fprintf(out_stream,"  N | E                 | dE         | LAG.ASYM. | ROT.STEP  | N_dav |\n");
-    fprintf(out_stream,"____|___________________|____________|___________|___________|_______|\n");
+    fprintf(out_stream,"_________________________________________________________________________________\n");
+    fprintf(out_stream,"  N | E                 | dE         | LAG.ASYM. | ROT.STEP  | N_dav | sweep_dE  |\n");
+    fprintf(out_stream,"____|___________________|____________|___________|___________|_______|___________|\n");
     disable_print_timers();
     
    while(true){
@@ -1158,7 +1177,7 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
         if(cas->method==2)max_grad_el = j_sd.find_max_el();
         
         
-        fprintf(out_stream,"%3d |% 18.10f | % .3e | %.3e | %.3e | %3d   |\n",n_iter,E,E-E_old,max_grad_el, rot_step,n_dav_conv);
+        fprintf(out_stream,"%3d |% 18.10f | % .3e | %.3e | %.3e | %3d   | %.3e |\n",n_iter,E,E-E_old,max_grad_el, rot_step,n_dav_conv,CAS.CI->last_solve_resid());
         fflush(out_stream);
 //         getchar();
 //         exit(0);

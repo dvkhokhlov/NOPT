@@ -21,6 +21,7 @@ public:
     void init_state_storage(int n_s, int i_set) override;
     bool has_coef(int i_set) const override;
     void set_act_rep_num(int* rep_num) override;
+    void set_localization(const double* U) override;
     void import_integrals(double* aaaa, double* f_act, double e_core) override;
 
     // --- solve ---
@@ -40,6 +41,7 @@ public:
     double L2_state(int i)  const override;
     double P_state(int i)   const override;
     double* E_states_ptr()  const override;
+    double last_solve_resid() const override;
 
     // --- IO / diagnostics ---
     void gen_ext_ind() override;

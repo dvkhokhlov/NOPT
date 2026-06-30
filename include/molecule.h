@@ -196,6 +196,9 @@ class molecule
 //         int MO_cpy(int i,int j, const char* type);
         int write_orb_index();
         int NO_print(const char * name, char S);
+        // dump the active orbitals rotated by U (n_act x n_act, [a*n_act+p]) as a GAMESS
+        // visualization, e.g. localized orbitals. MO_VEC is restored on return (transient).
+        int LOC_print(const char * name, const double * U);
         int GAMESS_type_out_print(const char* out_name, int n_print_mo);
         int GAMESS_geom_print(const char* out_name);
         double center_of_mass(int xyz);

@@ -17,7 +17,8 @@
 #include <unistd.h>     // getpid
 #include <omp.h>
 
-#include "common_vars.h"   // out_stream
+#include "common_vars.h"      // out_stream
+#include "localized_dmrg.h"   // rotate1/rotate2 (active-space basis transforms)
 
 using namespace block2;
 
@@ -170,9 +171,12 @@ dmrg_schedule build_default_schedule(int max_m, int user_sweeps, double sweep_to
         }
     }
     bp.push_back({bp.back().start + 8, max_m, final_tol, 0.0}); // noise-free convergence
-    int maxiter = bp.back().start + 4;
-    if (user_sweeps > 0 && user_sweeps < maxiter)
-        maxiter = user_sweeps; // user cap
+    // `sweeps` is the total sweep budget: it both caps a short run and *extends* the noise-free
+    // final stage so a hard system can keep sweeping (early-stopping at sweep_tol) past the
+    // schedule's nominal length. With sweeps unset it falls back to 4 noise-free sweeps.
+    int maxiter = (user_sweeps > 0) ? user_sweeps : (bp.back().start + 4);
+    if (maxiter < 1)
+        maxiter = 1;
 
     dmrg_schedule s;
     s.n_sweeps = maxiter;
@@ -204,6 +208,11 @@ struct dmrgci_engine {
     std::vector<double> E_states;     // per-state energies (returned by E_states_ptr)
     bool storage_ready = false;       // has init_state_storage run?
 
+    // Localization. Empty/off => solve in the given basis.
+    std::vector<double> U_loc;        // n_act x n_act, [a*n_act+p]; valid when localize_on
+    bool localize_on = false;
+    std::vector<double> F_loc, g_loc; // integrals rotated into the localized basis (when localize_on)
+
     // block2 objects for the current macro-iteration (rebuilt each import_integrals)
     std::shared_ptr<FCIDUMP<double>> fcidump;
     std::shared_ptr<HamiltonianQC<SU2, double>> hamil;
@@ -213,6 +222,8 @@ struct dmrgci_engine {
     std::vector<double> d2_cache;                 // per-state block2 2-RDM: n_s blocks of n_act^4
     bool d2_valid = false;                        // is d2_cache current for this solve?
     int solve_count = 0;                        // macro-iteration index -> unique MPS tag
+    int last_n_sweeps = 0;                      // sweeps actually run in the last solve
+    double last_sweep_dE = 0.0;                 // |dE| between the final two sweeps (achieved convergence)
 
     dmrgci_engine(int n_act_, int n_elec_, int twos_, int mult_, int n_s_, const dmrg_par &c)
         : cfg(c), n_act(n_act_), n_elec(n_elec_), twos(twos_), mult(mult_), n_s(n_s_),
@@ -238,6 +249,8 @@ static void ensure_2rdm(dmrgci_engine &e) {
     const int n = e.n_act;
     const size_t blk = (size_t)n * n * n * n;
     e.d2_cache.assign(blk * e.n_s, 0.0);
+    std::vector<double> bt_scratch;
+    if (e.localize_on) bt_scratch.resize(blk); // back-transform target (rotate2 forbids aliasing)
 
     for (int st = 0; st < e.n_s; st++) {
         const std::string xtag = e.mps_info->tag + "-" + std::to_string(st);
@@ -260,6 +273,12 @@ static void ensure_2rdm(dmrgci_engine &e) {
         // GTensor data is contiguous row-major [p,q,r,s] = the block2 D2 layout we cache; copy the
         // flat buffer straight into this state's block (no per-element accessor, no index leak).
         std::copy(d2->data->begin(), d2->data->end(), e.d2_cache.begin() + (size_t)st * blk);
+
+        if (e.localize_on) { // rotate this state's 2-RDM back to the delocalized basis
+            double *blkptr = e.d2_cache.data() + (size_t)st * blk;
+            rotate2(blkptr, e.U_loc.data(), n, bt_scratch.data(), /*forward=*/false);
+            std::copy(bt_scratch.begin(), bt_scratch.end(), blkptr);
+        }
 
         p2me->remove_partition_files();
         p2mpo->deallocate();
@@ -291,15 +310,32 @@ void block2_casci_wrap::set_act_rep_num(int *) {
     // Symmetry deferred: the DMRG block runs in C1, so orbsym stays all-zero and the
     // per-active-orbital irreps are ignored (mapped in once symmetry lands).
 }
+void block2_casci_wrap::set_localization(const double *U) {
+    // Copy the localizing rotation (caller's buffer is transient); nullptr => no localization.
+    dmrgci_engine &e = *impl_;
+    if (U == nullptr) { e.localize_on = false; return; }
+    e.U_loc.assign(U, U + (size_t)e.n_act * e.n_act);
+    e.localize_on = true;
+}
 void block2_casci_wrap::import_integrals(double *aaaa, double *f_act, double e_core) {
     dmrgci_engine &e = *impl_;
     const int n = e.n_act;
+    // When localizing, rotate the integrals into the localized basis (E_core is invariant).
+    double *h1 = f_act, *h2 = aaaa;
+    if (e.localize_on) {
+        e.F_loc.resize((size_t)n * n);
+        e.g_loc.resize((size_t)n * n * n * n);
+        rotate1(f_act, e.U_loc.data(), n, e.F_loc.data(), /*forward=*/true);
+        rotate2(aaaa, e.U_loc.data(), n, e.g_loc.data(), /*forward=*/true);
+        h1 = e.F_loc.data();
+        h2 = e.g_loc.data();
+    }
     // In-memory FCIDUMP (classic SU2 path). No rescale(): NOPT passes the embedded 1-e
     // Hamiltonian F_act (frozen core folded in) and chemist (tu|vw) directly
     e.fcidump = std::make_shared<FCIDUMP<double>>();
     e.fcidump->initialize_su2(n, e.n_elec, e.twos, /*isym=*/0, e_core,
-                              f_act, (size_t)n * n,
-                              aaaa, (size_t)n * n * n * n);
+                              h1, (size_t)n * n,
+                              h2, (size_t)n * n * n * n);
     e.fcidump->set_orb_sym<int>(std::vector<int>(n, 0)); // C1
     SU2 vacuum(0);
     e.hamil = std::make_shared<HamiltonianQC<SU2, double>>(vacuum, n, e.orbsym, e.fcidump);
@@ -371,8 +407,22 @@ int block2_casci_wrap::solve(int, int, bool) {
     for (int s = 0; s < e.n_s && s < (int)eng.size(); s++)
         e.E_states[s] = (double)eng[s];
 
+    // sweeps actually run (block2 early-stops at sweep_tol) and the convergence achieved at the
+    // last sweep, measured on the state-averaged energy (block2's own stopping criterion).
+    e.last_n_sweeps = (int)dmrg->energies.size();
+    e.last_sweep_dE = 0.0;
+    if (dmrg->energies.size() >= 2) {
+        const auto &e1 = dmrg->energies[dmrg->energies.size() - 1];
+        const auto &e0 = dmrg->energies[dmrg->energies.size() - 2];
+        double a1 = 0.0, a0 = 0.0;
+        const int nr = (int)e1.size();
+        for (int r = 0; r < nr; r++) { a1 += (double)e1[r]; a0 += (double)e0[r]; }
+        if (nr > 0)
+            e.last_sweep_dE = std::fabs(a1 / nr - a0 / nr);
+    }
+
     me->remove_partition_files(); // keep mps/mps_info alive for the RDM read-out
-    return sch.n_sweeps;
+    return e.last_n_sweeps;
 }
 void block2_casci_wrap::calc_DM_diag(double *gamma, int /*i_set*/) {
     dmrgci_engine &e = *impl_;
@@ -441,6 +491,7 @@ double block2_casci_wrap::S2_state(int)   const { double S = impl_->twos / 2.0; 
 double block2_casci_wrap::L2_state(int)   const { return 0.0; } // linear-molecule Lambda: deferred
 double block2_casci_wrap::P_state(int)    const { return 0.0; } // parity: deferred
 double *block2_casci_wrap::E_states_ptr() const { return impl_->E_states.data(); }
+double block2_casci_wrap::last_solve_resid() const { return impl_->last_sweep_dE; }
 void block2_casci_wrap::gen_ext_ind() { /* aldet determinant index tables; n/a for an MPS backend */ }
 void block2_casci_wrap::print_states(int, int, int) { /* MPS CSF/det printout deferred (DeterminantTRIE) */ }
 void block2_casci_wrap::write_civec(int, char *) { /* MPS write-out deferred */ }
