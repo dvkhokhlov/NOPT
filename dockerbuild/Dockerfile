@@ -22,6 +22,10 @@
 #   arm64-v8-a    -> -march=armv8-a      -mtune=generic !!!!!!!!!! ARM architectures were not tested at all
 #   arm64-v8.2-a  -> -march=armv8.2-a    -mtune=generic
 #   arm64-v9-a    -> -march=armv9-a      -mtune=generic
+#   apple-m1      -> -march=armv8.4-a    -mtune=neoverse-n1 (Apple M-series, M1+)
+#                    (alias: apple-silicon). GCC 13 has no Apple core model, so
+#                    this targets the ARMv8.4-A ISA floor shared by every Apple
+#                    Silicon chip with a wide big-core tune as a proxy.
 #
 # Reproducibility model
 # ---------------------
@@ -56,6 +60,63 @@
 ARG UBUNTU_BASE=ubuntu:24.04@sha256:c4a8d5503dfb2a3eb8ab5f807da5bc69a85730fb49b5cfca2330194ebcc41c7b
 
 ############################################################
+# Stage 0: libint source generation (NATIVE $BUILDPLATFORM)
+############################################################
+# libint's code generator and export packaging run here on the *build* platform
+# (natively), never under QEMU. Why: when cross-building arm64 on an x86 host,
+# emulating the generator is slow AND — at the production LIBINT2_MAX_AM=7, whose
+# export tree is ~7600 files — `cmake -E tar` pack/unpack under QEMU silently
+# drops files (e.g. include/libint2/config2.h.cmake.in), so the downstream
+# configure dies with "File ... does not exist. (configure_file)". It works at
+# low MAX_AM (few files) and natively, which is exactly the arm64+scale+emulation
+# signature. Generating natively avoids tar-under-emulation entirely; libint's
+# emitted C++ is architecture-independent and gets the target -march when the
+# builder stage compiles it. See fail_details.txt.
+FROM --platform=$BUILDPLATFORM ${UBUNTU_BASE} AS libint-gen
+
+ARG FIXED=true
+ARG LIBINT_MAX_AM=7
+ARG GCC_SERIES=13
+ARG LIBINT_GIT_REF=5fb07b4862f219749c51d59ee08073d20a56d506
+
+ENV DEBIAN_FRONTEND=noninteractive
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+        gcc-${GCC_SERIES} g++-${GCC_SERIES} \
+        git cmake ninja-build libeigen3-dev libboost-dev libgmp-dev ca-certificates; \
+    rm -rf /var/lib/apt/lists/*
+ENV CC=gcc-${GCC_SERIES}
+ENV CXX=g++-${GCC_SERIES}
+
+WORKDIR /gen
+# Full clone (no --depth 1): libint's dynamic_version runs `git describe`.
+RUN set -eux; \
+    git clone https://github.com/evaleev/libint.git; \
+    if [ "$FIXED" = "true" ]; then cd libint && git checkout --quiet "$LIBINT_GIT_REF"; fi
+
+# Configure with GENERATION-time options only (MAX_AM / ERI enables are baked
+# into the emitted source; -march / shared-vs-static are compile-time and are
+# applied in the builder stage). `--target export` builds the generator, runs
+# it, and stages the complete standalone library source under build/libint-<ver>/.
+# We copy that directory (not the tarball) so no `cmake -E tar` is ever needed.
+RUN set -eux; \
+    cd libint && cmake -S . -B build -G Ninja \
+        -D CMAKE_CXX_COMPILER="${CXX}" \
+        -D CMAKE_BUILD_TYPE=Release \
+        -D LIBINT2_ENABLE_ERI3=0 \
+        -D LIBINT2_ENABLE_ERI2=0 \
+        -D LIBINT2_MAX_AM=${LIBINT_MAX_AM} \
+        -D LIBINT2_ERI3_MAX_AM=${LIBINT_MAX_AM} \
+        -D LIBINT2_ERI2_MAX_AM=${LIBINT_MAX_AM} \
+        -D LIBINT2_ENABLE_GENERIC_CODE=ON && \
+    cmake --build build --target export -j "$(nproc)"; \
+    d=$(find build -maxdepth 1 -type d -name 'libint-*' | head -1); \
+    test -n "$d"; \
+    test -f "$d/include/libint2/config2.h.cmake.in"; \
+    cp -a "$d" /libint-src
+
+############################################################
 # Stage 1: builder
 ############################################################
 FROM ${UBUNTU_BASE} AS builder
@@ -86,6 +147,7 @@ RUN set -eux; \
         arm64-v8-a)   MARCH="-march=armv8-a      -mtune=generic" ;; \
         arm64-v8.2-a) MARCH="-march=armv8.2-a    -mtune=generic" ;; \
         arm64-v9-a)   MARCH="-march=armv9-a      -mtune=generic" ;; \
+        apple-m1|apple-silicon) MARCH="-march=armv8.4-a    -mtune=neoverse-n1" ;; \
         *) echo "Unsupported ARCH='${ARCH}'. See Dockerfile header for valid values." >&2; exit 1 ;; \
     esac; \
     mkdir -p /opt/arch; \
@@ -126,27 +188,22 @@ RUN set -eux; MARCH=$(cat /opt/arch/march_flags); \
         -DCMAKE_Fortran_FLAGS="${MARCH}" && \
     make -j"$(nproc)"
 
-# ----- libint (shared; copied into runtime stage) -----------------------
-# Full clone (no --depth 1): libint's CMakeLists uses dynamic_version, which
-# runs `git describe` against tags. A shallow clone strips tags and configure
-# fails with "No names found, cannot describe anything."
-RUN set -eux; \
-    git clone https://github.com/evaleev/libint.git; \
-    if [ "$FIXED" = "true" ]; then cd libint && git checkout --quiet "$LIBINT_GIT_REF"; fi
+# ----- libint (shared) — source generated natively in the libint-gen stage,
+# compiled here with the target -march. Copying the pre-staged source tree
+# (not a tarball) keeps `cmake -E tar` out of the emulated build entirely, which
+# is what was corrupting the arm64/QEMU build at MAX_AM=7 (see libint-gen).
+COPY --from=libint-gen /libint-src /deps/libint-src
 RUN set -eux; MARCH=$(cat /opt/arch/march_flags); \
-    cd libint && cmake -S . -B build -G Ninja \
+    cmake -S /deps/libint-src -B /deps/libint-src/build -G Ninja \
         -D CMAKE_CXX_COMPILER="${CXX}" \
         -D CMAKE_INSTALL_PREFIX=/opt/libint \
         -D CMAKE_BUILD_TYPE=Release \
         -D CMAKE_CXX_FLAGS="${MARCH}" \
-        -D LIBINT2_ENABLE_ERI3=0 \
-        -D LIBINT2_ENABLE_ERI2=0 \
-        -D LIBINT2_MAX_AM=${LIBINT_MAX_AM} \
-        -D LIBINT2_ERI3_MAX_AM=${LIBINT_MAX_AM} \
-        -D LIBINT2_ERI2_MAX_AM=${LIBINT_MAX_AM} \
-        -D LIBINT2_ENABLE_GENERIC_CODE=ON \
-        -D BUILD_SHARED_LIBS=ON && \
-    cmake --build build --target install -j "$(nproc)"
+        -D BUILD_SHARED_LIBS=ON \
+        -D BUILD_TESTING=OFF \
+        -D LIBINT2_REQUIRE_CXX_API=ON \
+        -D LIBINT2_REQUIRE_CXX_API_COMPILED=ON && \
+    cmake --build /deps/libint-src/build --target install -j "$(nproc)"
 
 # ----- NOPT (intentionally unpinned — always cloned at master HEAD) -----
 RUN git clone https://github.com/glebov-io/NOPT.git
@@ -165,7 +222,7 @@ GTO_MAX:=20
 LIBINT_H_DIR:=/opt/libint/include
 LIBINT_L_DIR:=/opt/libint/lib
 BLAS_LIB:=openblas
-BLAS_DIR:=/usr/lib/x86_64-linux-gnu
+BLAS_DIR:=/usr/lib/$(shell $(CXX) -dumpmachine)
 BLAS_PAR:=nopt
 USE_GRPP:=yes
 GRPP_H_DIR:=/deps/libgrpp/libgrpp
