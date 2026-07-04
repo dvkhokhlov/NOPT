@@ -221,6 +221,8 @@ struct dmrgci_engine {
     std::shared_ptr<MultiMPS<SU2, double>> mps;   // the converged (state-averaged) wavefunction
     std::vector<double> d2_cache;                 // per-state block2 2-RDM: n_s blocks of n_act^4
     bool d2_valid = false;                        // is d2_cache current for this solve?
+    std::vector<double> dmfull_cache;             // full n_s x n_s spin-summed 1-RDM (properties), delocalized
+    bool dmfull_valid = false;                     // is dmfull_cache current for this solve?
     int solve_count = 0;                        // macro-iteration index -> unique MPS tag
     int last_n_sweeps = 0;                      // sweeps actually run in the last solve
     double last_sweep_dE = 0.0;                 // |dE| between the final two sweeps (achieved convergence)
@@ -308,6 +310,97 @@ static void ensure_2rdm(dmrgci_engine &e) {
     assert_stack_clean("2-RDM read"); // the Expect sweeps must leave the LIFO stacks as they found them
 }
 
+// Build the full n_s x n_s spin-summed 1-RDM once per solve for the property read-out: the
+// state-diagonal blocks and the transition (off-diagonal) blocks, in the delocalized basis. Each
+// block is a direct 1-PDM Expect sweep over the extracted root(s) -- one-electron properties read
+// one-electron RDMs, never a 2-RDM (that sweep is far heavier and the direct 1-PDM is more accurate
+// at finite M). Diagonal i==j is a plain per-state 1-RDM (bra==ket); i<j is the bra!=ket transition
+// 1-RDM, with (j,i) recovered as its transpose (exact against the symmetric property integrals).
+static void ensure_dm_full(dmrgci_engine &e) {
+    if (e.dmfull_valid)
+        return;
+    host_threads_guard htg;
+    const int n = e.n_act;
+    const size_t blk = (size_t)n * n;
+    e.dmfull_cache.assign(blk * e.n_s * e.n_s, 0.0);
+
+    std::vector<double> bt_scratch;
+    if (e.localize_on) bt_scratch.resize(blk); // back-transform target (rotate1 forbids aliasing)
+    std::vector<double> ro_scratch;            // un-permute target (Fiedler lattice order -> input)
+    std::vector<int> iperm;                    // inverse of reorder_perm
+    if (!e.reorder_perm.empty()) {
+        ro_scratch.resize(blk);
+        iperm.resize(n);
+        for (int i = 0; i < n; i++) iperm[e.reorder_perm[i]] = i;
+    }
+
+    for (int i = 0; i < e.n_s; i++)
+        for (int j = i; j < e.n_s; j++) {
+            // Fresh extract of both roots so bra/ket share a canonical center (as in ensure_2rdm).
+            const std::string itag = e.mps_info->tag + "-t" + std::to_string(i);
+            std::shared_ptr<MultiMPS<SU2, double>> imps = e.mps->extract(i, itag);
+            std::string jtag;
+            std::shared_ptr<MultiMPS<SU2, double>> jmps = imps;
+            if (j != i) {
+                jtag = e.mps_info->tag + "-t" + std::to_string(j);
+                jmps = e.mps->extract(j, jtag);
+            }
+
+            // NoTransposeRule: the transpose-symmetry simplification is invalid when bra != ket
+            // (correct-and-uniform for the diagonal too).
+            std::shared_ptr<MPO<SU2, double>> p1mpo =
+                std::make_shared<PDM1MPOQC<SU2, double>>(e.hamil);
+            p1mpo = std::make_shared<SimplifiedMPO<SU2, double>>(
+                p1mpo,
+                std::make_shared<NoTransposeRule<SU2, double>>(
+                    std::make_shared<RuleQC<SU2, double>>()),
+                true, true, OpNamesSet({OpNames::R, OpNames::RD}));
+            auto p1me = std::make_shared<MovingEnvironment<SU2, double, double>>(p1mpo, imps, jmps,
+                                                                                 "1PDM");
+            p1me->init_environments(false);
+            auto ex1 = std::make_shared<Expect<SU2, double, double>>(p1me, (ubond_t)e.cfg.m,
+                                                                     (ubond_t)e.cfg.m);
+            ex1->iprint = 0; // silence the per-site Expect sweep log
+            ex1->solve(true, jmps->center == 0);
+            GMatrix<double> d1 = ex1->get_1pdm_spatial(); // n x n row-major, on the block2 double stack
+
+            double *bij = e.dmfull_cache.data() + (size_t)(i * e.n_s + j) * blk;
+            std::copy(d1.data, d1.data + blk, bij);
+            d1.deallocate(); // LIFO free of the stack matrix
+
+            if (!e.reorder_perm.empty()) { // map out of block2's Fiedler lattice order
+                for (int p = 0; p < n; p++)
+                    for (int q = 0; q < n; q++)
+                        ro_scratch[(size_t)p * n + q] = bij[(size_t)iperm[p] * n + iperm[q]];
+                std::copy(ro_scratch.begin(), ro_scratch.end(), bij);
+            }
+            if (e.localize_on) { // rotate back to the delocalized basis
+                rotate1(bij, e.U_loc.data(), n, bt_scratch.data(), /*forward=*/false);
+                std::copy(bt_scratch.begin(), bt_scratch.end(), bij);
+            }
+
+            if (j == i) { // symmetrize the state-diagonal block (finite-M mildly breaks it)
+                for (int p = 0; p < n; p++)
+                    for (int q = p + 1; q < n; q++) {
+                        double a = 0.5 * (bij[p * n + q] + bij[q * n + p]);
+                        bij[p * n + q] = bij[q * n + p] = a;
+                    }
+            } else { // (j,i) block is the transpose of (i,j) for symmetric property integrals
+                double *bji = e.dmfull_cache.data() + (size_t)(j * e.n_s + i) * blk;
+                for (int p = 0; p < n; p++)
+                    for (int q = 0; q < n; q++)
+                        bji[(size_t)p * n + q] = bij[(size_t)q * n + p];
+            }
+
+            p1me->remove_partition_files();
+            p1mpo->deallocate();
+            remove_tag_files(itag); // the per-root extracts are transient
+            if (j != i) remove_tag_files(jtag);
+        }
+    e.dmfull_valid = true;
+    assert_stack_clean("full 1-RDM read");
+}
+
 // ---- ctor / dtor ---------------------------------------------------------------------
 block2_casci_wrap::block2_casci_wrap(int n_act, int na, int nb, int mult, int n_s,
                                      const dmrg_par &cfg)
@@ -384,6 +477,7 @@ int block2_casci_wrap::solve(int, int, bool) {
     host_threads_guard htg;
     assert_stack_clean("solve entry"); // block2 LIFO stacks must be empty between macro-iterations
     e.d2_valid = false; // new wavefunction -> any cached 2-RDM is stale
+    e.dmfull_valid = false; // ... and the cached property 1-RDM
 
     // remove previous step MPS
     if (e.mps_info != nullptr)
@@ -511,15 +605,23 @@ void block2_casci_wrap::G_calc(double *GAMMA) {
                             d2[(((size_t)p * n + r) * n + s) * n + q];
     }
 }
-void block2_casci_wrap::calc_DMA(double *, int, int) {
-    fprintf(out_stream,
-            "ERROR: DMRG backend does not implement properties (spin/transition 1-RDM) yet\n");
-    exit(0);
+void block2_casci_wrap::calc_DMA(double *gamma, int a, int b) {
+    // Properties (dipole/quadrupole/Mulliken/transition dipoles). block2 has a single SA state set,
+    // so the host only ever asks for the full n_s x n_s block, gamma[(bra*n_s+ket)*n_act^2].
+    if (a != 0 || b != 0) {
+        fprintf(out_stream, "ERROR: DMRG backend expects a single state set (got a=%d b=%d)\n", a, b);
+        exit(0);
+    }
+    dmrgci_engine &e = *impl_;
+    ensure_dm_full(e);
+    // SU2 get_1pdm_spatial is already spin-summed, so calc_DMA carries the full spin-summed 1-RDM
+    // and calc_DMB is a no-op add (the host sums DMA+DMB). Add, matching aldet's accumulate.
+    const size_t nel = e.dmfull_cache.size();
+    for (size_t k = 0; k < nel; k++)
+        gamma[k] += e.dmfull_cache[k];
 }
 void block2_casci_wrap::calc_DMB(double *, int, int) {
-    fprintf(out_stream,
-            "ERROR: DMRG backend does not implement properties (spin/transition 1-RDM) yet\n");
-    exit(0);
+    // No-op: the spin-summed 1-RDM is entirely reported by calc_DMA (SU2 is spin-adapted).
 }
 int    block2_casci_wrap::n_states()      const { return impl_->n_s; }
 int    block2_casci_wrap::mult()          const { return impl_->mult; }
