@@ -16,6 +16,5 @@ H -2.716654 -0.508244 0.0
 H  2.716654  0.508244 0.0
 H -0.476871 -1.478861 0.0
 H  0.476871  1.478861 0.0 
-$act_space n_alp=2 n_bet=2 n_val=4 mult=1 p_n=10; $end
-_MO INP=c4h6_CAS.orb
+_MO INP=c4h6_RHF.orb
 $END
