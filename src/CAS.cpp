@@ -10,6 +10,7 @@
 # include "converger_2_1.h"
 # include "CAS.h"
 # include "localizer.h"
+# include "localized_dmrg.h"   // build_loc_orbitals (warm-start rotation)
 # include "aldet_casci_wrap.h"
 #ifdef NOPT_HAS_BLOCK2
 # include "block2_casci_wrap.h"
@@ -187,6 +188,10 @@ int CAS_engine::init(cas_par * cas, molecule * ext_M){
         localizer_ = std::make_unique<pm_localizer>(*M);
         U_loc.resize((size_t)n_act*n_act);
     }
+    if(cas->ci_solver==CISOLVER_DMRG){ // cache warm-start config (cas is not kept on the engine)
+        warm_start_cfg = cas->dmrg.warm_start;
+        warm_after_cfg = cas->dmrg.warm_start_after;
+    }
 
     /*if(n_CI==1)*/ //if not previous CI data - alloc and set zero
     if(!CI->has_coef(0))CI->init_state_storage(n_s,0);
@@ -341,12 +346,42 @@ int CAS_engine::tensors_recalc(int n){
              +M->V_nuc ;
              
     if(localizer_){
-        loc_result lr = localizer_->localize(ACT_CVEC, n_ao, n_act, nullptr, U_loc.data());
-        if(!lr.converged)
-            fprintf(out_stream,"WARNING: active-space localization did not converge; running delocalized\n");
+        const bool warm_on = (warm_start_cfg==DMRG_WARM_ON);
+        const int  F       = warm_after_cfg;               // freeze/warm gate (solve index)
+
+        if(warm_on && warm_frozen && warm_ci_calls>F){
+            // frozen frame: reuse the pinned localization instead of re-localizing, so the DMRG
+            // lattice order (a function of the localized orbitals) stays valid for the retained MPS.
+            std::copy(U_loc_frozen.begin(), U_loc_frozen.end(), U_loc.data());
+        } else {
+            loc_result lr = localizer_->localize(ACT_CVEC, n_ao, n_act, nullptr, U_loc.data());
+            if(!lr.converged)
+                fprintf(out_stream,"WARNING: active-space localization did not converge; running delocalized\n");
+        }
         CI->set_localization(U_loc.data());
+
+        if(warm_on){
+            std::vector<double> C_loc_cur((size_t)n_ao*n_act);
+            build_loc_orbitals(ACT_CVEC, U_loc.data(), n_ao, n_act, C_loc_cur.data());
+            if(warm_ci_calls==F){
+                // freeze point: pin the frame; this solve stays cold (no prior frozen-frame MPS yet).
+                U_loc_frozen.assign(U_loc.begin(), U_loc.end());
+                C_loc_prev = C_loc_cur;
+                warm_frozen = true;
+            } else if(warm_ci_calls>F){
+                // warm: R = C_loc_prev^T S_AO C_loc_cur (n_act x n_act, [a*n_act+p]); prev -> current
+                std::vector<double> tmp((size_t)n_ao*n_act), R((size_t)n_act*n_act);
+                cblas_dgemm(CblasRowMajor,CblasNoTrans,CblasNoTrans, n_ao,n_act,n_ao, 1.0,
+                            M->S_AO,n_ao, C_loc_cur.data(),n_act, 0.0, tmp.data(),n_act);
+                cblas_dgemm(CblasRowMajor,CblasTrans,CblasNoTrans, n_act,n_act,n_ao, 1.0,
+                            C_loc_prev.data(),n_act, tmp.data(),n_act, 0.0, R.data(),n_act);
+                CI->set_active_rotation(R.data());
+                C_loc_prev = C_loc_cur;
+            }
+        }
     }
     CI->import_integrals(aaaa_ints, F_act, E_core);
+    warm_ci_calls++;
 
     return 0;
 }

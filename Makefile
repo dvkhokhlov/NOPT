@@ -55,7 +55,7 @@ ifeq ($(USE_BLOCK2),yes)
 BLOCK2_DEF:=-D_EXPLICIT_TEMPLATE -D_LARGE_BOND -D_USE_CORE -D_USE_DMRG -D_USE_BIG_SITE -D_USE_SP_DMRG -D_USE_IC -D_USE_SU2SZ -D_F77UNDERSCORE -D_HAS_OPENBLAS -D_USE_GLOBAL_VARIABLE
 BLOCK2_INC:=-I$(BLOCK2_DIR)/include
 BLOCK2_LIB:=-L$(BLOCK2_DIR)/lib -Wl,-rpath,$(BLOCK2_DIR)/lib -lblock2
-BLOCK2_OBJ:=src/block2_casci_wrap.o
+BLOCK2_OBJ:=src/block2_casci_wrap.o src/mps_rotation.o
 NOPT_BLOCK2_DEF:=-DNOPT_HAS_BLOCK2
 endif
 
@@ -85,9 +85,12 @@ run_%:src/progs/%.o src/molecule.o src/molecule2.o src/chem_data.o src/MO2.o src
 
 	$(CXX) $^ $(OPT_LEVEL) -fopenmp $(LIB_DIRS) $(LIBS)  -o $@
 
-# block2 wrapper: the one TU that includes block2 headers — needs the block2 ABI
-# macros + include path on top of the usual flags (see USE_BLOCK2 block above).
+# block2 TUs: the ones that include block2 headers — need the block2 ABI macros + include
+# path on top of the usual flags (see USE_BLOCK2 block above).
 src/block2_casci_wrap.o:src/block2_casci_wrap.cpp
+	$(CXX) -o $@ -c $< $(OPT_LEVEL) -fopenmp $(DEFINITIONS) $(INCLUDE_DIRS) $(BLOCK2_DEF) $(BLOCK2_INC) -fmax-errors=5
+
+src/mps_rotation.o:src/mps_rotation.cpp
 	$(CXX) -o $@ -c $< $(OPT_LEVEL) -fopenmp $(DEFINITIONS) $(INCLUDE_DIRS) $(BLOCK2_DEF) $(BLOCK2_INC) -fmax-errors=5
 
 %.o:%.cpp

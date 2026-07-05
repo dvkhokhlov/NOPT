@@ -72,6 +72,7 @@ enum dmrg_hf_occ_kind   { DMRG_HF_OCC_UNKNOWN = -1, DMRG_HF_OCC_INTEGRAL = 0 };
 enum dmrg_schedule_kind { DMRG_SCHED_UNKNOWN  = -1, DMRG_SCHED_DEFAULT   = 0 };
 enum dmrg_localize_kind { DMRG_LOC_UNKNOWN = -1, DMRG_LOC_OFF = 0, DMRG_LOC_PM = 1, DMRG_LOC_BOYS = 2 };
 enum dmrg_locorder_kind { DMRG_LOCORDER_UNKNOWN = -1, DMRG_LOCORDER_FIEDLER = 0, DMRG_LOCORDER_GAOPT = 1, DMRG_LOCORDER_NONE = 2 };
+enum dmrg_warm_kind     { DMRG_WARM_UNKNOWN = -1, DMRG_WARM_OFF = 0, DMRG_WARM_ON = 1 };
 
 class dmrg_par // settings for the DMRG (block2) CI backend; see $DMRG group
 {
@@ -85,6 +86,12 @@ class dmrg_par // settings for the DMRG (block2) CI backend; see $DMRG group
         int    dump_loc_orbs;  // dump localized orbitals (GAMESS .out) at iteration 0, then continue
         int    loc_order;      // DMRG orbital ordering (dmrg_locorder_kind): fiedler | gaopt | none
         std::string save_dir;  // block2 scratch root (renormalized ops / MPS)
+        int    warm_start;       // MPS warm-start across macro-iterations (dmrg_warm_kind): off | on
+        int    warm_sweeps;      // max sweeps for the warm re-solve (no cold ramp)
+        double warm_noise;       // perturbative noise on the first warm sweep(s), then 0
+        int    rot_m;            // MPS-rotation time-evolution bond dim (0 = use m)
+        int    warm_start_after; // cold macro-iterations before freezing the localized frame
+        int    warm_rotate;      // rotate the reused MPS into the new basis (dmrg_warm_kind): off = reuse-only | on
 
         dmrg_par();
         int read_group(char * inp);

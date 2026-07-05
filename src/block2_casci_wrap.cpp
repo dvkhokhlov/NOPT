@@ -19,6 +19,8 @@
 
 #include "common_vars.h"      // out_stream
 #include "localized_dmrg.h"   // rotate1/rotate2 (active-space basis transforms)
+#include "blas_link.h"        // cblas_dgemm (warm-start rotation regularization)
+#include "mps_rotation.h"     // evolve_sa_multimps (multi-root SA MPS rotation)
 
 using namespace block2;
 
@@ -197,6 +199,27 @@ dmrg_schedule build_default_schedule(int max_m, int user_sweeps, double sweep_to
     return s;
 }
 
+// Warm re-solve schedule: no cold ramp (the rotated MPS is already at full M) -- a short run at the
+// target bond dim, noise-free by default (warm_noise=0; the exact rotation gives a near-perfect
+// guess, so no noise is needed to re-expand bond space -- the noisy start is dropped entirely).
+// warm_noise>0 optionally puts a little noise on the first sweep(s). Ending at noise 0 is required:
+// block2 only declares convergence once the sweep noise equals the final noise (sweep_algorithm.hpp).
+dmrg_schedule build_warm_schedule(int max_m, int warm_sweeps, double warm_noise, double sweep_tol) {
+    int nsw = warm_sweeps > 0 ? warm_sweeps : 4;
+    const double dav0 = 5e-6;
+    const double dav_final = (sweep_tol <= 0 ? 1e-9 : sweep_tol / 10.0);
+    const int n_noisy = std::min(nsw > 1 ? nsw - 1 : 0, 2); // first 1-2 sweeps noisy, rest clean
+    dmrg_schedule s;
+    s.n_sweeps = nsw;
+    s.bond_dims.assign(nsw, (ubond_t)max_m);
+    s.noises.assign(nsw, 0.0);
+    s.dav_thrds.assign(nsw, dav_final);
+    for (int sw = 0; sw < nsw; sw++) {
+        if (sw < n_noisy) { s.noises[sw] = warm_noise; s.dav_thrds[sw] = dav0; }
+    }
+    return s;
+}
+
 } // namespace
 
 // -------------------------- engine: all block2 state ----------------------------------
@@ -212,6 +235,11 @@ struct dmrgci_engine {
     std::vector<double> U_loc;        // n_act x n_act, [a*n_act+p]; valid when localize_on
     bool localize_on = false;
     std::vector<double> F_loc, g_loc; // integrals rotated into the localized basis (when localize_on)
+
+    // Warm-start (localization-rotation MPS reuse). R_active takes the previous macro-iteration's
+    // active basis to the current one; valid only when have_rotation. Consumed by the next solve().
+    std::vector<double> R_active;     // n_act x n_act, [a*n_act+p]
+    bool have_rotation = false;
 
     // block2 objects for the current macro-iteration (rebuilt each import_integrals)
     std::shared_ptr<FCIDUMP<double>> fcidump;
@@ -401,6 +429,150 @@ static void ensure_dm_full(dmrgci_engine &e) {
     assert_stack_clean("full 1-RDM read");
 }
 
+// Reload the retained MultiMPS fresh from disk for a warm restart. After a solve, block2's LIFO
+// memory stack is empty and the in-memory MultiMPS is a partially-deallocated shell whose StateInfos
+// dangle into freed stack memory -- the on-disk copy is authoritative. load_data/load_mutable
+// reallocate every StateInfo/SparseMatrixInfo on the heap (surviving any number of stack resets);
+// the info is rebuilt against the CURRENT MPO basis. Mirrors MultiMPS::extract's reload, all roots.
+static void reload_retained_mps(dmrgci_engine &e) {
+    const std::string tag = e.mps_info->tag;
+    auto info = std::make_shared<MultiMPSInfo<SU2>>(e.mpo->n_sites, e.hamil->vacuum,
+                                                    std::vector<SU2>{e.target}, e.mpo->basis);
+    info->tag = tag;
+    info->load_mutable();
+    auto mps = std::make_shared<MultiMPS<SU2, double>>(info);
+    mps->load_data();
+    mps->load_mutable();
+    e.mps_info = info;
+    e.mps = mps;
+}
+
+// Rotate the retained MultiMPS from the previous macro-iteration's active basis into the current one
+// (localization-rotation warm start). R (e.R_active, orbital order [a*n+p]) is the overlap of the two
+// localized active-MO sets; regularize it to the nearest proper rotation U~, take kappa = log(U~), and
+// apply exp(kappa) to the MPS by RK4 time evolution -- block2's orbital-rotation recipe (two-site, so
+// noise-free; the bond space rides along the SVD). NOPT already imports the new-basis integrals, so
+// only the MPS is rotated (the integrals are not). e.mps is mutated in place on success. Returns false
+// (=> caller cold-starts) if the rotation is untrustworthy: too much active-external leakage, an
+// improper/complex generator, or a propagated norm that drifts too far from 1.
+static bool rotate_retained_mps(dmrgci_engine &e) {
+    const int n = e.n_act;
+    const size_t nn = (size_t)n * n;
+
+    // The regularization/log temporaries MUST live on the heap, not block2's LIFO stack: at the
+    // rotation the stack is empty, so this math and the subsequent MPS-rotation init_environments
+    // allocate from the same base region -- and block2 has a latent uninitialized read there, so
+    // leftover eigs/log floating-point bytes on the stack cause a data-dependent segfault. (eigs and
+    // logarithm already keep their own workspace on the heap; only these caller matrices need it.)
+    auto heap = std::make_shared<VectorAllocator<double>>();
+
+    // --- regularize R -> nearest orthogonal U~ = R (R^T R)^{-1/2} (Lowdin) ---
+    std::vector<double> S(nn);
+    cblas_dgemm(::CblasRowMajor, ::CblasTrans, ::CblasNoTrans, n, n, n, 1.0, e.R_active.data(), n,
+                e.R_active.data(), n, 0.0, S.data(), n); // S = R^T R
+    MatrixRef Sm(S.data(), n, n);
+    DiagonalMatrix w(nullptr, n);
+    w.allocate(heap);
+    MatrixFunctions::eigs(Sm, w); // Sm rows <- eigenvectors, w <- eigenvalues; S now holds V^T
+    double leak = 0.0, wmin = 1e30;
+    for (int i = 0; i < n; i++) {
+        leak = std::max(leak, std::fabs(w.data[i] - 1.0));
+        wmin = std::min(wmin, w.data[i]);
+    }
+    if (wmin < 1e-6 || leak > 0.2) { // active space moved too much to carry the MPS
+        w.deallocate(heap);
+        fprintf(out_stream, "  warm-start: rotation leakage %.2e too large -> cold fallback\n", leak);
+        return false;
+    }
+    std::vector<double> tmp(nn), Sinvh(nn), U(nn);
+    for (int i = 0; i < n; i++) { // tmp = diag(w^{-1/2}) V^T
+        double s = 1.0 / std::sqrt(w.data[i]);
+        for (int j = 0; j < n; j++) tmp[(size_t)i * n + j] = s * S[(size_t)i * n + j];
+    }
+    w.deallocate(heap);
+    cblas_dgemm(::CblasRowMajor, ::CblasTrans, ::CblasNoTrans, n, n, n, 1.0, S.data(), n, tmp.data(), n,
+                0.0, Sinvh.data(), n); // S^{-1/2} = V diag(w^{-1/2}) V^T
+    cblas_dgemm(::CblasRowMajor, ::CblasNoTrans, ::CblasNoTrans, n, n, n, 1.0, e.R_active.data(), n,
+                Sinvh.data(), n, 0.0, U.data(), n); // U~ = R S^{-1/2}
+
+    std::vector<double> Udet = U; // det() does an in-place LU, so work on a copy
+    MatrixRef Udetm(Udet.data(), n, n);
+    if (MatrixFunctions::det(Udetm) < 0.0) { // improper (reflection) -> log is complex
+        fprintf(out_stream, "  warm-start: improper rotation (det<0) -> cold fallback\n");
+        return false;
+    }
+
+    // --- kappa = log(U~) (real antisymmetric generator) ---
+    ComplexMatrixRef ck(nullptr, n, n);
+    ck.allocate(heap);
+    ck.clear();
+    ComplexMatrixFunctions::fill_complex(ck, MatrixRef(U.data(), n, n), MatrixRef(nullptr, n, n));
+    ComplexMatrixFunctions::logarithm(ck);
+    std::vector<double> kre(nn), kim(nn);
+    ComplexMatrixFunctions::extract_complex(ck, MatrixRef(kre.data(), n, n),
+                                            MatrixRef(kim.data(), n, n));
+    ck.deallocate(heap);
+    double imnorm = MatrixFunctions::norm(MatrixRef(kim.data(), n, n));
+    if (imnorm > 1e-6) { // non-real generator -> not a proper rotation
+        fprintf(out_stream, "  warm-start: complex generator (|Im k|=%.2e) -> cold fallback\n", imnorm);
+        return false;
+    }
+
+    // NC MPO expects kappa^T; reindex into the frozen lattice order (fcidump->reorder(perm) put
+    // orbital perm[i] on site i, so the generator on the lattice is kappa^T(perm[i], perm[j])).
+    const bool have_perm = !e.reorder_perm.empty();
+    std::vector<double> kap(nn);
+    for (int i = 0; i < n; i++)
+        for (int j = 0; j < n; j++) {
+            int oi = have_perm ? e.reorder_perm[i] : i;
+            int oj = have_perm ? e.reorder_perm[j] : j;
+            kap[(size_t)i * n + j] = kre[(size_t)oj * n + oi]; // transpose + permute
+        }
+
+    // Near convergence the localization-rotation vanishes (exp(-kappa) -> I), so the retained MPS
+    // already sits in the current basis to machine precision -- rotating is pointless. It is also
+    // unsafe: a numerically-zero one-body generator yields a degenerate rotation MPO whose
+    // SimplifiedMPO-pruned operator schema block2's environment build reads past the end of
+    // (initialize_tp -> a heap-dependent crash). Skip and reuse the reloaded MPS as-is; this is still
+    // a warm restart (the short re-solve follows). The threshold sits far above the generator's noise
+    // floor and far below any rotation an m-truncated DMRG could resolve.
+    double kmax = 0.0;
+    for (size_t t = 0; t < nn; t++) kmax = std::max(kmax, std::fabs(kap[t]));
+    if (kmax < 1e-8) {
+        fprintf(out_stream, "  warm-start: rotation negligible (max|k|=%.2e) -> reuse MPS as-is\n", kmax);
+        return true;
+    }
+
+    // --- one-body rotation MPO exp(-kappa t), built from the (lattice-order) generator ---
+    auto fd_rot = std::make_shared<FCIDUMP<double>>();
+    fd_rot->initialize_h1e(n, e.n_elec, e.twos, /*isym=*/0, 0.0, kap.data(), nn);
+    auto hamil_rot = std::make_shared<HamiltonianQC<SU2, double>>(SU2(0), n, e.orbsym, fd_rot);
+    std::shared_ptr<MPO<SU2, double>> mpo_rot =
+        std::make_shared<MPOQC<SU2, double>>(hamil_rot, QCTypes::NC);
+    mpo_rot->basis = hamil_rot->basis;
+    mpo_rot = std::make_shared<SimplifiedMPO<SU2, double>>(
+        mpo_rot,
+        std::make_shared<AntiHermitianRuleQC<SU2, double>>(std::make_shared<RuleQC<SU2, double>>()),
+        true);
+
+    // Propagate exp(-kappa) over t in [0,1] as a multi-root TangentSpace TE sweep (block2's own
+    // MultiMPS TE is complex-only, ket.size()==2; evolve_sa_multimps drives the per-root apply +
+    // shared-basis truncation). -dt convention verified in the tests/block harness.
+    const int rot_m = e.cfg.rot_m > 0 ? e.cfg.rot_m : e.cfg.m;
+    const double dt = 0.01;
+    const int n_steps = (int)(1.0 / dt + 0.1);
+    const double norm2 = evolve_sa_multimps(e.mps, mpo_rot, (ubond_t)rot_m, dt, n_steps);
+    mpo_rot->deallocate();
+
+    if (std::fabs(norm2 - 1.0) > 1e-3) { // unitary propagation should preserve per-root norms
+        fprintf(out_stream, "  warm-start: rotation norm^2=%.6f drifted -> cold fallback\n", norm2);
+        return false;
+    }
+    fprintf(out_stream, "  warm-start: rotated MPS (leak %.2e, |Im k| %.2e, norm^2 %.6f)\n", leak,
+            imnorm, norm2);
+    return true;
+}
+
 // ---- ctor / dtor ---------------------------------------------------------------------
 block2_casci_wrap::block2_casci_wrap(int n_act, int na, int nb, int mult, int n_s,
                                      const dmrg_par &cfg)
@@ -430,6 +602,13 @@ void block2_casci_wrap::set_localization(const double *U) {
     e.U_loc.assign(U, U + (size_t)e.n_act * e.n_act);
     e.localize_on = true;
 }
+void block2_casci_wrap::set_active_rotation(const double *R) {
+    // Retain the previous-basis -> current-basis active rotation for the next solve's warm restart.
+    dmrgci_engine &e = *impl_;
+    if (R == nullptr) { e.have_rotation = false; return; }
+    e.R_active.assign(R, R + (size_t)e.n_act * e.n_act);
+    e.have_rotation = true;
+}
 void block2_casci_wrap::import_integrals(double *aaaa, double *f_act, double e_core) {
     dmrgci_engine &e = *impl_;
     const int n = e.n_act;
@@ -455,16 +634,24 @@ void block2_casci_wrap::import_integrals(double *aaaa, double *f_act, double e_c
     // order; localized orbitals come out scrambled, so order them with block2's own Fiedler on the
     // exchange matrix K_ij = |(ij|ji)| and apply it via FCIDUMP::reorder. RDMs come back in this
     // order and are un-permuted in ensure_2rdm.
-    e.reorder_perm.clear();
-    if (e.cfg.loc_order == DMRG_LOCORDER_FIEDLER) {
-        std::vector<double> kmat((size_t)n * n, 0.0);
-        for (int i = 0; i < n; i++)
-            for (int j = 0; j < n; j++)
-                if (i != j)
-                    kmat[(size_t)i * n + j] =
-                        std::fabs(h2[(((size_t)i * n + j) * n + j) * n + i]);
-        e.reorder_perm = OrbitalOrdering::fiedler((uint16_t)n, kmat);
-        e.fcidump->reorder(e.reorder_perm);
+    // Warm-start freezes the order: a warm solve reuses the retained MPS's lattice order so the
+    // rotated MPS stays consistent across the basis change (Fiedler order is a function of the
+    // localized orbitals, so it must be pinned together with the frozen localization). A cold solve
+    // recomputes it.
+    if (e.have_rotation && !e.reorder_perm.empty()) {
+        e.fcidump->reorder(e.reorder_perm); // frozen order (warm restart)
+    } else {
+        e.reorder_perm.clear();
+        if (e.cfg.loc_order == DMRG_LOCORDER_FIEDLER) {
+            std::vector<double> kmat((size_t)n * n, 0.0);
+            for (int i = 0; i < n; i++)
+                for (int j = 0; j < n; j++)
+                    if (i != j)
+                        kmat[(size_t)i * n + j] =
+                            std::fabs(h2[(((size_t)i * n + j) * n + j) * n + i]);
+            e.reorder_perm = OrbitalOrdering::fiedler((uint16_t)n, kmat);
+            e.fcidump->reorder(e.reorder_perm);
+        }
     }
 
     SU2 vacuum(0);
@@ -479,13 +666,25 @@ int block2_casci_wrap::solve(int, int, bool) {
     e.d2_valid = false; // new wavefunction -> any cached 2-RDM is stale
     e.dmfull_valid = false; // ... and the cached property 1-RDM
 
-    // remove previous step MPS
-    if (e.mps_info != nullptr)
-        remove_tag_files(e.mps_info->tag);
+    // Warm-start: rotate the retained MPS into the current basis and re-solve from it. Requires a
+    // usable retained MPS and a rotation from the host; the rotation itself may decline (return
+    // false) if the basis change is too large, in which case we cold-start this iteration.
+    bool warm = (e.cfg.warm_start == DMRG_WARM_ON && e.have_rotation && e.mps != nullptr &&
+                 e.mps_info != nullptr);
+    if (warm) {
+        reload_retained_mps(e);        // fresh from disk (the in-memory shell is stale post-solve)
+        if (e.cfg.warm_rotate == DMRG_WARM_ON)
+            warm = rotate_retained_mps(e); // rotate into the current basis; false => cold fallback
+        // else reuse-only: the reloaded MPS is the (unrotated) warm guess; the short re-solve corrects
+        // the basis change. Proven crash-free and == cold; the safe fallback if rotation is declined.
+    }
+    e.have_rotation = false; // consumed; the host supplies a fresh R each warm iteration
 
-    // --- sweep schedule (only "default" built; others provisioned) ---
+    // --- sweep schedule: short warm re-solve vs full cold ramp ---
     dmrg_schedule sch;
-    if (e.cfg.schedule == DMRG_SCHED_DEFAULT) {
+    if (warm) {
+        sch = build_warm_schedule(e.cfg.m, e.cfg.warm_sweeps, e.cfg.warm_noise, e.cfg.sweep_tol);
+    } else if (e.cfg.schedule == DMRG_SCHED_DEFAULT) {
         sch = build_default_schedule(e.cfg.m, e.cfg.sweeps, e.cfg.sweep_tol);
     } else {
         fprintf(out_stream,
@@ -493,28 +692,34 @@ int block2_casci_wrap::solve(int, int, bool) {
         exit(0);
     }
 
-    // State-averaged MultiMPS over the single target sector with nroots = n_s (n_s = 1 is just the
-    // single-state case). state_specific stays off (block2 default), so the n_s roots share one
-    // renormalized basis built from the equal-weight average density matrix -- exactly SA-CASSCF.
-    Random::rand_seed(0);
-    e.mps_info = std::make_shared<MultiMPSInfo<SU2>>(e.mpo->n_sites, e.hamil->vacuum,
-                                                     std::vector<SU2>{e.target}, e.mpo->basis);
-    e.mps_info->tag = "work_" + std::to_string(e.solve_count++); // unique per macro-iteration
-    // --- initial MPS occupancy (only hf_occ=integral built; others provisioned) ---
-    if (e.cfg.hf_occ == DMRG_HF_OCC_INTEGRAL) {
-        e.mps_info->set_bond_dimension((ubond_t)e.cfg.m); // full FCI envelope
-    } else {
-        fprintf(out_stream,
-                "ERROR: DMRG hf_occ option not implemented yet (only 'integral')\n");
-        exit(0);
+    if (!warm) {
+        // Cold start: drop the previous MPS and build a fresh random one. State-averaged MultiMPS
+        // over the single target sector with nroots = n_s (n_s = 1 is just the single-state case).
+        // state_specific stays off (block2 default), so the n_s roots share one renormalized basis
+        // built from the equal-weight average density matrix -- exactly SA-CASSCF.
+        if (e.mps_info != nullptr)
+            remove_tag_files(e.mps_info->tag);
+        Random::rand_seed(0);
+        e.mps_info = std::make_shared<MultiMPSInfo<SU2>>(e.mpo->n_sites, e.hamil->vacuum,
+                                                         std::vector<SU2>{e.target}, e.mpo->basis);
+        e.mps_info->tag = "work_" + std::to_string(e.solve_count++); // unique per macro-iteration
+        // --- initial MPS occupancy (only hf_occ=integral built; others provisioned) ---
+        if (e.cfg.hf_occ == DMRG_HF_OCC_INTEGRAL) {
+            e.mps_info->set_bond_dimension((ubond_t)e.cfg.m); // full FCI envelope
+        } else {
+            fprintf(out_stream,
+                    "ERROR: DMRG hf_occ option not implemented yet (only 'integral')\n");
+            exit(0);
+        }
+        e.mps = std::make_shared<MultiMPS<SU2, double>>(e.mpo->n_sites, 0, 2, e.n_s);
+        e.mps->initialize(e.mps_info);
+        e.mps->random_canonicalize();
+        e.mps->save_mutable();
+        e.mps->deallocate();
+        e.mps_info->save_mutable();
+        e.mps_info->deallocate_mutable();
     }
-    e.mps = std::make_shared<MultiMPS<SU2, double>>(e.mpo->n_sites, 0, 2, e.n_s);
-    e.mps->initialize(e.mps_info);
-    e.mps->random_canonicalize();
-    e.mps->save_mutable();
-    e.mps->deallocate();
-    e.mps_info->save_mutable();
-    e.mps_info->deallocate_mutable();
+    // warm: e.mps is the rotated MultiMPS (in place) under its retained tag; e.mps_info is reused.
 
     auto me = std::make_shared<MovingEnvironment<SU2, double, double>>(e.mpo, e.mps, e.mps,
                                                                        "DMRG");

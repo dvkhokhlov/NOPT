@@ -735,6 +735,12 @@ dmrg_par::dmrg_par(){
     localize  = DMRG_LOC_OFF;
     dump_loc_orbs = 0;
     loc_order = DMRG_LOCORDER_FIEDLER;
+    warm_start       = DMRG_WARM_START_DEFAULT;
+    warm_sweeps      = DMRG_WARM_SWEEPS_DEFAULT;
+    warm_noise       = DMRG_WARM_NOISE_DEFAULT;
+    rot_m            = DMRG_ROT_M_DEFAULT;
+    warm_start_after = DMRG_WARM_START_AFTER_DEFAULT;
+    warm_rotate      = DMRG_WARM_ROTATE_DEFAULT;
 
 }
 
@@ -808,6 +814,34 @@ int dmrg_par::read_line(char * inp){
         else                                                                loc_order = DMRG_LOCORDER_UNKNOWN;
     }
 
+    if(key_word_comp(inp, dmrg_warm_start_kw)){
+        if     (kw_to_kw(inp, dmrg_warm_start_kw, dmrg_warm_off_kw)) warm_start = DMRG_WARM_OFF;
+        else if(kw_to_kw(inp, dmrg_warm_start_kw, dmrg_warm_on_kw))  warm_start = DMRG_WARM_ON;
+        else                                                         warm_start = DMRG_WARM_UNKNOWN;
+    }
+
+    if(key_word_comp(inp, dmrg_warm_sweeps_kw)){
+        warm_sweeps = kw_to_i(inp, dmrg_warm_sweeps_kw, DMRG_WARM_SWEEPS_DEFAULT);
+    }
+
+    if(key_word_comp(inp, dmrg_warm_noise_kw)){
+        warm_noise = kw_to_f(inp, dmrg_warm_noise_kw, DMRG_WARM_NOISE_DEFAULT);
+    }
+
+    if(key_word_comp(inp, dmrg_rot_m_kw)){
+        rot_m = kw_to_i(inp, dmrg_rot_m_kw, DMRG_ROT_M_DEFAULT);
+    }
+
+    if(key_word_comp(inp, dmrg_warm_start_after_kw)){
+        warm_start_after = kw_to_i(inp, dmrg_warm_start_after_kw, DMRG_WARM_START_AFTER_DEFAULT);
+    }
+
+    if(key_word_comp(inp, dmrg_warm_rotate_kw)){
+        if     (kw_to_kw(inp, dmrg_warm_rotate_kw, dmrg_warm_off_kw)) warm_rotate = DMRG_WARM_OFF;
+        else if(kw_to_kw(inp, dmrg_warm_rotate_kw, dmrg_warm_on_kw))  warm_rotate = DMRG_WARM_ON;
+        else                                                          warm_rotate = DMRG_WARM_UNKNOWN;
+    }
+
     return 0;
 }
 
@@ -855,6 +889,32 @@ int dmrg_par::validate(){
         fprintf(out_stream,"ERROR: $DMRG save_dir must not be empty\n");
         ok=0;
     }
+    if(warm_start==DMRG_WARM_UNKNOWN){
+        fprintf(out_stream,"ERROR: $DMRG unknown warm_start value; accepted: off, on\n");
+        ok=0;
+    }
+    if(warm_rotate==DMRG_WARM_UNKNOWN){
+        fprintf(out_stream,"ERROR: $DMRG unknown warm_rotate value; accepted: off, on\n");
+        ok=0;
+    }
+    if(warm_start==DMRG_WARM_ON){
+        if(warm_sweeps<=0){
+            fprintf(out_stream,"ERROR: $DMRG warm_sweeps=%d must be > 0\n",warm_sweeps);
+            ok=0;
+        }
+        if(warm_noise<0){
+            fprintf(out_stream,"ERROR: $DMRG warm_noise=%e must be >= 0\n",warm_noise);
+            ok=0;
+        }
+        if(rot_m<0){
+            fprintf(out_stream,"ERROR: $DMRG rot_m=%d must be >= 0 (0 = use m)\n",rot_m);
+            ok=0;
+        }
+        if(warm_start_after<0){
+            fprintf(out_stream,"ERROR: $DMRG warm_start_after=%d must be >= 0\n",warm_start_after);
+            ok=0;
+        }
+    }
 
     if(!ok)exit(1);
 
@@ -882,6 +942,15 @@ int dmrg_par::write_info(){
     if(loc_order==DMRG_LOCORDER_NONE)
         fprintf(out_stream,"DMRG orbital ordering:            none (input order)\n");
     fprintf(out_stream,"Scratch directory (save_dir):     %s\n",save_dir.c_str());
+    if(warm_start==DMRG_WARM_ON){
+        fprintf(out_stream,"MPS warm-start:                   on (after %d cold iter)\n",warm_start_after);
+        fprintf(out_stream,"Warm re-solve sweeps:             %d\n",warm_sweeps);
+        fprintf(out_stream,"Warm re-solve noise:              %e\n",warm_noise);
+        fprintf(out_stream,"Rotate reused MPS:                %s\n",warm_rotate==DMRG_WARM_ON?"yes":"no (reuse-only)");
+        fprintf(out_stream,"MPS-rotation bond dim (rot_m):    %d\n",rot_m==0?m:rot_m);
+    }
+    else
+        fprintf(out_stream,"MPS warm-start:                   off\n");
     fprintf(out_stream,"\n");
 
     return 0;

@@ -189,6 +189,14 @@ vector<const char *>dmrg_loc_order_kw{{"loc_order"}};
 vector<const char *>dmrg_loc_order_fiedler_kw{{"fiedler"}};
 vector<const char *>dmrg_loc_order_gaopt_kw{{"gaopt"}};
 vector<const char *>dmrg_loc_order_none_kw{{"none"}};
+vector<const char *>dmrg_warm_start_kw{{"warm_start"}};
+vector<const char *>dmrg_warm_on_kw{{"on"}};
+vector<const char *>dmrg_warm_off_kw{{"off"}};
+vector<const char *>dmrg_warm_sweeps_kw{{"warm_sweeps"}};
+vector<const char *>dmrg_warm_noise_kw{{"warm_noise"}};
+vector<const char *>dmrg_rot_m_kw{{"rot_m"}};
+vector<const char *>dmrg_warm_start_after_kw{{"warm_start_after"}};
+vector<const char *>dmrg_warm_rotate_kw{{"warm_rotate"}};
 
 vector<const char *>MO_group_start{{"$vec1"},
                                    {"$vec"},

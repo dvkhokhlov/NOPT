@@ -34,6 +34,11 @@ public:
     // backend solves in the rotated basis and reports RDMs back in the original basis; nullptr or
     // never-called means solve in the supplied basis. aldet ignores it.
     virtual void set_localization(const double* U) {}
+    // Active-space rotation R (n_act x n_act, [a*n_act+p]) taking the previous macro-iteration's
+    // active basis to the current one. A warm-start backend uses it to rotate its retained
+    // wavefunction across the basis change; aldet and cold solves ignore it. Called only when a
+    // usable previous wavefunction exists (never on the first solve or after a fallback).
+    virtual void set_active_rotation(const double* R) {}
 
     // --- solve ---
     // Encapsulates the full diagonalisation (aldet: copy_coef -> set_par -> H_diag_calc -> run).

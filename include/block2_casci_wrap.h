@@ -22,6 +22,7 @@ public:
     bool has_coef(int i_set) const override;
     void set_act_rep_num(int* rep_num) override;
     void set_localization(const double* U) override;
+    void set_active_rotation(const double* R) override;
     void import_integrals(double* aaaa, double* f_act, double e_core) override;
 
     // --- solve ---
