@@ -1,9 +1,14 @@
 c4h6 pi CAS(4,4) -- DMRG-CASSCF vs native CASSCF (state-averaged, cc-pvtz).
 
 Active space: the butadiene pi system, state-averaged over 3 of 7 states.
-All three runs converge to the same energies (~1e-9) and the same properties
-(dipole/quadrupole/Mulliken); the DMRG runs use m=200. Shared geometry/basis/
-active-space live in c4h6.inp; the orbital guess is the RHF set c4h6_RHF.orb.
+Two DMRG runs -- a cold-start canonical one and the warm-start PM-localized default --
+are checked against the native CASSCF reference; the DMRG runs use m=200. The
+state-averaged energy (the variational optimization target) reproduces native to the
+print floor (~1e-10) in every run. The individual state energies are not variational at
+the SA stationary point, so they match ~1.7e-9 cold but scatter ~1.6e-7 under warm-start
+-- a benign, path-dependent effect that cancels in the average. Properties
+(dipole/quadrupole/Mulliken) also match. Shared geometry/basis/active-space live in
+c4h6.inp; the orbital guess is the RHF set c4h6_RHF.orb.
 
 1a) native CAS-SCF reference
     run_sQM -i ms_cas.inp > ms_cas.log

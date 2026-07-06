@@ -3,5 +3,5 @@ $PAR NUM_THREADS=4 N_MOL=1 RHF=0 CAS=1 D5=1 RI=1 NAME=c4h6-ms-dmrg $PAREND
 $RHF maxit=50 dE=1e-9 grad=1e-12 huckel $END
 $act_space n_alp=2 n_bet=2 n_val=4 mult=1 p_n=10; reorder=1 orbitals=14,15,16,20; $end
 $CAS n_s=7 w_state=1 1 1; cisolver=dmrg maxit=50 dE=1e-15 grad=1e-12 p_cutoff=0.03 $END
-$DMRG m=200 sweep_tol=1e-10 $END
+$DMRG m=200 sweep_tol=1e-10 warm_start=off $END
 $prop dipole=1 quad=1 mulliken=1 $propend
