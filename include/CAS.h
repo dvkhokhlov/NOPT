@@ -44,7 +44,8 @@ class CAS_engine{
         int  warm_ci_calls  = 0;                  // solve invocations so far (freeze/warm gate)
         bool warm_frozen    = false;              // has the localized frame been pinned?
         std::vector<double> U_loc_frozen;         // frozen localization (n_act^2)
-        std::vector<double> C_loc_prev;           // previous iteration's C_loc (n_ao x n_act)
+        std::vector<double> C_loc_prev;           // previous frame's active orbitals, localized or
+                                                  // canonical (n_ao x n_act)
 
         molecule * M;
         

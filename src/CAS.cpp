@@ -316,7 +316,7 @@ int CAS_engine::SCF_alloc(){
 }
 
 int CAS_engine::tensors_recalc(int n){
-    
+
     //transposition of VEC to CVEC
     for(int i=0; i<n_ao ;i++)
     for(int j=0; j<n_act;j++)
@@ -345,10 +345,11 @@ int CAS_engine::tensors_recalc(int n){
              -E_1el_calc(    K   , DM_C, n_ao, n_ao)  
              +M->V_nuc ;
              
-    if(localizer_){
-        const bool warm_on = (warm_start_cfg==DMRG_WARM_ON);
-        const int  F       = warm_after_cfg;               // freeze/warm gate (solve index)
+    const bool warm_on = (warm_start_cfg==DMRG_WARM_ON);
+    const int  F       = warm_after_cfg;                   // freeze/warm gate (solve index)
 
+    // Active-space localization: block2 solves in the localized basis. Only when a localizer exists.
+    if(localizer_){
         if(warm_on && warm_frozen && warm_ci_calls>F){
             // frozen frame: reuse the pinned localization instead of re-localizing, so the DMRG
             // lattice order (a function of the localized orbitals) stays valid for the retained MPS.
@@ -359,25 +360,34 @@ int CAS_engine::tensors_recalc(int n){
                 fprintf(out_stream,"WARNING: active-space localization did not converge; running delocalized\n");
         }
         CI->set_localization(U_loc.data());
+    }
 
-        if(warm_on){
-            std::vector<double> C_loc_cur((size_t)n_ao*n_act);
+    // Warm-start frame + rotation. Independent of localization: the frame orbitals are the localized
+    // active orbitals when localizing, else the canonical active orbitals (ACT_CVEC) directly.
+    if(warm_on){
+        std::vector<double> C_loc_cur;
+        const double* C_cur;
+        if(localizer_){
+            C_loc_cur.resize((size_t)n_ao*n_act);
             build_loc_orbitals(ACT_CVEC, U_loc.data(), n_ao, n_act, C_loc_cur.data());
-            if(warm_ci_calls==F){
-                // freeze point: pin the frame; this solve stays cold (no prior frozen-frame MPS yet).
-                U_loc_frozen.assign(U_loc.begin(), U_loc.end());
-                C_loc_prev = C_loc_cur;
-                warm_frozen = true;
-            } else if(warm_ci_calls>F){
-                // warm: R = C_loc_prev^T S_AO C_loc_cur (n_act x n_act, [a*n_act+p]); prev -> current
-                std::vector<double> tmp((size_t)n_ao*n_act), R((size_t)n_act*n_act);
-                cblas_dgemm(CblasRowMajor,CblasNoTrans,CblasNoTrans, n_ao,n_act,n_ao, 1.0,
-                            M->S_AO,n_ao, C_loc_cur.data(),n_act, 0.0, tmp.data(),n_act);
-                cblas_dgemm(CblasRowMajor,CblasTrans,CblasNoTrans, n_act,n_act,n_ao, 1.0,
-                            C_loc_prev.data(),n_act, tmp.data(),n_act, 0.0, R.data(),n_act);
-                CI->set_active_rotation(R.data());
-                C_loc_prev = C_loc_cur;
-            }
+            C_cur = C_loc_cur.data();
+        } else {
+            C_cur = ACT_CVEC;                              // canonical active orbitals [ao*n_act+p]
+        }
+        if(warm_ci_calls==F){
+            // freeze point: pin the frame; this solve stays cold (no prior frozen-frame MPS yet).
+            if(localizer_) U_loc_frozen.assign(U_loc.begin(), U_loc.end());
+            C_loc_prev.assign(C_cur, C_cur + (size_t)n_ao*n_act);
+            warm_frozen = true;
+        } else if(warm_ci_calls>F){
+            // warm: R = C_loc_prev^T S_AO C_cur (n_act x n_act, [a*n_act+p]); prev -> current
+            std::vector<double> tmp((size_t)n_ao*n_act), R((size_t)n_act*n_act);
+            cblas_dgemm(CblasRowMajor,CblasNoTrans,CblasNoTrans, n_ao,n_act,n_ao, 1.0,
+                        M->S_AO,n_ao, C_cur,n_act, 0.0, tmp.data(),n_act);
+            cblas_dgemm(CblasRowMajor,CblasTrans,CblasNoTrans, n_act,n_act,n_ao, 1.0,
+                        C_loc_prev.data(),n_act, tmp.data(),n_act, 0.0, R.data(),n_act);
+            CI->set_active_rotation(R.data());
+            C_loc_prev.assign(C_cur, C_cur + (size_t)n_ao*n_act);
         }
     }
     CI->import_integrals(aaaa_ints, F_act, E_core);
