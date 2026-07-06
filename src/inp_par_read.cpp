@@ -737,7 +737,6 @@ dmrg_par::dmrg_par(){
     loc_order = DMRG_LOCORDER_FIEDLER;
     warm_start       = DMRG_WARM_START_DEFAULT;
     warm_sweeps      = DMRG_WARM_SWEEPS_DEFAULT;
-    warm_noise       = DMRG_WARM_NOISE_DEFAULT;
     rot_m            = DMRG_ROT_M_DEFAULT;
     rot_steps        = DMRG_ROT_STEPS_DEFAULT;
     warm_start_after = DMRG_WARM_START_AFTER_DEFAULT;
@@ -825,10 +824,6 @@ int dmrg_par::read_line(char * inp){
         warm_sweeps = kw_to_i(inp, dmrg_warm_sweeps_kw, DMRG_WARM_SWEEPS_DEFAULT);
     }
 
-    if(key_word_comp(inp, dmrg_warm_noise_kw)){
-        warm_noise = kw_to_f(inp, dmrg_warm_noise_kw, DMRG_WARM_NOISE_DEFAULT);
-    }
-
     if(key_word_comp(inp, dmrg_rot_m_kw)){
         rot_m = kw_to_i(inp, dmrg_rot_m_kw, DMRG_ROT_M_DEFAULT);
     }
@@ -862,6 +857,7 @@ int dmrg_par::validate(){
         fprintf(out_stream,"ERROR: $DMRG sweeps=%d must be > 0\n",sweeps);
         ok=0;
     }
+    if(warm_sweeps<=0){ warm_sweeps = sweeps/2; if(warm_sweeps<1) warm_sweeps = 1; } // auto = sweeps/2
     if(sweep_tol<=0){
         fprintf(out_stream,"ERROR: $DMRG sweep_tol=%e must be > 0\n",sweep_tol);
         ok=0;
@@ -903,14 +899,6 @@ int dmrg_par::validate(){
         ok=0;
     }
     if(warm_start==DMRG_WARM_ON){
-        if(warm_sweeps<=0){
-            fprintf(out_stream,"ERROR: $DMRG warm_sweeps=%d must be > 0\n",warm_sweeps);
-            ok=0;
-        }
-        if(warm_noise<0){
-            fprintf(out_stream,"ERROR: $DMRG warm_noise=%e must be >= 0\n",warm_noise);
-            ok=0;
-        }
         if(rot_m<0){
             fprintf(out_stream,"ERROR: $DMRG rot_m=%d must be >= 0 (0 = use m)\n",rot_m);
             ok=0;
@@ -954,7 +942,6 @@ int dmrg_par::write_info(){
     if(warm_start==DMRG_WARM_ON){
         fprintf(out_stream,"MPS warm-start:                   on (after %d cold iter)\n",warm_start_after);
         fprintf(out_stream,"Warm re-solve sweeps:             %d\n",warm_sweeps);
-        fprintf(out_stream,"Warm re-solve noise:              %e\n",warm_noise);
         fprintf(out_stream,"Rotate reused MPS:                %s\n",warm_rotate==DMRG_WARM_ON?"yes":"no (reuse-only)");
         fprintf(out_stream,"MPS-rotation bond dim (rot_m):    %d\n",rot_m==0?m:rot_m);
         if(warm_rotate==DMRG_WARM_ON)

@@ -36,10 +36,9 @@
 #define DMRG_SWEEPS_DEFAULT 40
 #define DMRG_SWEEP_TOL_DEFAULT 1e-8
 #define DMRG_SAVE_DIR_DEFAULT "/dev/shm"   // block2 scratch root (RAM-backed by default)
-#define DMRG_WARM_START_DEFAULT 0          // MPS warm-start across macro-iterations: off by default
-#define DMRG_WARM_SWEEPS_DEFAULT 6         // max sweeps for the warm re-solve (no cold ramp)
-#define DMRG_WARM_NOISE_DEFAULT 1e-4       // warm re-solve noise (first sweeps): reused guess needs it
+#define DMRG_WARM_START_DEFAULT 1          // MPS warm-start across macro-iterations: on by default
+#define DMRG_WARM_SWEEPS_DEFAULT 0         // max sweeps for the warm re-solve; 0 = auto (sweeps/2)
 #define DMRG_ROT_M_DEFAULT 0               // MPS-rotation time-evolution bond dim (0 = use m)
-#define DMRG_ROT_STEPS_DEFAULT 10          // MPS-rotation TE steps (dt = 1/rot_steps; total time 1)
+#define DMRG_ROT_STEPS_DEFAULT 1           // MPS-rotation TE steps (dt = 1/rot_steps; total time 1)
 #define DMRG_WARM_START_AFTER_DEFAULT 1    // cold macro-iterations before freezing the localized frame
 #define DMRG_WARM_ROTATE_DEFAULT 1         // rotate the reused MPS into the new basis: on by default (off = reuse-only)

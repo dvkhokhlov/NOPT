@@ -87,8 +87,7 @@ class dmrg_par // settings for the DMRG (block2) CI backend; see $DMRG group
         int    loc_order;      // DMRG orbital ordering (dmrg_locorder_kind): fiedler | gaopt | none
         std::string save_dir;  // block2 scratch root (renormalized ops / MPS)
         int    warm_start;       // MPS warm-start across macro-iterations (dmrg_warm_kind): off | on
-        int    warm_sweeps;      // max sweeps for the warm re-solve (no cold ramp)
-        double warm_noise;       // perturbative noise on the first warm sweep(s), then 0
+        int    warm_sweeps;      // max sweeps for the warm re-solve; 0 = auto (sweeps/2)
         int    rot_m;            // MPS-rotation time-evolution bond dim (0 = use m)
         int    rot_steps;        // MPS-rotation TE steps (dt = 1/rot_steps; total time 1)
         int    warm_start_after; // cold macro-iterations before freezing the localized frame

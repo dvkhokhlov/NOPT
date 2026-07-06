@@ -199,24 +199,18 @@ dmrg_schedule build_default_schedule(int max_m, int user_sweeps, double sweep_to
     return s;
 }
 
-// Warm re-solve schedule: no cold ramp (the rotated MPS is already at full M) -- a short run at the
-// target bond dim, noise-free by default (warm_noise=0; the exact rotation gives a near-perfect
-// guess, so no noise is needed to re-expand bond space -- the noisy start is dropped entirely).
-// warm_noise>0 optionally puts a little noise on the first sweep(s). Ending at noise 0 is required:
-// block2 only declares convergence once the sweep noise equals the final noise (sweep_algorithm.hpp).
-dmrg_schedule build_warm_schedule(int max_m, int warm_sweeps, double warm_noise, double sweep_tol) {
+// Warm re-solve schedule: no cold ramp (the rotated MPS is already at full M) -- a short noise-free
+// run at the target bond dim. The exact rotation gives a near-perfect guess, so no perturbative noise
+// is needed to re-expand the bond space. All-zero noise also satisfies block2's convergence rule
+// (it declares convergence only once the sweep noise equals the final noise; sweep_algorithm.hpp).
+dmrg_schedule build_warm_schedule(int max_m, int warm_sweeps, double sweep_tol) {
     int nsw = warm_sweeps > 0 ? warm_sweeps : 4;
-    const double dav0 = 5e-6;
     const double dav_final = (sweep_tol <= 0 ? 1e-9 : sweep_tol / 10.0);
-    const int n_noisy = std::min(nsw > 1 ? nsw - 1 : 0, 2); // first 1-2 sweeps noisy, rest clean
     dmrg_schedule s;
     s.n_sweeps = nsw;
     s.bond_dims.assign(nsw, (ubond_t)max_m);
     s.noises.assign(nsw, 0.0);
     s.dav_thrds.assign(nsw, dav_final);
-    for (int sw = 0; sw < nsw; sw++) {
-        if (sw < n_noisy) { s.noises[sw] = warm_noise; s.dav_thrds[sw] = dav0; }
-    }
     return s;
 }
 
@@ -540,8 +534,7 @@ static bool rotate_retained_mps(dmrgci_engine &e) {
     double kmax = 0.0;
     for (size_t t = 0; t < nn; t++) kmax = std::max(kmax, std::fabs(kap[t]));
     if (kmax < 1e-8) {
-        fprintf(out_stream, "  warm-start: rotation negligible (max|k|=%.2e) -> reuse MPS as-is\n", kmax);
-        return true;
+        return true; // negligible rotation (near convergence): reuse the reloaded MPS as-is
     }
 
     // --- one-body rotation MPO exp(-kappa t), built from the (lattice-order) generator ---
@@ -572,9 +565,7 @@ static bool rotate_retained_mps(dmrgci_engine &e) {
         fprintf(out_stream, "  warm-start: rotation norm^2=%.6f drifted -> cold fallback\n", norm2);
         return false;
     }
-    fprintf(out_stream, "  warm-start: rotated MPS (leak %.2e, |Im k| %.2e, norm^2 %.6f)\n", leak,
-            imnorm, norm2);
-    return true;
+    return true; // rotated MPS in place; benign success is silent (keeps the CASSCF table clean)
 }
 
 // ---- ctor / dtor ---------------------------------------------------------------------
@@ -687,7 +678,7 @@ int block2_casci_wrap::solve(int, int, bool) {
     // --- sweep schedule: short warm re-solve vs full cold ramp ---
     dmrg_schedule sch;
     if (warm) {
-        sch = build_warm_schedule(e.cfg.m, e.cfg.warm_sweeps, e.cfg.warm_noise, e.cfg.sweep_tol);
+        sch = build_warm_schedule(e.cfg.m, e.cfg.warm_sweeps, e.cfg.sweep_tol);
     } else if (e.cfg.schedule == DMRG_SCHED_DEFAULT) {
         sch = build_default_schedule(e.cfg.m, e.cfg.sweeps, e.cfg.sweep_tol);
     } else {
