@@ -1263,6 +1263,22 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
     
     //canonical_orbitals
     CAS.av_DM_and_F_calc(1);
+    // A backend that can't rotate its own CI vector (DMRG) does not follow the active-block
+    // canonicalization above, so its leading-configuration read-out would sit in the SA-converged
+    // frame. Hand it the canonicalization -- eigenvectors of the active Fock block, ascending
+    // eigenvalue, the same convention as diag_X_MO_block but without rotating the orbitals -- so it
+    // can report its determinants in the canonical basis.
+    if(!CAS.CI->supports_civec_rotation() && CAS.n_act>0){
+        double * U_canon = new double[CAS.n_act*CAS.n_act];
+        double * ev      = new double[CAS.n_act];
+        for(int i=0;i<CAS.n_act;i++)
+            for(int j=0;j<CAS.n_act;j++)
+                U_canon[i*CAS.n_act+j]=CAS.F_tot[(i+CAS.n_core)*CAS.n_ao+(j+CAS.n_core)];
+        lapack_diag(U_canon, ev, CAS.n_act);
+        CAS.CI->set_report_rotation(U_canon);
+        delete[] ev;
+        delete[] U_canon;
+    }
     n_dav_conv =CAS.CI_calc(0,0,1);
     if(LINEAR)CAS.rotate();
     

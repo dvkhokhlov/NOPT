@@ -39,6 +39,11 @@ public:
     // wavefunction across the basis change; aldet and cold solves ignore it. Called only when a
     // usable previous wavefunction exists (never on the first solve or after a fallback).
     virtual void set_active_rotation(const double* R) {}
+    // Active-block canonicalization U (n_act x n_act, [a*n_act+p], eigenvectors of the active
+    // Fock block, ascending eigenvalue -- the same rotation the aldet path applies via malmqvist).
+    // A backend that can't rotate its own CI vector uses it to report its leading configurations in
+    // the canonical basis. aldet and rotation-capable backends ignore it (they already canonicalize).
+    virtual void set_report_rotation(const double* U) {}
 
     // --- solve ---
     // Encapsulates the full diagonalisation (aldet: copy_coef -> set_par -> H_diag_calc -> run).

@@ -23,6 +23,7 @@ public:
     void set_act_rep_num(int* rep_num) override;
     void set_localization(const double* U) override;
     void set_active_rotation(const double* R) override;
+    void set_report_rotation(const double* U) override;
     void import_integrals(double* aaaa, double* f_act, double e_core) override;
 
     // --- solve ---
