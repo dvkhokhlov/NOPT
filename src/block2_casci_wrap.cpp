@@ -254,6 +254,7 @@ struct dmrgci_engine {
     int solve_count = 0;                        // macro-iteration index -> unique MPS tag
     int last_n_sweeps = 0;                      // sweeps actually run in the last solve
     double last_sweep_dE = 0.0;                 // |dE| between the final two sweeps (achieved convergence)
+    bool last_hit_max = false;                  // last solve used its full sweep budget with dE > sweep_tol
     std::vector<uint16_t> reorder_perm;         // DMRG lattice order (Fiedler); empty => input order
 
     dmrgci_engine(int n_act_, int n_elec_, int twos_, int mult_, int n_s_, const dmrg_par &c)
@@ -559,8 +560,11 @@ static bool rotate_retained_mps(dmrgci_engine &e) {
     // MultiMPS TE is complex-only, ket.size()==2; evolve_sa_multimps drives the per-root apply +
     // shared-basis truncation). -dt convention verified in the tests/block harness.
     const int rot_m = e.cfg.rot_m > 0 ? e.cfg.rot_m : e.cfg.m;
-    const double dt = 0.01;
-    const int n_steps = (int)(1.0 / dt + 0.1);
+    // exp(-kappa) over t in [0,1] as n_steps TangentSpace TE sweeps (dt = 1/n_steps). One step
+    // already reproduces the full rotation for small per-iter rotations (the sweep applies a
+    // Krylov matrix-exponential per site, not an Euler step); rot_steps guards larger rotations.
+    const int n_steps = e.cfg.rot_steps > 0 ? e.cfg.rot_steps : 10;
+    const double dt = 1.0 / n_steps;
     const double norm2 = evolve_sa_multimps(e.mps, mpo_rot, (ubond_t)rot_m, dt, n_steps);
     mpo_rot->deallocate();
 
@@ -756,6 +760,10 @@ int block2_casci_wrap::solve(int, int, bool) {
         if (nr > 0)
             e.last_sweep_dE = std::fabs(a1 / nr - a0 / nr);
     }
+    // Exhausted the sweep budget without meeting block2's sweep_tol early-stop -> possibly
+    // under-converged CI vector (flagged in the CAS-SCF table). A run that converges exactly on
+    // its last scheduled sweep has last_sweep_dE <= sweep_tol and is not flagged.
+    e.last_hit_max = (e.last_n_sweeps >= sch.n_sweeps) && (e.last_sweep_dE > e.cfg.sweep_tol);
 
     me->remove_partition_files(); // keep mps/mps_info alive for the RDM read-out
     return e.last_n_sweeps;
@@ -836,6 +844,7 @@ double block2_casci_wrap::L2_state(int)   const { return 0.0; } // linear-molecu
 double block2_casci_wrap::P_state(int)    const { return 0.0; } // parity: deferred
 double *block2_casci_wrap::E_states_ptr() const { return impl_->E_states.data(); }
 double block2_casci_wrap::last_solve_resid() const { return impl_->last_sweep_dE; }
+bool block2_casci_wrap::last_solve_hit_max() const { return impl_->last_hit_max; }
 void block2_casci_wrap::gen_ext_ind() { /* aldet determinant index tables; n/a for an MPS backend */ }
 void block2_casci_wrap::print_states(int, int, int) { /* MPS CSF/det printout deferred (DeterminantTRIE) */ }
 void block2_casci_wrap::write_civec(int, char *) { /* MPS write-out deferred */ }

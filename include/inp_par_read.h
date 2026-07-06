@@ -90,6 +90,7 @@ class dmrg_par // settings for the DMRG (block2) CI backend; see $DMRG group
         int    warm_sweeps;      // max sweeps for the warm re-solve (no cold ramp)
         double warm_noise;       // perturbative noise on the first warm sweep(s), then 0
         int    rot_m;            // MPS-rotation time-evolution bond dim (0 = use m)
+        int    rot_steps;        // MPS-rotation TE steps (dt = 1/rot_steps; total time 1)
         int    warm_start_after; // cold macro-iterations before freezing the localized frame
         int    warm_rotate;      // rotate the reused MPS into the new basis (dmrg_warm_kind): off = reuse-only | on
 

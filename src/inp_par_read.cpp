@@ -739,6 +739,7 @@ dmrg_par::dmrg_par(){
     warm_sweeps      = DMRG_WARM_SWEEPS_DEFAULT;
     warm_noise       = DMRG_WARM_NOISE_DEFAULT;
     rot_m            = DMRG_ROT_M_DEFAULT;
+    rot_steps        = DMRG_ROT_STEPS_DEFAULT;
     warm_start_after = DMRG_WARM_START_AFTER_DEFAULT;
     warm_rotate      = DMRG_WARM_ROTATE_DEFAULT;
 
@@ -832,6 +833,10 @@ int dmrg_par::read_line(char * inp){
         rot_m = kw_to_i(inp, dmrg_rot_m_kw, DMRG_ROT_M_DEFAULT);
     }
 
+    if(key_word_comp(inp, dmrg_rot_steps_kw)){
+        rot_steps = kw_to_i(inp, dmrg_rot_steps_kw, DMRG_ROT_STEPS_DEFAULT);
+    }
+
     if(key_word_comp(inp, dmrg_warm_start_after_kw)){
         warm_start_after = kw_to_i(inp, dmrg_warm_start_after_kw, DMRG_WARM_START_AFTER_DEFAULT);
     }
@@ -910,6 +915,10 @@ int dmrg_par::validate(){
             fprintf(out_stream,"ERROR: $DMRG rot_m=%d must be >= 0 (0 = use m)\n",rot_m);
             ok=0;
         }
+        if(rot_steps<=0){
+            fprintf(out_stream,"ERROR: $DMRG rot_steps=%d must be > 0\n",rot_steps);
+            ok=0;
+        }
         if(warm_start_after<0){
             fprintf(out_stream,"ERROR: $DMRG warm_start_after=%d must be >= 0\n",warm_start_after);
             ok=0;
@@ -948,6 +957,8 @@ int dmrg_par::write_info(){
         fprintf(out_stream,"Warm re-solve noise:              %e\n",warm_noise);
         fprintf(out_stream,"Rotate reused MPS:                %s\n",warm_rotate==DMRG_WARM_ON?"yes":"no (reuse-only)");
         fprintf(out_stream,"MPS-rotation bond dim (rot_m):    %d\n",rot_m==0?m:rot_m);
+        if(warm_rotate==DMRG_WARM_ON)
+            fprintf(out_stream,"MPS-rotation TE steps (rot_steps):%d\n",rot_steps);
     }
     else
         fprintf(out_stream,"MPS warm-start:                   off\n");

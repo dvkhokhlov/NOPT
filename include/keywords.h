@@ -76,6 +76,7 @@ extern vector<const char *>dmrg_warm_off_kw          ;
 extern vector<const char *>dmrg_warm_sweeps_kw       ;
 extern vector<const char *>dmrg_warm_noise_kw        ;
 extern vector<const char *>dmrg_rot_m_kw             ;
+extern vector<const char *>dmrg_rot_steps_kw         ;
 extern vector<const char *>dmrg_warm_start_after_kw  ;
 extern vector<const char *>dmrg_warm_rotate_kw       ;
 extern vector<const char *>MO_group_start       ;

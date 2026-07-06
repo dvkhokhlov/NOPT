@@ -1151,6 +1151,7 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
     
     int converged=0;
     double rot_step=1.0;
+    bool any_maxed=false;   // a macro-iter whose CI solve hit its max sweeps while under-converged
     
     if(IS_SYM){
         int n_ao  = M->n_ao;
@@ -1212,7 +1213,9 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
         if(cas->method==2)max_grad_el = j_sd.find_max_el();
         
         
-        fprintf(out_stream,"%3d |% 18.10f | % .3e | %.3e | %.3e | %3d   | %.3e |\n",n_iter,E,E-E_old,max_grad_el, rot_step,n_dav_conv,CAS.CI->last_solve_resid());
+        bool hit_max = CAS.CI->last_solve_hit_max();
+        if(hit_max) any_maxed=true;
+        fprintf(out_stream,"%3d |% 18.10f | % .3e | %.3e | %.3e | %3d   | %.3e |%s\n",n_iter,E,E-E_old,max_grad_el, rot_step,n_dav_conv,CAS.CI->last_solve_resid(), hit_max?" *":"");
         fflush(out_stream);
 //         getchar();
 //         exit(0);
@@ -1242,6 +1245,9 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
     if(converged==2)fprintf(out_stream,"\nLagrangian converged");
     if(converged==3)fprintf(out_stream,"\nRotation matrix converged");
     fprintf(out_stream," after %d iterations\n\n", n_iter);
+    if(any_maxed)
+        fprintf(out_stream," * CI solve reached the maximum DMRG sweep count without meeting sweep_tol;\n"
+                           "   that iteration's CI vector may be under-converged -- raise $DMRG sweeps or m.\n\n");
     printf_timer("CAS_SCF iterations");
     
     

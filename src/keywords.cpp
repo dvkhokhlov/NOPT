@@ -195,6 +195,7 @@ vector<const char *>dmrg_warm_off_kw{{"off"}};
 vector<const char *>dmrg_warm_sweeps_kw{{"warm_sweeps"}};
 vector<const char *>dmrg_warm_noise_kw{{"warm_noise"}};
 vector<const char *>dmrg_rot_m_kw{{"rot_m"}};
+vector<const char *>dmrg_rot_steps_kw{{"rot_steps"}};
 vector<const char *>dmrg_warm_start_after_kw{{"warm_start_after"}};
 vector<const char *>dmrg_warm_rotate_kw{{"warm_rotate"}};
 

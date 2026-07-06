@@ -67,6 +67,10 @@ public:
     // Energy convergence actually achieved by the last solve (DMRG: |dE| between the final two
     // sweeps; iterative CI: final residual). 0 if not tracked. Reported in the CAS-SCF table.
     virtual double last_solve_resid() const { return 0.0; }
+    // True if the last solve exhausted its sweep/iteration budget without meeting the convergence
+    // threshold (DMRG: reached the schedule's max sweeps with |dE| still above sweep_tol). Flags a
+    // possibly under-converged CI vector in the CAS-SCF table. Backends that don't track it: false.
+    virtual bool last_solve_hit_max() const { return false; }
 
     // --- relating the wavefunction across an active-orbital-basis change (capability-gated) ---
     // All three operations need the same thing: representing/comparing the wavefunction
