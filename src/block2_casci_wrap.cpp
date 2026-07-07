@@ -896,14 +896,67 @@ compress_single_mps(dmrgci_engine &e, const std::shared_ptr<MPS<SU2, double>> &k
     return bra;
 }
 
-// Rotate a MultiMPS from the localized (solve) basis into the canonical (report) basis by the proper
-// rotation U (n_act x n_act, [a*n+p], det>0; the caller supplies R^T with one orbital sign flipped when
-// improper). kappa = log(U) is reindexed into the frozen lattice (Fiedler) order and the one-body MPO
-// exp(-kappa) is applied by rot_steps TangentSpace TE sweeps at bond dim rot_m -- block2's orbital-
-// rotation recipe, shared with the warm-start (evolve_sa_multimps). Mutates mps in place; a no-op when
-// the rotation is negligible (an already-canonical solve). Unlike the warm-start there is no cold
-// fallback: the read-out accepts the truncation, reported downstream as the captured weight.
-static void rotate_multimps_to_canonical(dmrgci_engine &e,
+// Peel the discrete part off the solve->report basis change Rp (= R^T; column p is report orbital p in
+// solve coordinates). rotate_multimps_to_canonical evolves under exp(-log W), so a near-permutation Rp
+// makes log(Rp) hit the matrix-log branch cut (an eigenvalue near -1 -> complex generator) -- the
+// canon-only (non-localized) case, where the report orbitals are just the ascending-Fock-eigenvalue
+// reordering of the solve orbitals. Factor Rp = Rt * Q with Q a signed permutation and Rt ~ I proper
+// (right factor: Q mixes the report/column index). Rotating by the residual Rt reads residual orbitals
+// (Fact F: site reads a column of the fed matrix); the permutation Q is then applied exactly to the
+// extracted occupations. Overwrites Rp in place with Rt and returns g : report -> residual, so that
+// occ(canon_p) = occ(residual g[p]) -- i.e. lc.occ[p] = occ_lat[iperm[g[p]]] reproduces the full-Rp
+// read-out (g = id recovers it). Signs of Q are a per-determinant gauge (dropped). Greedy max-magnitude
+// matching; exact when Rp is a signed permutation.
+static std::vector<int> peel_report_permutation(double *Rp, int n) {
+    struct Cell { double mag; int i, j; };
+    std::vector<Cell> cells;
+    cells.reserve((size_t)n * n);
+    for (int i = 0; i < n; i++)
+        for (int j = 0; j < n; j++)
+            cells.push_back({std::fabs(Rp[(size_t)i * n + j]), i, j});
+    std::sort(cells.begin(), cells.end(),
+              [](const Cell &a, const Cell &b) { return a.mag > b.mag; });
+    std::vector<int> rho(n, -1);        // rho[a] = report column matched to solve row a (solve->report)
+    std::vector<double> sgn(n, 1.0);
+    std::vector<char> row_used(n, 0), col_used(n, 0);
+    for (const Cell &c : cells) {
+        if (row_used[c.i] || col_used[c.j]) continue;
+        row_used[c.i] = col_used[c.j] = 1;
+        rho[c.i] = c.j;
+        sgn[c.i] = Rp[(size_t)c.i * n + c.j] < 0.0 ? -1.0 : 1.0;
+    }
+    // Right factor Rt = Rp * Q: column b of Rt = sgn[b] * (column rho[b] of Rp); diagonal Rt[b][b] > 0.
+    std::vector<double> Rt((size_t)n * n);
+    for (int a = 0; a < n; a++)
+        for (int b = 0; b < n; b++)
+            Rt[(size_t)a * n + b] = sgn[b] * Rp[(size_t)a * n + rho[b]];
+    // Keep Rt proper (Rp improper is absorbed as an odd Q sign); a negative det would give a -1
+    // eigenvalue -> complex log. Flip the least-aligned residual column (smallest diagonal); its sign is
+    // gauge, dropped downstream. exp(-log Rt) still guards against a residual that stays complex.
+    if (MatrixFunctions::det(MatrixRef(Rt.data(), n, n)) < 0.0) {
+        int bmin = 0;
+        for (int b = 1; b < n; b++)
+            if (std::fabs(Rt[(size_t)b * n + b]) < std::fabs(Rt[(size_t)bmin * n + bmin])) bmin = b;
+        for (int a = 0; a < n; a++) Rt[(size_t)a * n + bmin] = -Rt[(size_t)a * n + bmin];
+    }
+    std::copy(Rt.begin(), Rt.end(), Rp);
+    std::vector<int> g(n, -1); // report -> residual: g = rho^{-1}
+    for (int a = 0; a < n; a++) g[rho[a]] = a;
+    return g;
+}
+
+// Rotate a MultiMPS by the residual continuous rotation between the solve and report bases. The full
+// solve->report rotation (localized or canonical; see print_states) is a signed permutation times a
+// residual; the caller peels the permutation off (peel_report_permutation) and passes only the residual
+// U (n_act x n_act, [a*n+p], ~ I, proper). kappa = log(U) is reindexed into the frozen lattice (Fiedler)
+// order and the one-body MPO exp(-kappa) is applied by rot_steps TangentSpace TE sweeps at bond dim
+// rot_m -- block2's orbital-rotation recipe, shared with the warm-start (evolve_sa_multimps). Mutates
+// mps in place; a no-op when the residual is negligible (an already-canonical or pure-permutation
+// solve). Unlike the warm-start there is no cold fallback: the read-out accepts the truncation,
+// reported downstream as the captured weight. Returns false (leaving mps untouched) only if the
+// generator still comes back complex despite the peel -- the caller then reports in the solve basis
+// without the permutation relabel.
+static bool rotate_multimps_to_canonical(dmrgci_engine &e,
                                          const std::shared_ptr<MultiMPS<SU2, double>> &mps,
                                          const double *U, int rot_m, int rot_steps) {
     const int n = e.n_act;
@@ -921,7 +974,7 @@ static void rotate_multimps_to_canonical(dmrgci_engine &e,
     ck.deallocate(heap);
     if (MatrixFunctions::norm(MatrixRef(kim.data(), n, n)) > 1e-6) {
         fprintf(out_stream, "  warning: read-out rotation generator not real -> reporting in solve basis\n");
-        return;
+        return false;
     }
 
     // NC MPO expects kappa^T; reindex into the frozen lattice order (as the warm-start rotation does).
@@ -935,7 +988,7 @@ static void rotate_multimps_to_canonical(dmrgci_engine &e,
             kap[(size_t)i * n + j] = kre[(size_t)oj * n + oi];
             kmax = std::max(kmax, std::fabs(kap[(size_t)i * n + j]));
         }
-    if (kmax < 1e-8) return; // exp(-kappa) ~ I: the MPS already sits in the reporting basis
+    if (kmax < 1e-8) return true; // exp(-kappa) ~ I: the MPS already sits in the reporting basis
 
     auto fd_rot = std::make_shared<FCIDUMP<double>>();
     fd_rot->initialize_h1e(n, e.n_elec, e.twos, /*isym=*/0, 0.0, kap.data(), nn);
@@ -949,6 +1002,7 @@ static void rotate_multimps_to_canonical(dmrgci_engine &e,
         true);
     evolve_sa_multimps(mps, mpo_rot, (ubond_t)rot_m, 1.0 / rot_steps, rot_steps); // exp(-kappa t), t in [0,1]
     mpo_rot->deallocate();
+    return true;
 }
 
 // Report each state's leading determinants in the canonical (delocalized MO) basis, matching the native
@@ -984,11 +1038,14 @@ void block2_casci_wrap::print_states(int, int, int print) {
         for (int i = 0; i < n; i++) iperm[reord[i]] = i;
     }
 
-    // Orbital rotation into the canonical (report) basis: R = <canon|loc> is U_canon*U_loc (localizing),
-    // U_canon (canonicalizing a delocalized solve), or U_loc. The MPS rotation needs the transpose
-    // <loc|canon> = R^T and a proper rotation (det>0); build Rp = R^T once, flipping one orbital's sign
-    // when improper (a gauge choice: changes determinant signs, not magnitudes).
+    // Solve -> report (canonical) basis change: R = <canon|solve> is U_canon*U_loc (localizing), U_canon
+    // (canonicalizing a delocalized solve), or U_loc. rotate_multimps_to_canonical consumes Rp = R^T
+    // (column p is report orbital p in solve coordinates). For the canon-only case Rp is a near signed
+    // permutation, whose log hits the branch cut, so peel the permutation off (peel_report_permutation):
+    // Rp is overwritten with the residual Rt (~ I, real log) and g maps report orbital -> residual
+    // orbital, applied as an exact relabel of the extracted occupations.
     std::vector<double> R_total, Rp;
+    std::vector<int> rep_perm; // report orbital p <- residual orbital rep_perm[p]; empty => none
     const double *R = nullptr;
     if (e.have_canon && e.localize_on) {
         R_total.assign((size_t)n * n, 0.0);
@@ -1003,17 +1060,20 @@ void block2_casci_wrap::print_states(int, int, int print) {
     if (R != nullptr) {
         Rp.assign((size_t)n * n, 0.0);
         for (int i = 0; i < n; i++)
-            for (int j = 0; j < n; j++) Rp[(size_t)i * n + j] = R[(size_t)j * n + i]; // transpose
-        std::vector<double> Rdet = Rp;
-        if (MatrixFunctions::det(MatrixRef(Rdet.data(), n, n)) < 0.0)
-            for (int i = 0; i < n; i++) Rp[(size_t)i * n + 0] = -Rp[(size_t)i * n + 0];
+            for (int j = 0; j < n; j++) Rp[(size_t)i * n + j] = R[(size_t)j * n + i]; // Rp = R^T
+        rep_perm = peel_report_permutation(Rp.data(), n); // Rp <- residual Rt; rep_perm = g
     }
 
     for (int st = 0; st < e.n_s; st++) {
         // Work on a copy of this root; e.mps stays in the localized basis for the property read-out.
         const std::string xtag = e.mps_info->tag + "-cf" + std::to_string(st);
         std::shared_ptr<MultiMPS<SU2, double>> imps = e.mps->extract(st, xtag);
-        if (!Rp.empty()) rotate_multimps_to_canonical(e, imps, Rp.data(), rot_m, rot_steps);
+        // Rotate by the residual; relabel by g only when the rotation applied (a complex residual falls
+        // back to the solve basis, where the permutation relabel does not hold).
+        const std::vector<int> *relabel = nullptr;
+        if (!Rp.empty() &&
+            rotate_multimps_to_canonical(e, imps, Rp.data(), rot_m, rot_steps))
+            relabel = &rep_perm;
 
         const std::string stag = e.mps_info->tag + "-cs" + std::to_string(st);
         std::shared_ptr<MPS<SU2, double>> smps = imps->make_single(stag);
@@ -1047,7 +1107,10 @@ void block2_casci_wrap::print_states(int, int, int print) {
             std::vector<uint8_t> occ_lat = (*dtrie)[t]; // block2 (Fiedler) lattice order
             leading_config lc;
             lc.occ.assign(n, 0);
-            for (int i = 0; i < n; i++) lc.occ[i] = reord.empty() ? occ_lat[i] : occ_lat[iperm[i]];
+            for (int i = 0; i < n; i++) {
+                const int c = relabel ? (*relabel)[i] : i; // report orbital i <- residual orbital c
+                lc.occ[i] = reord.empty() ? occ_lat[c] : occ_lat[iperm[c]];
+            }
             lc.coef = (double)dtrie->vals[t];
             captured += lc.coef * lc.coef;
             cfgs.push_back(std::move(lc));
