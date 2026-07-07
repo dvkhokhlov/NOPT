@@ -1,5 +1,4 @@
 include Makefile.vars
-include Makefile.block2.vars
 
 progs_cpp:=$(filter %.cpp,$(shell ls src/progs))
 
