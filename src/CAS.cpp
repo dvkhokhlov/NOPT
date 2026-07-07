@@ -1287,7 +1287,7 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
     fprintf(out_stream,"CAS_SCF WaveFunctions:\n\n");
     CAS.CI->gen_ext_ind();
     CAS.CI->print_states(0,CAS.n_s,1);
-    
+
     CAS.print_av_table("CAS_SCF density averaging:");
     
     cas->w_state=CAS.wstate_actual;

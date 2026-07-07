@@ -850,27 +850,125 @@ double *block2_casci_wrap::E_states_ptr() const { return impl_->E_states.data();
 double block2_casci_wrap::last_solve_resid() const { return impl_->last_sweep_dE; }
 bool block2_casci_wrap::last_solve_hit_max() const { return impl_->last_hit_max; }
 void block2_casci_wrap::gen_ext_ind() { /* aldet determinant index tables; n/a for an MPS backend */ }
-// Report each state's leading determinants in the delocalized (canonical MO) basis. The MPS
-// is spin-adapted (SU2); for a determinant read-out each root's single MPS is transformed to
-// SZ and its dominant determinants are pulled from a DeterminantTRIE. convert_phase applies
-// the physical fermionic signs (block2's internal spin order + the Fiedler orbital order) so
-// the coefficients carry the true relative signs; the occupation strings are un-permuted back
-// to input orbital order. The localized->canonical rotation is done by report_leading_configs.
+// Compress a single MPS to bond dimension target_m by fitting a small-m MPS to it through the identity
+// MPO (block2 Linear "Normal" equation). State-preserving projection used only for the read-out: it
+// makes the DeterminantTRIE search cheaper (cost ~ m^2) on the (higher-m) rotated canonical MPS, while
+// preserving the leading determinants. ctag names the fitted MPS's scratch; the caller removes it. Env
+// scratch is cleaned here.
+static std::shared_ptr<MPS<SU2, double>>
+compress_single_mps(dmrgci_engine &e, const std::shared_ptr<MPS<SU2, double>> &ket,
+                    int target_m, const std::string &ctag) {
+    std::shared_ptr<MPO<SU2, double>> impo = std::make_shared<IdentityMPO<SU2, double>>(e.hamil);
+    impo = std::make_shared<SimplifiedMPO<SU2, double>>(impo, std::make_shared<Rule<SU2, double>>());
+
+    auto binfo = std::make_shared<MPSInfo<SU2>>(e.mpo->n_sites, e.hamil->vacuum, e.target,
+                                                e.mpo->basis);
+    binfo->set_bond_dimension((ubond_t)target_m);
+    binfo->tag = ctag;
+    auto bra = std::make_shared<MPS<SU2, double>>(e.mpo->n_sites, ket->center, ket->dot);
+    bra->initialize(binfo);
+    bra->random_canonicalize();
+    bra->save_mutable();
+    bra->deallocate();
+    binfo->save_mutable();
+    binfo->deallocate_mutable();
+
+    auto cme = std::make_shared<MovingEnvironment<SU2, double, double>>(impo, bra, ket, "CPS");
+    cme->init_environments(false);
+    // ket bond dim from the ket itself (the rotated MPS can exceed the solve m), so the fit does not
+    // truncate the ket -- only the bra is compressed to target_m.
+    std::vector<ubond_t> bdim{(ubond_t)target_m}, kdim{ket->info->get_max_bond_dimension()};
+    std::vector<double> noises{1e-9, 0.0}; // one noisy sweep to seed the fit, then clean
+    auto cps = std::make_shared<Linear<SU2, double, double>>(cme, bdim, kdim, noises);
+    cps->iprint = 0;
+    cps->solve(8, ket->center == 0);
+
+    cme->remove_partition_files();
+    impo->deallocate();
+    return bra;
+}
+
+// Rotate a MultiMPS from the localized (solve) basis into the canonical (report) basis by the proper
+// rotation U (n_act x n_act, [a*n+p], det>0; the caller supplies R^T with one orbital sign flipped when
+// improper). kappa = log(U) is reindexed into the frozen lattice (Fiedler) order and the one-body MPO
+// exp(-kappa) is applied by rot_steps TangentSpace TE sweeps at bond dim rot_m -- block2's orbital-
+// rotation recipe, shared with the warm-start (evolve_sa_multimps). Mutates mps in place; a no-op when
+// the rotation is negligible (an already-canonical solve). Unlike the warm-start there is no cold
+// fallback: the read-out accepts the truncation, reported downstream as the captured weight.
+static void rotate_multimps_to_canonical(dmrgci_engine &e,
+                                         const std::shared_ptr<MultiMPS<SU2, double>> &mps,
+                                         const double *U, int rot_m, int rot_steps) {
+    const int n = e.n_act;
+    const size_t nn = (size_t)n * n;
+    auto heap = std::make_shared<VectorAllocator<double>>(); // log temporaries off block2's LIFO stack
+
+    std::vector<double> Um(U, U + nn);
+    ComplexMatrixRef ck(nullptr, n, n);
+    ck.allocate(heap);
+    ck.clear();
+    ComplexMatrixFunctions::fill_complex(ck, MatrixRef(Um.data(), n, n), MatrixRef(nullptr, n, n));
+    ComplexMatrixFunctions::logarithm(ck); // kappa = log(U); real antisymmetric for a proper rotation
+    std::vector<double> kre(nn), kim(nn);
+    ComplexMatrixFunctions::extract_complex(ck, MatrixRef(kre.data(), n, n), MatrixRef(kim.data(), n, n));
+    ck.deallocate(heap);
+    if (MatrixFunctions::norm(MatrixRef(kim.data(), n, n)) > 1e-6) {
+        fprintf(out_stream, "  warning: read-out rotation generator not real -> reporting in solve basis\n");
+        return;
+    }
+
+    // NC MPO expects kappa^T; reindex into the frozen lattice order (as the warm-start rotation does).
+    const bool have_perm = !e.reorder_perm.empty();
+    std::vector<double> kap(nn);
+    double kmax = 0.0;
+    for (int i = 0; i < n; i++)
+        for (int j = 0; j < n; j++) {
+            int oi = have_perm ? e.reorder_perm[i] : i;
+            int oj = have_perm ? e.reorder_perm[j] : j;
+            kap[(size_t)i * n + j] = kre[(size_t)oj * n + oi];
+            kmax = std::max(kmax, std::fabs(kap[(size_t)i * n + j]));
+        }
+    if (kmax < 1e-8) return; // exp(-kappa) ~ I: the MPS already sits in the reporting basis
+
+    auto fd_rot = std::make_shared<FCIDUMP<double>>();
+    fd_rot->initialize_h1e(n, e.n_elec, e.twos, /*isym=*/0, 0.0, kap.data(), nn);
+    auto hamil_rot = std::make_shared<HamiltonianQC<SU2, double>>(SU2(0), n, e.orbsym, fd_rot);
+    std::shared_ptr<MPO<SU2, double>> mpo_rot =
+        std::make_shared<MPOQC<SU2, double>>(hamil_rot, QCTypes::NC);
+    mpo_rot->basis = hamil_rot->basis;
+    mpo_rot = std::make_shared<SimplifiedMPO<SU2, double>>(
+        mpo_rot,
+        std::make_shared<AntiHermitianRuleQC<SU2, double>>(std::make_shared<RuleQC<SU2, double>>()),
+        true);
+    evolve_sa_multimps(mps, mpo_rot, (ubond_t)rot_m, 1.0 / rot_steps, rot_steps); // exp(-kappa t), t in [0,1]
+    mpo_rot->deallocate();
+}
+
+// Report each state's leading determinants in the canonical (delocalized MO) basis, matching the native
+// aldet print_states read-out. The DMRG solve runs in the localized + Fiedler-ordered basis, where a
+// determinant expansion is meaningless (a single canonical determinant smears over ~1e6 localized ones),
+// so each state's MPS is rotated localized->canonical before extraction. Per state: extract a copy of the
+// root (e.mps is left untouched for the property read-out that follows), rotate the copy into the report
+// basis, optionally compress it for a cheaper search, transform SU2->SZ, pull the dominant determinants
+// from a DeterminantTRIE (convert_phase applies block2's spin order + the Fiedler orbital signs), and
+// un-permute the occupation strings back to input order.
 void block2_casci_wrap::print_states(int, int, int print) {
     if (!print) return;
     dmrgci_engine &e = *impl_;
     if (e.mps == nullptr) return;
+    if (e.cfg.print_dets != DMRG_WARM_ON) { // read-out opted out ($DMRG print_dets = off)
+        fprintf(out_stream, "  (leading-determinant read-out disabled: $DMRG print_dets = off)\n");
+        return;
+    }
     host_threads_guard htg;
 
     const int n = e.n_act;
-    const int na = (e.n_elec + e.twos) / 2;
-    const int nb = (e.n_elec - e.twos) / 2;
     const double S = e.twos / 2.0, S2 = S * (S + 1.0);
-    const double det_cutoff = 1e-4;   // extraction threshold (captures leading dets + tail)
-    const int print_number = 10;      // leading dets reported per state (CAS_PRINT_NUMBER_DEFAULT)
+    const double cutoff = e.cfg.extract_cutoff;
+    const int print_number = 10; // leading dets reported per state (CAS_PRINT_NUMBER_DEFAULT)
+    const int rot_m = e.cfg.det_rot_m, rot_steps = e.cfg.det_rot_steps, cm = e.cfg.extract_m;
 
-    // block2's Fiedler reorder (empty => input order). Used both for the determinant phase
-    // (convert_phase) and to un-permute the occupation strings back to input orbital order.
+    // Fiedler reorder (empty => input order): used for the determinant phase (convert_phase) and to
+    // un-permute the occupation strings back to input orbital order.
     std::vector<int> reord(e.reorder_perm.begin(), e.reorder_perm.end());
     std::vector<int> iperm;
     if (!reord.empty()) {
@@ -878,10 +976,11 @@ void block2_casci_wrap::print_states(int, int, int print) {
         for (int i = 0; i < n; i++) iperm[reord[i]] = i;
     }
 
-    // Rotation carrying the extracted determinants into the canonical (reporting) basis. The MPS is
-    // solved in the localized basis (when localizing), so localized->canonical is U_loc; the host
-    // canonicalization canonical->Fock-canonical is U_canon; compose them (R = U_canon * U_loc).
-    std::vector<double> R_total;
+    // Orbital rotation into the canonical (report) basis: R = <canon|loc> is U_canon*U_loc (localizing),
+    // U_canon (canonicalizing a delocalized solve), or U_loc. The MPS rotation needs the transpose
+    // <loc|canon> = R^T and a proper rotation (det>0); build Rp = R^T once, flipping one orbital's sign
+    // when improper (a gauge choice: changes determinant signs, not magnitudes).
+    std::vector<double> R_total, Rp;
     const double *R = nullptr;
     if (e.have_canon && e.localize_on) {
         R_total.assign((size_t)n * n, 0.0);
@@ -893,48 +992,65 @@ void block2_casci_wrap::print_states(int, int, int print) {
     } else if (e.localize_on) {
         R = e.U_loc.data();
     }
-
-    // Configurations are reported in the canonical MO basis using the standard spin-blocked
-    // determinant sign convention (<J|I> = det(U_alpha) det(U_beta)); magnitudes and configuration
-    // identities match the native aldet read-out, individual determinant signs follow this convention.
-    fprintf(out_stream, "  (canonical MO basis; standard spin-blocked determinant sign convention)\n");
+    if (R != nullptr) {
+        Rp.assign((size_t)n * n, 0.0);
+        for (int i = 0; i < n; i++)
+            for (int j = 0; j < n; j++) Rp[(size_t)i * n + j] = R[(size_t)j * n + i]; // transpose
+        std::vector<double> Rdet = Rp;
+        if (MatrixFunctions::det(MatrixRef(Rdet.data(), n, n)) < 0.0)
+            for (int i = 0; i < n; i++) Rp[(size_t)i * n + 0] = -Rp[(size_t)i * n + 0];
+    }
 
     for (int st = 0; st < e.n_s; st++) {
+        // Work on a copy of this root; e.mps stays in the localized basis for the property read-out.
         const std::string xtag = e.mps_info->tag + "-cf" + std::to_string(st);
         std::shared_ptr<MultiMPS<SU2, double>> imps = e.mps->extract(st, xtag);
+        if (!Rp.empty()) rotate_multimps_to_canonical(e, imps, Rp.data(), rot_m, rot_steps);
+
         const std::string stag = e.mps_info->tag + "-cs" + std::to_string(st);
         std::shared_ptr<MPS<SU2, double>> smps = imps->make_single(stag);
+
+        // Compress the canonical MPS for a cheaper TRIE search (opt-out with extract_m=0); the leading
+        // determinants are low-rank-robust, so this preserves them (loss shows up as captured weight).
+        std::string ctag;
+        std::shared_ptr<MPS<SU2, double>> rmps = smps;
+        if (cm > 0) {
+            ctag = e.mps_info->tag + "-cc" + std::to_string(st);
+            rmps = compress_single_mps(e, smps, cm, ctag);
+        }
 
         // SU2 -> SZ so the read-out is true determinants (alpha/beta), matching aldet.
         const std::string ztag = e.mps_info->tag + "-cz" + std::to_string(st);
         std::shared_ptr<UnfusedMPS<SU2, double>> umps_su2 =
-            std::make_shared<UnfusedMPS<SU2, double>>(smps);
+            std::make_shared<UnfusedMPS<SU2, double>>(rmps);
         std::shared_ptr<UnfusedMPS<SZ, double>> umps_sz =
             TransUnfusedMPS<SU2, SZ, double>::forward(umps_su2, ztag,
                                                       std::make_shared<CG<SU2>>(),
                                                       SZ(e.n_elec, e.twos, 0));
 
         auto dtrie = std::make_shared<DeterminantTRIE<SZ, double>>(n, /*enable_look_up=*/true);
-        dtrie->evaluate(umps_sz, det_cutoff);
+        dtrie->evaluate(umps_sz, cutoff);
         dtrie->convert_phase(reord); // physical spin + orbital-order fermionic signs
 
         std::vector<leading_config> cfgs;
         cfgs.reserve(dtrie->size());
+        double captured = 0.0;
         for (int t = 0; t < (int)dtrie->size(); t++) {
             std::vector<uint8_t> occ_lat = (*dtrie)[t]; // block2 (Fiedler) lattice order
             leading_config lc;
             lc.occ.assign(n, 0);
             for (int i = 0; i < n; i++) lc.occ[i] = reord.empty() ? occ_lat[i] : occ_lat[iperm[i]];
             lc.coef = (double)dtrie->vals[t];
+            captured += lc.coef * lc.coef;
             cfgs.push_back(std::move(lc));
         }
 
-        report_leading_configs(out_stream, st, e.E_states[st], S2, n, na, nb, cfgs, R,
-                               print_number);
+        report_leading_configs(out_stream, st, e.E_states[st], S2, n, cfgs, print_number, captured);
 
         remove_tag_files(xtag);
         remove_tag_files(stag);
         remove_tag_files(ztag);
+        if (!ctag.empty()) remove_tag_files(ctag);
     }
     assert_stack_clean("leading-config read");
 }

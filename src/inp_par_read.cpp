@@ -741,6 +741,11 @@ dmrg_par::dmrg_par(){
     rot_steps        = DMRG_ROT_STEPS_DEFAULT;
     warm_start_after = DMRG_WARM_START_AFTER_DEFAULT;
     warm_rotate      = DMRG_WARM_ROTATE_DEFAULT;
+    print_dets       = DMRG_PRINT_DETS_DEFAULT;
+    det_rot_m        = DMRG_DET_ROT_M_DEFAULT;
+    det_rot_steps    = DMRG_DET_ROT_STEPS_DEFAULT;
+    extract_m        = DMRG_EXTRACT_M_DEFAULT;
+    extract_cutoff   = DMRG_EXTRACT_CUTOFF_DEFAULT;
 
 }
 
@@ -842,6 +847,28 @@ int dmrg_par::read_line(char * inp){
         else                                                          warm_rotate = DMRG_WARM_UNKNOWN;
     }
 
+    if(key_word_comp(inp, dmrg_print_dets_kw)){
+        if     (kw_to_kw(inp, dmrg_print_dets_kw, dmrg_warm_off_kw)) print_dets = DMRG_WARM_OFF;
+        else if(kw_to_kw(inp, dmrg_print_dets_kw, dmrg_warm_on_kw))  print_dets = DMRG_WARM_ON;
+        else                                                         print_dets = DMRG_WARM_UNKNOWN;
+    }
+
+    if(key_word_comp(inp, dmrg_det_rot_m_kw)){
+        det_rot_m = kw_to_i(inp, dmrg_det_rot_m_kw, DMRG_DET_ROT_M_DEFAULT);
+    }
+
+    if(key_word_comp(inp, dmrg_det_rot_steps_kw)){
+        det_rot_steps = kw_to_i(inp, dmrg_det_rot_steps_kw, DMRG_DET_ROT_STEPS_DEFAULT);
+    }
+
+    if(key_word_comp(inp, dmrg_extract_m_kw)){
+        extract_m = kw_to_i(inp, dmrg_extract_m_kw, DMRG_EXTRACT_M_DEFAULT);
+    }
+
+    if(key_word_comp(inp, dmrg_extract_cutoff_kw)){
+        extract_cutoff = kw_to_f(inp, dmrg_extract_cutoff_kw, DMRG_EXTRACT_CUTOFF_DEFAULT);
+    }
+
     return 0;
 }
 
@@ -898,6 +925,23 @@ int dmrg_par::validate(){
         fprintf(out_stream,"ERROR: $DMRG unknown warm_rotate value; accepted: off, on\n");
         ok=0;
     }
+    if(print_dets==DMRG_WARM_UNKNOWN){
+        fprintf(out_stream,"ERROR: $DMRG unknown print_dets value; accepted: off, on\n");
+        ok=0;
+    }
+    if(det_rot_m<=0){ det_rot_m = 2*m < 1500 ? 2*m : 1500; } // auto = min(2m, 1500)
+    if(det_rot_steps<=0){
+        fprintf(out_stream,"ERROR: $DMRG det_rot_steps=%d must be > 0\n",det_rot_steps);
+        ok=0;
+    }
+    if(extract_m<0){
+        fprintf(out_stream,"ERROR: $DMRG extract_m=%d must be >= 0 (0 = no compression)\n",extract_m);
+        ok=0;
+    }
+    if(extract_cutoff<=0){
+        fprintf(out_stream,"ERROR: $DMRG extract_cutoff=%e must be > 0\n",extract_cutoff);
+        ok=0;
+    }
     if(warm_start==DMRG_WARM_ON){
         if(rot_m<0){
             fprintf(out_stream,"ERROR: $DMRG rot_m=%d must be >= 0 (0 = use m)\n",rot_m);
@@ -949,6 +993,16 @@ int dmrg_par::write_info(){
     }
     else
         fprintf(out_stream,"MPS warm-start:                   off\n");
+    if(print_dets==DMRG_WARM_ON){
+        fprintf(out_stream,"Leading determinants:             on\n");
+        fprintf(out_stream,"  read-out rotation bond dim:     %d (%d TE steps)\n",det_rot_m,det_rot_steps);
+        if(extract_m>0)
+            fprintf(out_stream,"  extraction compression:         m=%d, cutoff=%e\n",extract_m,extract_cutoff);
+        else
+            fprintf(out_stream,"  extraction:                     no compression, cutoff=%e\n",extract_cutoff);
+    }
+    else
+        fprintf(out_stream,"Leading determinants:             off\n");
     fprintf(out_stream,"\n");
 
     return 0;

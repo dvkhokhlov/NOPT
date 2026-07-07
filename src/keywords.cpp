@@ -197,6 +197,11 @@ vector<const char *>dmrg_rot_m_kw{{"rot_m"}};
 vector<const char *>dmrg_rot_steps_kw{{"rot_steps"}};
 vector<const char *>dmrg_warm_start_after_kw{{"warm_start_after"}};
 vector<const char *>dmrg_warm_rotate_kw{{"warm_rotate"}};
+vector<const char *>dmrg_print_dets_kw{{"print_dets"}};
+vector<const char *>dmrg_det_rot_m_kw{{"det_rot_m"}};
+vector<const char *>dmrg_det_rot_steps_kw{{"det_rot_steps"}};
+vector<const char *>dmrg_extract_m_kw{{"extract_m"}};
+vector<const char *>dmrg_extract_cutoff_kw{{"extract_cutoff"}};
 
 vector<const char *>MO_group_start{{"$vec1"},
                                    {"$vec"},

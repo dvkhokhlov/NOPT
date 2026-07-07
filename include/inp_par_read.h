@@ -92,6 +92,11 @@ class dmrg_par // settings for the DMRG (block2) CI backend; see $DMRG group
         int    rot_steps;        // MPS-rotation TE steps (dt = 1/rot_steps; total time 1)
         int    warm_start_after; // cold macro-iterations before freezing the localized frame
         int    warm_rotate;      // rotate the reused MPS into the new basis (dmrg_warm_kind): off = reuse-only | on
+        int    print_dets;       // report leading determinants after convergence (dmrg_warm_kind): off | on
+        int    det_rot_m;        // bond dim for the localized->canonical read-out rotation (0 = auto: min(2m,1500))
+        int    det_rot_steps;    // TE steps for the read-out rotation
+        int    extract_m;        // bond dim the canonical MPS is compressed to before extraction (0 = none)
+        double extract_cutoff;   // determinant magnitude cutoff for the extraction search
 
         dmrg_par();
         int read_group(char * inp);
