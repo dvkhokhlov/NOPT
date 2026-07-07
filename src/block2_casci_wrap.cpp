@@ -76,23 +76,28 @@ void ensure_block2_runtime(const std::string &save_dir_root, int n_threads) {
 // Best-effort removal of all scratch files belonging to one MPS tag. Correctness does not depend
 // on this — each solve writes a fresh unique tag, so a stale file can never be read back — but it
 // keeps the per-process scratch dir from growing across macro-iterations. block2 embeds the tag,
-// always delimited, in every per-tag filename (mps.hpp get_filename):
-//   <prefix>.MPS.<tag>.<i>        MPS site tensors
-//   <prefix>.MPS.INFO.<tag>.*     MPSInfo bond dims
-//   <tag>-mps_info.bin            serialized MPSInfo
-// The trailing '.' on the tensor/info prefixes keeps tag "work_1" from matching "work_10".
+// always trailing-'.'-delimited, in every per-tag filename:
+//   <prefix>.MPS.<tag>.<i>        single-MPS site tensors       (mps.hpp)
+//   <prefix>.MMPS.<tag>.<i>       MultiMPS site tensors + data  (state_averaged.hpp; SA solve/extract)
+//   <prefix>.MMPS-WFN.<tag>.<i>   MultiMPS per-root wavefunctions
+//   <prefix>.MPS.INFO.<tag>.*     (Multi)MPSInfo bond dims      (MultiMPSInfo inherits MPSInfo)
+//   <tag>-mps_info.bin            serialized (Multi)MPSInfo
+// The trailing '.' keeps tag "work_1" from matching "work_10"; ".MMPS." never prefix-matches ".MPS.".
 void remove_tag_files(const std::string &tag) {
     auto fr = frame_<double>();
     if (fr == nullptr)
         return;
     std::error_code ec;
     const std::string t_mps  = fr->prefix + ".MPS." + tag + ".";
+    const std::string t_mmps = fr->prefix + ".MMPS." + tag + ".";
+    const std::string t_wfn  = fr->prefix + ".MMPS-WFN." + tag + ".";
     const std::string t_info = fr->prefix + ".MPS.INFO." + tag + ".";
     const std::string t_bin  = tag + "-mps_info.bin";
     std::vector<std::filesystem::path> victims;
     for (auto &de : std::filesystem::directory_iterator(fr->mps_dir, ec)) {
         const std::string name = de.path().filename().string();
-        if (name.rfind(t_mps, 0) == 0 || name.rfind(t_info, 0) == 0 || name == t_bin)
+        if (name.rfind(t_mps, 0) == 0 || name.rfind(t_mmps, 0) == 0 ||
+            name.rfind(t_wfn, 0) == 0 || name.rfind(t_info, 0) == 0 || name == t_bin)
             victims.push_back(de.path());
     }
     for (auto &p : victims)
