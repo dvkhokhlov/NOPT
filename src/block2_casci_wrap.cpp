@@ -220,7 +220,7 @@ dmrg_schedule build_warm_schedule(int max_m, int warm_sweeps, double sweep_tol) 
 // -------------------------- engine: all block2 state ----------------------------------
 struct dmrgci_engine {
     dmrg_par cfg;
-    int n_act, n_elec, twos, mult, n_s;
+    int n_act, n_elec, twos, mult, n_s, print_number;
     SU2 target;                       // active-space symmetry sector (C1: pg = 0)
     std::vector<uint8_t> orbsym;      // per-orbital irrep; C1 -> all 0 (set in set_act_rep_num)
     std::vector<double> E_states;     // per-state energies (returned by E_states_ptr)
@@ -257,9 +257,11 @@ struct dmrgci_engine {
     bool last_hit_max = false;                  // last solve used its full sweep budget with dE > sweep_tol
     std::vector<uint16_t> reorder_perm;         // DMRG lattice order (Fiedler); empty => input order
 
-    dmrgci_engine(int n_act_, int n_elec_, int twos_, int mult_, int n_s_, const dmrg_par &c)
+    dmrgci_engine(int n_act_, int n_elec_, int twos_, int mult_, int n_s_, int print_number_,
+                  const dmrg_par &c)
         : cfg(c), n_act(n_act_), n_elec(n_elec_), twos(twos_), mult(mult_), n_s(n_s_),
-          target(n_elec_, twos_, 0), orbsym(n_act_, 0), E_states(n_s_, 0.0) {}
+          print_number(print_number_), target(n_elec_, twos_, 0), orbsym(n_act_, 0),
+          E_states(n_s_, 0.0) {}
 };
 
 // ---- P2.0 not-implemented sentinel ---------------------------------------------------
@@ -576,8 +578,9 @@ static bool rotate_retained_mps(dmrgci_engine &e) {
 
 // ---- ctor / dtor ---------------------------------------------------------------------
 block2_casci_wrap::block2_casci_wrap(int n_act, int na, int nb, int mult, int n_s,
-                                     const dmrg_par &cfg)
-    : impl_(std::make_unique<dmrgci_engine>(n_act, na + nb, na - nb, mult, n_s, cfg)) {
+                                     int print_number, const dmrg_par &cfg)
+    : impl_(std::make_unique<dmrgci_engine>(n_act, na + nb, na - nb, mult, n_s, print_number,
+                                            cfg)) {
     host_threads_guard htg;
     int nthr = omp_get_max_threads();
     if (nthr < 1) nthr = 1;
@@ -964,7 +967,7 @@ void block2_casci_wrap::print_states(int, int, int print) {
     const int n = e.n_act;
     const double S = e.twos / 2.0, S2 = S * (S + 1.0);
     const double cutoff = e.cfg.extract_cutoff;
-    const int print_number = 10; // leading dets reported per state (CAS_PRINT_NUMBER_DEFAULT)
+    const int print_number = e.print_number; // leading dets per state (p_n, $act_space)
     const int rot_m = e.cfg.det_rot_m, rot_steps = e.cfg.det_rot_steps, cm = e.cfg.extract_m;
 
     // Fiedler reorder (empty => input order): used for the determinant phase (convert_phase) and to

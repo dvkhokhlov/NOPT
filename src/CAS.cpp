@@ -170,7 +170,7 @@ int CAS_engine::init(cas_par * cas, molecule * ext_M){
                     exit(0);
                 }
         CI_owner = std::make_unique<block2_casci_wrap>(
-            n_act, M->CI[0].na, M->CI[0].nb, M->CI[0].mult, n_s, cas->dmrg);
+            n_act, M->CI[0].na, M->CI[0].nb, M->CI[0].mult, n_s, M->CI[0].print_number, cas->dmrg);
 #else
         fprintf(out_stream,"ERROR: CISOLVER=dmrg selected, but this build was compiled without block2 (set USE_BLOCK2=yes)\n");
         exit(0);
