@@ -4101,6 +4101,7 @@ int molecule::diag_X_MO_block(double * X, int n0, int dim, double * U){
             F[i*dim+j]=X[(i+n0)*n_ao+j+n0];
         
         lapack_diag(F,ev,dim);
+        normalize_rotation_rows(F, dim);
         
 //         PrintMatr(ev,dim,1,0);
 //         exit(0);
@@ -4155,6 +4156,7 @@ int molecule::diag_X_MO_block(double * X, int n0, int dim, double * U){
                     ii++;
                 }
                 lapack_diag(F[i_r],ev,dim_r[i_r]);
+                normalize_rotation_rows(F[i_r], dim_r[i_r]);
                 if(U!=nullptr){
                     
                     for(int i=0;i<dim_r[i_r];i++){

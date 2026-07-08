@@ -1275,6 +1275,7 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
             for(int j=0;j<CAS.n_act;j++)
                 U_canon[i*CAS.n_act+j]=CAS.F_tot[(i+CAS.n_core)*CAS.n_ao+(j+CAS.n_core)];
         lapack_diag(U_canon, ev, CAS.n_act);
+        normalize_rotation_rows(U_canon, CAS.n_act);
         CAS.CI->set_report_rotation(U_canon);
         delete[] ev;
         delete[] U_canon;
@@ -1340,5 +1341,4 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
     
     return 0;
 }
-
 
