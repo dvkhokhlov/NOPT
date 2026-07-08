@@ -1,9 +1,10 @@
 #pragma once
 //
 // CSF-native leading-configuration read-out for the DMRG backend. The DMRG solve's MPS is rotated by
-// the proper (continuous) part of the solve->canonical basis change. Determinants are read through
-// block2's SU2->SZ unfused transform and DeterminantTRIE<SZ>; the resulting canonical determinant
-// vector is projected back to canonical step-vector CSFs before calling report_leading_csfs.
+// the proper (continuous) part of the solve->canonical basis change. The retained vector is extracted
+// with block2's DeterminantTRIE<SU2> as step-vector CSFs, then locally recast into canonical orbital
+// order/sign gauge. Determinants are still printed as a temporary diagnostic from that retained SU2
+// vector.
 
 #include <cstdio>
 #include <cstdint>

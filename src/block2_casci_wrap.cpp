@@ -1146,30 +1146,6 @@ static void normalize_report_sign_gauge(const std::vector<int> &canon_of_lattice
         }
 }
 
-static det_expansion canonical_determinants_from_sz_mps(
-    const std::shared_ptr<UnfusedMPS<SU2, double>> &su2_umps,
-    const std::string &sz_tag,
-    int n_sites, int n_elec, int target_twos, double cutoff,
-    const std::vector<int> &canon_of_lattice,
-    const std::vector<double> &lattice_sign) {
-    det_expansion out;
-
-    auto cg = std::make_shared<CG<SU2>>();
-    std::shared_ptr<UnfusedMPS<SZ, double>> sz_umps =
-        TransUnfusedMPS<SU2, SZ, double>::forward(
-            su2_umps, sz_tag, cg, SZ(n_elec, target_twos, 0));
-    if (target_twos == 0)
-        sz_umps->resolve_singlet_embedding(0);
-
-    auto dtrie = std::make_shared<DeterminantTRIE<SZ, double>>(n_sites, true);
-    dtrie->evaluate(sz_umps, cutoff);
-    for (int t = 0; t < (int)dtrie->size(); t++) {
-        det_image img = canonicalize_site_det((*dtrie)[t], canon_of_lattice, lattice_sign);
-        add_det_coeff(out, img.occ, (double)dtrie->vals[t] * img.phase);
-    }
-    return out;
-}
-
 static double expansion_weight(const det_expansion &dets) {
     double w = 0.0;
     for (const auto &kv : dets) w += kv.second * kv.second;
@@ -1243,6 +1219,41 @@ static std::vector<leading_csf> project_determinants_to_csfs(const det_expansion
     return csfs;
 }
 
+struct su2_readout_expansion {
+    det_expansion determinants;
+    std::vector<leading_csf> csfs;
+    double weight = 0.0;
+};
+
+// Extract the short SU2 step-vector expansion directly from the MPS, then recast the retained CSFs
+// into the requested canonical orbital order/sign gauge. The recast is done by expanding each retained
+// lattice CSF locally into its determinant representation and projecting that small retained vector
+// onto canonical step-vector CSFs. This avoids the expensive SU2->SZ MPS transform; only the retained
+// read-out subspace is expanded to determinants for the temporary diagnostic and for the recoupling.
+static su2_readout_expansion canonical_readout_from_su2_mps(
+    const std::shared_ptr<UnfusedMPS<SU2, double>> &su2_umps,
+    int n_sites, int target_twos, double cutoff,
+    const std::vector<int> &canon_of_lattice,
+    const std::vector<double> &lattice_sign) {
+    su2_readout_expansion out;
+
+    auto ctrie = std::make_shared<DeterminantTRIE<SU2, double>>(n_sites, true);
+    ctrie->evaluate(su2_umps, cutoff);
+    for (int t = 0; t < (int)ctrie->size(); t++) {
+        const double csf_coef = (double)ctrie->vals[t];
+        if (std::fabs(csf_coef) < 1e-14) continue;
+        det_expansion site_dets = expand_csf_step((*ctrie)[t], target_twos);
+        for (const auto &kv : site_dets) {
+            det_image img = canonicalize_site_det(kv.first, canon_of_lattice, lattice_sign);
+            add_det_coeff(out.determinants, img.occ, csf_coef * kv.second * img.phase);
+        }
+    }
+
+    out.csfs = project_determinants_to_csfs(out.determinants, n_sites, target_twos);
+    out.weight = expansion_weight(out.determinants);
+    return out;
+}
+
 static void det_strings(const det_occ &det, std::string &alpha, std::string &beta) {
     alpha.assign(det.size(), '0');
     beta.assign(det.size(), '0');
@@ -1278,12 +1289,10 @@ static void report_leading_determinants(std::FILE *out, int state_idx, double E,
 
 // Report each state's leading configurations in the canonical (delocalized MO) basis. The DMRG solve
 // runs in the localized + Fiedler-ordered basis; each state's MPS is rotated by the proper
-// (continuous) part of the solve->canonical change. Determinants are sampled after block2's own
-// SU2->SZ unfused-MPS transform, so the alpha/beta signs follow the same CG and spin-order convention
-// as block2 determinant.hpp. The remaining discrete map (lattice orbital -> canonical orbital plus
-// orbital order/sign) is applied by canonicalize_site_det. Canonical CSFs are then obtained by
-// projecting the determinant vector onto canonical step-vector CSFs. Determinants are printed as a
-// temporary diagnostic; canonical CSFs are the standard read-out.
+// (continuous) part of the solve->canonical change. The leading vector is extracted directly as SU2
+// step-vector CSFs. The remaining discrete map (lattice orbital -> canonical orbital plus orbital
+// order/sign) is applied by locally recoupling the retained SU2 vector through determinant projections.
+// Determinants are printed as a temporary diagnostic; canonical CSFs are the standard read-out.
 void block2_casci_wrap::print_states(int, int, int print) {
     if (!print) return;
     dmrgci_engine &e = *impl_;
@@ -1383,24 +1392,19 @@ void block2_casci_wrap::print_states(int, int, int print) {
         std::shared_ptr<UnfusedMPS<SU2, double>> umps =
             std::make_shared<UnfusedMPS<SU2, double>>(rmps);
 
-        const std::vector<int> &det_orb_map = map_applies ? canon_of_lattice : solve_of_lattice;
-        const std::vector<double> &det_sign = map_applies ? lattice_sign : plus_sign;
-        const std::string sztag = e.mps_info->tag + "-sz" + std::to_string(st);
-        det_expansion canonical_dets = canonical_determinants_from_sz_mps(
-            umps, sztag, n, e.n_elec, e.twos, cutoff, det_orb_map, det_sign);
-        const double captured = expansion_weight(canonical_dets);
-        std::vector<leading_csf> canonical_csfs =
-            project_determinants_to_csfs(canonical_dets, n, e.twos);
+        const std::vector<int> &csf_orb_map = map_applies ? canon_of_lattice : solve_of_lattice;
+        const std::vector<double> &csf_sign = map_applies ? lattice_sign : plus_sign;
+        su2_readout_expansion canonical =
+            canonical_readout_from_su2_mps(umps, n, e.twos, cutoff, csf_orb_map, csf_sign);
 
-        report_leading_determinants(out_stream, st, e.E_states[st], S2, canonical_dets,
-                                    print_number, captured);
-        report_leading_csfs(out_stream, st, e.E_states[st], S2, n, canonical_csfs,
-                            print_number, captured);
+        report_leading_determinants(out_stream, st, e.E_states[st], S2, canonical.determinants,
+                                    print_number, canonical.weight);
+        report_leading_csfs(out_stream, st, e.E_states[st], S2, n, canonical.csfs,
+                            print_number, canonical.weight);
 
         remove_tag_files(xtag);
         remove_tag_files(stag);
         if (!ctag.empty()) remove_tag_files(ctag);
-        remove_tag_files(sztag);
     }
     assert_stack_clean("leading-config read");
 }
