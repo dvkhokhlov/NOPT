@@ -21,7 +21,7 @@
 #include "localized_dmrg.h"   // rotate1/rotate2 (active-space basis transforms)
 #include "blas_link.h"        // cblas_dgemm (warm-start rotation regularization)
 #include "mps_rotation.h"     // evolve_sa_multimps (multi-root SA MPS rotation)
-#include "loc_to_canonical_analysis.h" // report_leading_configs (leading-determinant read-out)
+#include "csf_readout.h"       // report_leading_csfs / report_csf_orbital_map (CSF read-out)
 
 using namespace block2;
 
@@ -896,18 +896,28 @@ compress_single_mps(dmrgci_engine &e, const std::shared_ptr<MPS<SU2, double>> &k
     return bra;
 }
 
+// The discrete (signed-permutation) part of the solve->report basis change, peeled off so only a
+// proper rotation reaches the log. g maps report orbital -> residual; sigma is the per-report-orbital
+// sign the rotation cannot carry (see peel_report_permutation).
+struct report_peel {
+    std::vector<int> g;         // report p -> residual index (g = id recovers the full-Rp read-out)
+    std::vector<double> sigma;  // report p -> +/-1: canon_p = sigma_p * residual_{g[p]}
+};
+
 // Peel the discrete part off the solve->report basis change Rp (= R^T; column p is report orbital p in
 // solve coordinates). rotate_multimps_to_canonical evolves under exp(-log W), so a near-permutation Rp
 // makes log(Rp) hit the matrix-log branch cut (an eigenvalue near -1 -> complex generator) -- the
 // canon-only (non-localized) case, where the report orbitals are just the ascending-Fock-eigenvalue
 // reordering of the solve orbitals. Factor Rp = Rt * Q with Q a signed permutation and Rt ~ I proper
 // (right factor: Q mixes the report/column index). Rotating by the residual Rt reads residual orbitals
-// (Fact F: site reads a column of the fed matrix); the permutation Q is then applied exactly to the
-// extracted occupations. Overwrites Rp in place with Rt and returns g : report -> residual, so that
-// occ(canon_p) = occ(residual g[p]) -- i.e. lc.occ[p] = occ_lat[iperm[g[p]]] reproduces the full-Rp
-// read-out (g = id recovers it). Signs of Q are a per-determinant gauge (dropped). Greedy max-magnitude
-// matching; exact when Rp is a signed permutation.
-static std::vector<int> peel_report_permutation(double *Rp, int n) {
+// (Fact F: site reads a column of the fed matrix). Overwrites Rp in place with Rt and returns Q as
+// (g, sigma): report orbital p is realized as sigma_p * (residual g[p]), so canon_p = sigma_p *
+// residual_{g[p]}. The reflection sigma is a per-orbital orbital-sign gauge -- NOT a free constant: it
+// is theory-fixed by Rp and must be reinstated on the read-out (a determinant with p singly occupied
+// carries sigma_p; doubly/empty carry sigma_p^2 = +1 / nothing). The det-guard flip (an improper Rp
+// realized as a residual column negation) is folded into sigma so nothing is dropped. Greedy
+// max-magnitude matching; exact when Rp is a signed permutation.
+static report_peel peel_report_permutation(double *Rp, int n) {
     struct Cell { double mag; int i, j; };
     std::vector<Cell> cells;
     cells.reserve((size_t)n * n);
@@ -917,7 +927,7 @@ static std::vector<int> peel_report_permutation(double *Rp, int n) {
     std::sort(cells.begin(), cells.end(),
               [](const Cell &a, const Cell &b) { return a.mag > b.mag; });
     std::vector<int> rho(n, -1);        // rho[a] = report column matched to solve row a (solve->report)
-    std::vector<double> sgn(n, 1.0);
+    std::vector<double> sgn(n, 1.0);    // sgn[b] = aligned-entry sign of residual column b
     std::vector<char> row_used(n, 0), col_used(n, 0);
     for (const Cell &c : cells) {
         if (row_used[c.i] || col_used[c.j]) continue;
@@ -931,18 +941,23 @@ static std::vector<int> peel_report_permutation(double *Rp, int n) {
         for (int b = 0; b < n; b++)
             Rt[(size_t)a * n + b] = sgn[b] * Rp[(size_t)a * n + rho[b]];
     // Keep Rt proper (Rp improper is absorbed as an odd Q sign); a negative det would give a -1
-    // eigenvalue -> complex log. Flip the least-aligned residual column (smallest diagonal); its sign is
-    // gauge, dropped downstream. exp(-log Rt) still guards against a residual that stays complex.
+    // eigenvalue -> complex log. Flip the least-aligned residual column (smallest diagonal) and fold the
+    // flip into sgn so it is reinstated with the rest of Q. exp(-log Rt) still guards a residual that
+    // stays complex.
     if (MatrixFunctions::det(MatrixRef(Rt.data(), n, n)) < 0.0) {
         int bmin = 0;
         for (int b = 1; b < n; b++)
             if (std::fabs(Rt[(size_t)b * n + b]) < std::fabs(Rt[(size_t)bmin * n + bmin])) bmin = b;
         for (int a = 0; a < n; a++) Rt[(size_t)a * n + bmin] = -Rt[(size_t)a * n + bmin];
+        sgn[bmin] = -sgn[bmin];
     }
     std::copy(Rt.begin(), Rt.end(), Rp);
-    std::vector<int> g(n, -1); // report -> residual: g = rho^{-1}
-    for (int a = 0; a < n; a++) g[rho[a]] = a;
-    return g;
+    report_peel rp;
+    rp.g.assign(n, -1);          // report -> residual: g = rho^{-1}
+    rp.sigma.assign(n, 1.0);
+    for (int a = 0; a < n; a++) rp.g[rho[a]] = a;
+    for (int p = 0; p < n; p++) rp.sigma[p] = sgn[rp.g[p]]; // sigma_p = aligned sign of residual g[p]
+    return rp;
 }
 
 // Rotate a MultiMPS by the residual continuous rotation between the solve and report bases. The full
@@ -1005,20 +1020,21 @@ static bool rotate_multimps_to_canonical(dmrgci_engine &e,
     return true;
 }
 
-// Report each state's leading determinants in the canonical (delocalized MO) basis, matching the native
-// aldet print_states read-out. The DMRG solve runs in the localized + Fiedler-ordered basis, where a
-// determinant expansion is meaningless (a single canonical determinant smears over ~1e6 localized ones),
-// so each state's MPS is rotated localized->canonical before extraction. Per state: extract a copy of the
-// root (e.mps is left untouched for the property read-out that follows), rotate the copy into the report
-// basis, optionally compress it for a cheaper search, transform SU2->SZ, pull the dominant determinants
-// from a DeterminantTRIE (convert_phase applies block2's spin order + the Fiedler orbital signs), and
-// un-permute the occupation strings back to input order.
+// Report each state's leading configurations in the canonical (delocalized MO) basis as spin-adapted
+// CSFs, for comparison against the native aldet read-out. The DMRG solve runs in the localized +
+// Fiedler-ordered basis; each state's MPS is rotated by the proper (continuous) part of the
+// solve->canonical change and sampled with a DeterminantTRIE<SU2> (step-vector CSFs). The discrete part
+// -- the lattice->canonical orbital permutation and the per-orbital sign the SO(n) rotation cannot carry
+// (peel_report_permutation) -- is not applied to the MPS; it is reported once via report_csf_orbital_map
+// so the consumer reinstates it exactly (fermionic reorder + orbital signs) when expanding CSFs to
+// determinants. Per state: extract a copy of the root (e.mps stays localized for the property read-out),
+// rotate the copy, optionally compress it, and pull the dominant CSFs.
 void block2_casci_wrap::print_states(int, int, int print) {
     if (!print) return;
     dmrgci_engine &e = *impl_;
     if (e.mps == nullptr) return;
     if (e.cfg.print_dets != DMRG_WARM_ON) { // read-out opted out ($DMRG print_dets = off)
-        fprintf(out_stream, "  (leading-determinant read-out disabled: $DMRG print_dets = off)\n");
+        fprintf(out_stream, "  (leading-configuration read-out disabled: $DMRG print_dets = off)\n");
         return;
     }
     host_threads_guard htg;
@@ -1026,11 +1042,10 @@ void block2_casci_wrap::print_states(int, int, int print) {
     const int n = e.n_act;
     const double S = e.twos / 2.0, S2 = S * (S + 1.0);
     const double cutoff = e.cfg.extract_cutoff;
-    const int print_number = e.print_number; // leading dets per state (p_n, $act_space)
+    const int print_number = e.print_number; // leading CSFs per state (p_n, $act_space)
     const int rot_m = e.cfg.det_rot_m, rot_steps = e.cfg.det_rot_steps, cm = e.cfg.extract_m;
 
-    // Fiedler reorder (empty => input order): used for the determinant phase (convert_phase) and to
-    // un-permute the occupation strings back to input orbital order.
+    // Fiedler reorder (empty => input order): the DMRG lattice site k holds solve orbital reord[k].
     std::vector<int> reord(e.reorder_perm.begin(), e.reorder_perm.end());
     std::vector<int> iperm;
     if (!reord.empty()) {
@@ -1040,12 +1055,11 @@ void block2_casci_wrap::print_states(int, int, int print) {
 
     // Solve -> report (canonical) basis change: R = <canon|solve> is U_canon*U_loc (localizing), U_canon
     // (canonicalizing a delocalized solve), or U_loc. rotate_multimps_to_canonical consumes Rp = R^T
-    // (column p is report orbital p in solve coordinates). For the canon-only case Rp is a near signed
-    // permutation, whose log hits the branch cut, so peel the permutation off (peel_report_permutation):
-    // Rp is overwritten with the residual Rt (~ I, real log) and g maps report orbital -> residual
-    // orbital, applied as an exact relabel of the extracted occupations.
+    // (column p is report orbital p in solve coordinates). peel_report_permutation splits Rp = Rt * Q:
+    // the proper residual Rt (real, short log) drives the rotation, and the signed permutation Q =
+    // (g, sigma) is the discrete map from the extracted (lattice-order) CSFs to the canonical orbitals.
     std::vector<double> R_total, Rp;
-    std::vector<int> rep_perm; // report orbital p <- residual orbital rep_perm[p]; empty => none
+    report_peel rp;
     const double *R = nullptr;
     if (e.have_canon && e.localize_on) {
         R_total.assign((size_t)n * n, 0.0);
@@ -1061,25 +1075,41 @@ void block2_casci_wrap::print_states(int, int, int print) {
         Rp.assign((size_t)n * n, 0.0);
         for (int i = 0; i < n; i++)
             for (int j = 0; j < n; j++) Rp[(size_t)i * n + j] = R[(size_t)j * n + i]; // Rp = R^T
-        rep_perm = peel_report_permutation(Rp.data(), n); // Rp <- residual Rt; rep_perm = g
+        rp = peel_report_permutation(Rp.data(), n); // Rp <- residual Rt; rp = Q = (g, sigma)
     }
+
+    // Discrete map Q -> per-lattice-site (canonical orbital, sign): report orbital p is realized at the
+    // lattice site of residual g[p] (Fact F) with sign sigma_p. Without a rotation (R == nullptr) the
+    // read-out sits in the solve basis: lattice site k holds solve orbital reord[k], signs +1.
+    std::vector<int> canon_of_lattice(n);
+    std::vector<double> lattice_sign(n, 1.0);
+    if (R != nullptr) {
+        for (int p = 0; p < n; p++) {
+            const int resid = rp.g[p];
+            const int k = reord.empty() ? resid : iperm[resid]; // lattice site of residual resid
+            canon_of_lattice[k] = p;
+            lattice_sign[k] = rp.sigma[p];
+        }
+    } else {
+        for (int k = 0; k < n; k++) canon_of_lattice[k] = reord.empty() ? k : reord[k];
+    }
+    report_csf_orbital_map(out_stream, n, canon_of_lattice, lattice_sign);
 
     for (int st = 0; st < e.n_s; st++) {
         // Work on a copy of this root; e.mps stays in the localized basis for the property read-out.
         const std::string xtag = e.mps_info->tag + "-cf" + std::to_string(st);
         std::shared_ptr<MultiMPS<SU2, double>> imps = e.mps->extract(st, xtag);
-        // Rotate by the residual; relabel by g only when the rotation applied (a complex residual falls
-        // back to the solve basis, where the permutation relabel does not hold).
-        const std::vector<int> *relabel = nullptr;
-        if (!Rp.empty() &&
-            rotate_multimps_to_canonical(e, imps, Rp.data(), rot_m, rot_steps))
-            relabel = &rep_perm;
+        // Rotate by the proper residual. A complex residual (guarded inside) leaves the MPS in the solve
+        // basis, where the reported orbital map no longer holds -- flag it.
+        if (!Rp.empty() && !rotate_multimps_to_canonical(e, imps, Rp.data(), rot_m, rot_steps))
+            fprintf(out_stream, "  warning: state %d rotation fell back to solve basis; CSF orbital "
+                                "map does not apply\n", st);
 
         const std::string stag = e.mps_info->tag + "-cs" + std::to_string(st);
         std::shared_ptr<MPS<SU2, double>> smps = imps->make_single(stag);
 
         // Compress the canonical MPS for a cheaper TRIE search (opt-out with extract_m=0); the leading
-        // determinants are low-rank-robust, so this preserves them (loss shows up as captured weight).
+        // configurations are low-rank-robust, so this preserves them (loss shows up as captured weight).
         std::string ctag;
         std::shared_ptr<MPS<SU2, double>> rmps = smps;
         if (cm > 0) {
@@ -1087,40 +1117,28 @@ void block2_casci_wrap::print_states(int, int, int print) {
             rmps = compress_single_mps(e, smps, cm, ctag);
         }
 
-        // SU2 -> SZ so the read-out is true determinants (alpha/beta), matching aldet.
-        const std::string ztag = e.mps_info->tag + "-cz" + std::to_string(st);
-        std::shared_ptr<UnfusedMPS<SU2, double>> umps_su2 =
+        // Sample spin-adapted CSFs directly (no SU2->SZ): DeterminantTRIE<SU2> gives step-vector CSFs
+        // (0/1/2/3 = empty/up/down/doubly) in lattice order; its convert_phase is a no-op.
+        std::shared_ptr<UnfusedMPS<SU2, double>> umps =
             std::make_shared<UnfusedMPS<SU2, double>>(rmps);
-        std::shared_ptr<UnfusedMPS<SZ, double>> umps_sz =
-            TransUnfusedMPS<SU2, SZ, double>::forward(umps_su2, ztag,
-                                                      std::make_shared<CG<SU2>>(),
-                                                      SZ(e.n_elec, e.twos, 0));
+        auto ctrie = std::make_shared<DeterminantTRIE<SU2, double>>(n, /*enable_look_up=*/true);
+        ctrie->evaluate(umps, cutoff);
 
-        auto dtrie = std::make_shared<DeterminantTRIE<SZ, double>>(n, /*enable_look_up=*/true);
-        dtrie->evaluate(umps_sz, cutoff);
-        dtrie->convert_phase(reord); // physical spin + orbital-order fermionic signs
-
-        std::vector<leading_config> cfgs;
-        cfgs.reserve(dtrie->size());
+        std::vector<leading_csf> csfs;
+        csfs.reserve(ctrie->size());
         double captured = 0.0;
-        for (int t = 0; t < (int)dtrie->size(); t++) {
-            std::vector<uint8_t> occ_lat = (*dtrie)[t]; // block2 (Fiedler) lattice order
-            leading_config lc;
-            lc.occ.assign(n, 0);
-            for (int i = 0; i < n; i++) {
-                const int c = relabel ? (*relabel)[i] : i; // report orbital i <- residual orbital c
-                lc.occ[i] = reord.empty() ? occ_lat[c] : occ_lat[iperm[c]];
-            }
-            lc.coef = (double)dtrie->vals[t];
+        for (int t = 0; t < (int)ctrie->size(); t++) {
+            leading_csf lc;
+            lc.step = (*ctrie)[t]; // step vector, lattice order
+            lc.coef = (double)ctrie->vals[t];
             captured += lc.coef * lc.coef;
-            cfgs.push_back(std::move(lc));
+            csfs.push_back(std::move(lc));
         }
 
-        report_leading_configs(out_stream, st, e.E_states[st], S2, n, cfgs, print_number, captured);
+        report_leading_csfs(out_stream, st, e.E_states[st], S2, n, csfs, print_number, captured);
 
         remove_tag_files(xtag);
         remove_tag_files(stag);
-        remove_tag_files(ztag);
         if (!ctag.empty()) remove_tag_files(ctag);
     }
     assert_stack_clean("leading-config read");
