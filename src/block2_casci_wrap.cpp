@@ -12,8 +12,11 @@
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
+#include <map>
+#include <numeric>
 #include <string>
 #include <system_error>
+#include <vector>
 #include <unistd.h>     // getpid
 #include <omp.h>
 
@@ -1020,15 +1023,267 @@ static bool rotate_multimps_to_canonical(dmrgci_engine &e,
     return true;
 }
 
-// Report each state's leading configurations in the canonical (delocalized MO) basis as spin-adapted
-// CSFs, for comparison against the native aldet read-out. The DMRG solve runs in the localized +
-// Fiedler-ordered basis; each state's MPS is rotated by the proper (continuous) part of the
-// solve->canonical change and sampled with a DeterminantTRIE<SU2> (step-vector CSFs). The discrete part
-// -- the lattice->canonical orbital permutation and the per-orbital sign the SO(n) rotation cannot carry
-// (peel_report_permutation) -- is not applied to the MPS; it is reported once via report_csf_orbital_map
-// so the consumer reinstates it exactly (fermionic reorder + orbital signs) when expanding CSFs to
-// determinants. Per state: extract a copy of the root (e.mps stays localized for the property read-out),
-// rotate the copy, optionally compress it, and pull the dominant CSFs.
+using det_occ = std::vector<uint8_t>; // per spatial orbital: 0 empty, 1 alpha, 2 beta, 3 doubly
+using det_expansion = std::map<det_occ, double>;
+
+static void add_det_coeff(det_expansion &dets, const det_occ &occ, double coef) {
+    if (std::fabs(coef) < 1e-14) return;
+    double &slot = dets[occ];
+    slot += coef;
+    if (std::fabs(slot) < 1e-14) dets.erase(occ);
+}
+
+// Expand a block2 SU2 step-vector CSF into highest-weight Slater determinants in the same lattice
+// order. The coefficients are Clebsch-Gordan products for coupling each singly occupied orbital to the
+// running spin path (u: S -> S+1/2, d: S -> S-1/2). The determinant phase is still the local
+// site-ordered block2 phase; canonicalize_site_det converts it to alpha-string/beta-string order.
+static void expand_csf_step_rec(const std::vector<uint8_t> &step, int site, int twos, int twom,
+                                det_occ &det, double coef, int target_twos,
+                                det_expansion &out) {
+    const int n = (int)step.size();
+    if (site == n) {
+        if (twos == target_twos && twom == target_twos) add_det_coeff(out, det, coef);
+        return;
+    }
+
+    const uint8_t s = step[site] & 3;
+    if (s == 0 || s == 3) {
+        det[site] = (s == 3) ? 3 : 0;
+        expand_csf_step_rec(step, site + 1, twos, twom, det, coef, target_twos, out);
+        det[site] = 0;
+        return;
+    }
+
+    const double j = 0.5 * twos;
+    const double m = 0.5 * twom;
+    const double den = 2.0 * j + 1.0;
+    if (s == 1) { // spin-path increase
+        det[site] = 1; // alpha
+        expand_csf_step_rec(step, site + 1, twos + 1, twom + 1, det,
+                            coef * std::sqrt(std::max(0.0, (j + m + 1.0) / den)),
+                            target_twos, out);
+        det[site] = 2; // beta
+        expand_csf_step_rec(step, site + 1, twos + 1, twom - 1, det,
+                            coef * std::sqrt(std::max(0.0, (j - m + 1.0) / den)),
+                            target_twos, out);
+    } else if (twos > 0) { // spin-path decrease: block2's left-coupled Condon-Shortley convention
+        det[site] = 1; // alpha
+        expand_csf_step_rec(step, site + 1, twos - 1, twom + 1, det,
+                            -coef * std::sqrt(std::max(0.0, (j - m) / den)),
+                            target_twos, out);
+        det[site] = 2; // beta
+        expand_csf_step_rec(step, site + 1, twos - 1, twom - 1, det,
+                            coef * std::sqrt(std::max(0.0, (j + m) / den)),
+                            target_twos, out);
+    }
+    det[site] = 0;
+}
+
+static det_expansion expand_csf_step(const std::vector<uint8_t> &step, int target_twos) {
+    det_expansion out;
+    det_occ det(step.size(), 0);
+    expand_csf_step_rec(step, 0, 0, 0, det, 1.0, target_twos, out);
+    return out;
+}
+
+struct det_image {
+    det_occ occ;
+    double phase = 1.0;
+};
+
+// Convert a determinant from the current MPS lattice/site convention into canonical alpha-string /
+// beta-string convention. block2's non-spin-adapted determinant/SCI Fock convention uses interleaved
+// spin orbitals (alpha0,beta0,alpha1,beta1,...) for fermion phases, while aldet prints separate
+// alpha/beta strings. The inversion count below applies that spin-order phase together with the
+// Fiedler/site orbital permutation and the chosen canonical-orbital sign gauge.
+static det_image canonicalize_site_det(const det_occ &site_det,
+                                       const std::vector<int> &canon_of_lattice,
+                                       const std::vector<double> &lattice_sign) {
+    const int n = (int)site_det.size();
+    det_image img;
+    img.occ.assign(n, 0);
+    std::vector<int> spin_orbs;
+    spin_orbs.reserve((size_t)2 * n);
+
+    for (int k = 0; k < n; k++) {
+        const uint8_t occ = site_det[k] & 3;
+        const int p = canon_of_lattice[k];
+        const double sg = lattice_sign[k] < 0.0 ? -1.0 : 1.0;
+        if (occ & 1) {
+            img.occ[p] |= 1;
+            img.phase *= sg;
+            spin_orbs.push_back(p); // alpha block
+        }
+        if (occ & 2) {
+            img.occ[p] |= 2;
+            img.phase *= sg;
+            spin_orbs.push_back(n + p); // beta block
+        }
+    }
+
+    int odd = 0;
+    for (int i = 0; i < (int)spin_orbs.size(); i++)
+        for (int j = i + 1; j < (int)spin_orbs.size(); j++)
+            if (spin_orbs[i] > spin_orbs[j]) odd ^= 1;
+    if (odd) img.phase = -img.phase;
+    return img;
+}
+
+static void normalize_report_sign_gauge(const std::vector<int> &canon_of_lattice,
+                                        std::vector<double> &lattice_sign) {
+    double prod = 1.0;
+    for (double s : lattice_sign)
+        prod *= (s < 0.0 ? -1.0 : 1.0);
+    if (prod > 0.0 || canon_of_lattice.empty())
+        return;
+
+    // LAPACK eigenvector signs are arbitrary. After the peel, an odd number of signs in the discrete
+    // map is only a printed canonical-MO phase choice; use the equivalent gauge with det(Q)=+1.
+    for (int k = 0; k < (int)canon_of_lattice.size(); k++)
+        if (canon_of_lattice[k] == 0) {
+            lattice_sign[k] = -lattice_sign[k];
+            return;
+        }
+}
+
+static det_expansion canonical_determinants_from_sz_mps(
+    const std::shared_ptr<UnfusedMPS<SU2, double>> &su2_umps,
+    const std::string &sz_tag,
+    int n_sites, int n_elec, int target_twos, double cutoff,
+    const std::vector<int> &canon_of_lattice,
+    const std::vector<double> &lattice_sign) {
+    det_expansion out;
+
+    auto cg = std::make_shared<CG<SU2>>();
+    std::shared_ptr<UnfusedMPS<SZ, double>> sz_umps =
+        TransUnfusedMPS<SU2, SZ, double>::forward(
+            su2_umps, sz_tag, cg, SZ(n_elec, target_twos, 0));
+    if (target_twos == 0)
+        sz_umps->resolve_singlet_embedding(0);
+
+    auto dtrie = std::make_shared<DeterminantTRIE<SZ, double>>(n_sites, true);
+    dtrie->evaluate(sz_umps, cutoff);
+    for (int t = 0; t < (int)dtrie->size(); t++) {
+        det_image img = canonicalize_site_det((*dtrie)[t], canon_of_lattice, lattice_sign);
+        add_det_coeff(out, img.occ, (double)dtrie->vals[t] * img.phase);
+    }
+    return out;
+}
+
+static double expansion_weight(const det_expansion &dets) {
+    double w = 0.0;
+    for (const auto &kv : dets) w += kv.second * kv.second;
+    return w;
+}
+
+static det_occ determinant_config(const det_occ &det) {
+    det_occ cfg(det.size(), 0);
+    for (int i = 0; i < (int)det.size(); i++) {
+        const uint8_t x = det[i] & 3;
+        cfg[i] = (x == 3) ? 3 : (x == 0 ? 0 : 1); // collapse alpha/beta singles to one open shell
+    }
+    return cfg;
+}
+
+static void generate_csf_steps_rec(const det_occ &cfg, int site, int twos, int target_twos,
+                                   std::vector<uint8_t> &step,
+                                   std::vector<std::vector<uint8_t>> &steps) {
+    if (site == (int)cfg.size()) {
+        if (twos == target_twos) steps.push_back(step);
+        return;
+    }
+    if (cfg[site] == 0 || cfg[site] == 3) {
+        step[site] = cfg[site] == 3 ? 3 : 0;
+        generate_csf_steps_rec(cfg, site + 1, twos, target_twos, step, steps);
+        return;
+    }
+    step[site] = 1;
+    generate_csf_steps_rec(cfg, site + 1, twos + 1, target_twos, step, steps);
+    if (twos > 0) {
+        step[site] = 2;
+        generate_csf_steps_rec(cfg, site + 1, twos - 1, target_twos, step, steps);
+    }
+}
+
+static std::vector<std::vector<uint8_t>> generate_csf_steps(const det_occ &cfg, int target_twos) {
+    std::vector<std::vector<uint8_t>> steps;
+    std::vector<uint8_t> step(cfg.size(), 0);
+    generate_csf_steps_rec(cfg, 0, 0, target_twos, step, steps);
+    return steps;
+}
+
+static std::vector<leading_csf> project_determinants_to_csfs(const det_expansion &dets,
+                                                             int n, int target_twos) {
+    std::map<det_occ, det_expansion> by_config;
+    for (const auto &kv : dets) by_config[determinant_config(kv.first)][kv.first] = kv.second;
+
+    std::vector<int> identity(n);
+    std::iota(identity.begin(), identity.end(), 0);
+    std::vector<double> plus(n, 1.0);
+
+    std::vector<leading_csf> csfs;
+    for (const auto &grp : by_config) {
+        std::vector<std::vector<uint8_t>> steps = generate_csf_steps(grp.first, target_twos);
+        for (const std::vector<uint8_t> &step : steps) {
+            det_expansion local = expand_csf_step(step, target_twos);
+            double coef = 0.0;
+            for (const auto &kv : local) {
+                det_image img = canonicalize_site_det(kv.first, identity, plus);
+                auto it = grp.second.find(img.occ);
+                if (it != grp.second.end()) coef += it->second * kv.second * img.phase;
+            }
+            if (std::fabs(coef) > 1e-12) {
+                leading_csf lc;
+                lc.step = step;
+                lc.coef = coef;
+                csfs.push_back(std::move(lc));
+            }
+        }
+    }
+    return csfs;
+}
+
+static void det_strings(const det_occ &det, std::string &alpha, std::string &beta) {
+    alpha.assign(det.size(), '0');
+    beta.assign(det.size(), '0');
+    for (int i = 0; i < (int)det.size(); i++) {
+        if (det[i] & 1) alpha[i] = '1';
+        if (det[i] & 2) beta[i] = '1';
+    }
+}
+
+static void report_leading_determinants(std::FILE *out, int state_idx, double E, double S2,
+                                        const det_expansion &dets, int print_number,
+                                        double captured_weight) {
+    std::fprintf(out,
+                 "State %d determinant expansion (canonical basis, temporary)  E  = % 18.10f "
+                 "S^2 = %.2f:\n",
+                 state_idx, E, S2);
+
+    std::vector<det_expansion::const_iterator> ord;
+    ord.reserve(dets.size());
+    for (auto it = dets.begin(); it != dets.end(); ++it) ord.push_back(it);
+    const int top = (int)std::min<size_t>(print_number, ord.size());
+    std::partial_sort(ord.begin(), ord.begin() + top, ord.end(),
+                      [](det_expansion::const_iterator a, det_expansion::const_iterator b) {
+                          return std::fabs(a->second) > std::fabs(b->second);
+                      });
+    std::string alpha, beta;
+    for (int i = 0; i < top; i++) {
+        det_strings(ord[i]->first, alpha, beta);
+        std::fprintf(out, "% .10e  | %s | %s\n", ord[i]->second, alpha.c_str(), beta.c_str());
+    }
+    std::fprintf(out, "  (determinant weight %.6f)\n", captured_weight);
+}
+
+// Report each state's leading configurations in the canonical (delocalized MO) basis. The DMRG solve
+// runs in the localized + Fiedler-ordered basis; each state's MPS is rotated by the proper
+// (continuous) part of the solve->canonical change. Determinants are sampled after block2's own
+// SU2->SZ unfused-MPS transform, so the alpha/beta signs follow the same CG and spin-order convention
+// as block2 determinant.hpp. The remaining discrete map (lattice orbital -> canonical orbital plus
+// orbital order/sign) is applied by canonicalize_site_det. Canonical CSFs are then obtained by
+// projecting the determinant vector onto canonical step-vector CSFs. Determinants are printed as a
+// temporary diagnostic; canonical CSFs are the standard read-out.
 void block2_casci_wrap::print_states(int, int, int print) {
     if (!print) return;
     dmrgci_engine &e = *impl_;
@@ -1090,10 +1345,15 @@ void block2_casci_wrap::print_states(int, int, int print) {
             canon_of_lattice[k] = p;
             lattice_sign[k] = rp.sigma[p];
         }
+        normalize_report_sign_gauge(canon_of_lattice, lattice_sign);
     } else {
         for (int k = 0; k < n; k++) canon_of_lattice[k] = reord.empty() ? k : reord[k];
     }
     report_csf_orbital_map(out_stream, n, canon_of_lattice, lattice_sign);
+
+    std::vector<int> solve_of_lattice(n);
+    std::vector<double> plus_sign(n, 1.0);
+    for (int k = 0; k < n; k++) solve_of_lattice[k] = reord.empty() ? k : reord[k];
 
     for (int st = 0; st < e.n_s; st++) {
         // Work on a copy of this root; e.mps stays in the localized basis for the property read-out.
@@ -1101,9 +1361,12 @@ void block2_casci_wrap::print_states(int, int, int print) {
         std::shared_ptr<MultiMPS<SU2, double>> imps = e.mps->extract(st, xtag);
         // Rotate by the proper residual. A complex residual (guarded inside) leaves the MPS in the solve
         // basis, where the reported orbital map no longer holds -- flag it.
-        if (!Rp.empty() && !rotate_multimps_to_canonical(e, imps, Rp.data(), rot_m, rot_steps))
+        bool map_applies = true;
+        if (!Rp.empty() && !rotate_multimps_to_canonical(e, imps, Rp.data(), rot_m, rot_steps)) {
             fprintf(out_stream, "  warning: state %d rotation fell back to solve basis; CSF orbital "
                                 "map does not apply\n", st);
+            map_applies = false;
+        }
 
         const std::string stag = e.mps_info->tag + "-cs" + std::to_string(st);
         std::shared_ptr<MPS<SU2, double>> smps = imps->make_single(stag);
@@ -1117,29 +1380,27 @@ void block2_casci_wrap::print_states(int, int, int print) {
             rmps = compress_single_mps(e, smps, cm, ctag);
         }
 
-        // Sample spin-adapted CSFs directly (no SU2->SZ): DeterminantTRIE<SU2> gives step-vector CSFs
-        // (0/1/2/3 = empty/up/down/doubly) in lattice order; its convert_phase is a no-op.
         std::shared_ptr<UnfusedMPS<SU2, double>> umps =
             std::make_shared<UnfusedMPS<SU2, double>>(rmps);
-        auto ctrie = std::make_shared<DeterminantTRIE<SU2, double>>(n, /*enable_look_up=*/true);
-        ctrie->evaluate(umps, cutoff);
 
-        std::vector<leading_csf> csfs;
-        csfs.reserve(ctrie->size());
-        double captured = 0.0;
-        for (int t = 0; t < (int)ctrie->size(); t++) {
-            leading_csf lc;
-            lc.step = (*ctrie)[t]; // step vector, lattice order
-            lc.coef = (double)ctrie->vals[t];
-            captured += lc.coef * lc.coef;
-            csfs.push_back(std::move(lc));
-        }
+        const std::vector<int> &det_orb_map = map_applies ? canon_of_lattice : solve_of_lattice;
+        const std::vector<double> &det_sign = map_applies ? lattice_sign : plus_sign;
+        const std::string sztag = e.mps_info->tag + "-sz" + std::to_string(st);
+        det_expansion canonical_dets = canonical_determinants_from_sz_mps(
+            umps, sztag, n, e.n_elec, e.twos, cutoff, det_orb_map, det_sign);
+        const double captured = expansion_weight(canonical_dets);
+        std::vector<leading_csf> canonical_csfs =
+            project_determinants_to_csfs(canonical_dets, n, e.twos);
 
-        report_leading_csfs(out_stream, st, e.E_states[st], S2, n, csfs, print_number, captured);
+        report_leading_determinants(out_stream, st, e.E_states[st], S2, canonical_dets,
+                                    print_number, captured);
+        report_leading_csfs(out_stream, st, e.E_states[st], S2, n, canonical_csfs,
+                            print_number, captured);
 
         remove_tag_files(xtag);
         remove_tag_files(stag);
         if (!ctag.empty()) remove_tag_files(ctag);
+        remove_tag_files(sztag);
     }
     assert_stack_clean("leading-config read");
 }

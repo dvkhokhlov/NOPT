@@ -21,7 +21,8 @@ void report_csf_orbital_map(std::FILE *out, int n_act,
 void report_leading_csfs(std::FILE *out, int state_idx, double E, double S2, int n_act,
                          const std::vector<leading_csf> &csfs,
                          int print_number, double captured_weight) {
-    std::fprintf(out, "State %d  E  = % 18.10f S^2 = %.2f:\n", state_idx, E, S2);
+    std::fprintf(out, "State %d CSF expansion (canonical basis)  E  = % 18.10f S^2 = %.2f:\n",
+                 state_idx, E, S2);
 
     const int top = (int)std::min<size_t>(print_number, csfs.size());
     std::vector<int> ord(csfs.size());
