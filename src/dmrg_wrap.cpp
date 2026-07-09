@@ -11,8 +11,11 @@ using namespace nopt_block2;
 // ---- ctor / dtor ---------------------------------------------------------------------
 block2_casci_wrap::block2_casci_wrap(int n_act, int na, int nb, int mult, int n_s,
                                      int print_number, const dmrg_par &cfg)
-    : impl_(std::make_unique<dmrgci_engine>(n_act, na + nb, na - nb, mult, n_s, print_number,
-                                            cfg)) {
+    // block2 runs spin-adapted (SU2): the solve targets total spin 2S = mult-1 (not the Sz
+    // projection na-nb, which is 0 for an M_S=0 open shell). The determinant read-out, however,
+    // must expand to the native M_S = (na-nb)/2 sector, so pass 2*M_S = na-nb separately.
+    : impl_(std::make_unique<dmrgci_engine>(n_act, na + nb, mult - 1, na - nb, mult, n_s,
+                                            print_number, cfg)) {
     host_threads_guard htg;
     int nthr = omp_get_max_threads();
     if (nthr < 1) nthr = 1;

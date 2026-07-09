@@ -23,7 +23,9 @@ using namespace block2;
 // -------------------------- engine: all block2 state ----------------------------------
 struct dmrgci_engine {
     dmrg_par cfg;
-    int n_act, n_elec, twos, mult, n_s, print_number;
+    // twos = 2S (total spin) drives the spin-adapted SU2 solve; twosz = 2*M_S = na-nb is the
+    // projection the determinant read-out expands to, so it matches the native (aldet) M_S.
+    int n_act, n_elec, twos, twosz, mult, n_s, print_number;
     SU2 target;                       // active-space symmetry sector (C1: pg = 0)
     std::vector<uint8_t> orbsym;      // per-orbital irrep; C1 -> all 0 (set in set_act_rep_num)
     std::vector<double> E_states;     // per-state energies (returned by E_states_ptr)
@@ -60,10 +62,10 @@ struct dmrgci_engine {
     bool last_hit_max = false;                  // last solve used its full sweep budget with dE > sweep_tol
     std::vector<uint16_t> reorder_perm;         // DMRG lattice order (Fiedler); empty => input order
 
-    dmrgci_engine(int n_act_, int n_elec_, int twos_, int mult_, int n_s_, int print_number_,
-                  const dmrg_par &c)
-        : cfg(c), n_act(n_act_), n_elec(n_elec_), twos(twos_), mult(mult_), n_s(n_s_),
-          print_number(print_number_), target(n_elec_, twos_, 0), orbsym(n_act_, 0),
+    dmrgci_engine(int n_act_, int n_elec_, int twos_, int twosz_, int mult_, int n_s_,
+                  int print_number_, const dmrg_par &c)
+        : cfg(c), n_act(n_act_), n_elec(n_elec_), twos(twos_), twosz(twosz_), mult(mult_),
+          n_s(n_s_), print_number(print_number_), target(n_elec_, twos_, 0), orbsym(n_act_, 0),
           E_states(n_s_, 0.0) {}
 };
 

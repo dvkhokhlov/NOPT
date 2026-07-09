@@ -154,23 +154,26 @@ static void add_det_coeff(det_expansion &dets, const det_occ &occ, double coef) 
     if (std::fabs(slot) < 1e-14) dets.erase(occ);
 }
 
-// Expand a block2 SU2 step-vector CSF into highest-weight Slater determinants in the same lattice
-// order. The coefficients are Clebsch-Gordan products for coupling each singly occupied orbital to the
-// running spin path (u: S -> S+1/2, d: S -> S-1/2). The determinant phase is still the local
-// site-ordered block2 phase; canonicalize_site_det converts it to alpha-string/beta-string order.
+// Expand a block2 SU2 step-vector CSF into the Slater determinants of the target M_S projection
+// (target_twom = 2*M_S), in the same lattice order. The coefficients are Clebsch-Gordan products for
+// coupling each singly occupied orbital to the running spin path (u: S -> S+1/2, d: S -> S-1/2). Only
+// paths reaching both the total spin (target_twos) and the projection (target_twom) are retained; for
+// a closed/high-spin state these coincide, but an M_S=0 open shell needs target_twom=0 to match aldet.
+// The determinant phase is still the local site-ordered block2 phase; canonicalize_site_det converts
+// it to alpha-string/beta-string order.
 static void expand_csf_step_rec(const std::vector<uint8_t> &step, int site, int twos, int twom,
-                                det_occ &det, double coef, int target_twos,
+                                det_occ &det, double coef, int target_twos, int target_twom,
                                 det_expansion &out) {
     const int n = (int)step.size();
     if (site == n) {
-        if (twos == target_twos && twom == target_twos) add_det_coeff(out, det, coef);
+        if (twos == target_twos && twom == target_twom) add_det_coeff(out, det, coef);
         return;
     }
 
     const uint8_t s = step[site] & 3;
     if (s == 0 || s == 3) {
         det[site] = (s == 3) ? 3 : 0;
-        expand_csf_step_rec(step, site + 1, twos, twom, det, coef, target_twos, out);
+        expand_csf_step_rec(step, site + 1, twos, twom, det, coef, target_twos, target_twom, out);
         det[site] = 0;
         return;
     }
@@ -182,28 +185,29 @@ static void expand_csf_step_rec(const std::vector<uint8_t> &step, int site, int 
         det[site] = 1; // alpha
         expand_csf_step_rec(step, site + 1, twos + 1, twom + 1, det,
                             coef * std::sqrt(std::max(0.0, (j + m + 1.0) / den)),
-                            target_twos, out);
+                            target_twos, target_twom, out);
         det[site] = 2; // beta
         expand_csf_step_rec(step, site + 1, twos + 1, twom - 1, det,
                             coef * std::sqrt(std::max(0.0, (j - m + 1.0) / den)),
-                            target_twos, out);
+                            target_twos, target_twom, out);
     } else if (twos > 0) { // spin-path decrease: block2's left-coupled Condon-Shortley convention
         det[site] = 1; // alpha
         expand_csf_step_rec(step, site + 1, twos - 1, twom + 1, det,
                             -coef * std::sqrt(std::max(0.0, (j - m) / den)),
-                            target_twos, out);
+                            target_twos, target_twom, out);
         det[site] = 2; // beta
         expand_csf_step_rec(step, site + 1, twos - 1, twom - 1, det,
                             coef * std::sqrt(std::max(0.0, (j + m) / den)),
-                            target_twos, out);
+                            target_twos, target_twom, out);
     }
     det[site] = 0;
 }
 
-static det_expansion expand_csf_step(const std::vector<uint8_t> &step, int target_twos) {
+static det_expansion expand_csf_step(const std::vector<uint8_t> &step, int target_twos,
+                                     int target_twom) {
     det_expansion out;
     det_occ det(step.size(), 0);
-    expand_csf_step_rec(step, 0, 0, 0, det, 1.0, target_twos, out);
+    expand_csf_step_rec(step, 0, 0, 0, det, 1.0, target_twos, target_twom, out);
     return out;
 }
 
@@ -266,7 +270,7 @@ struct su2_readout_expansion {
 // avoids the expensive SU2->SZ MPS transform; only the retained read-out subspace is expanded.
 static su2_readout_expansion canonical_readout_from_su2_mps(
     const std::shared_ptr<UnfusedMPS<SU2, double>> &su2_umps,
-    int n_sites, int target_twos, double cutoff,
+    int n_sites, int target_twos, int target_twom, double cutoff,
     const std::vector<int> &canon_of_lattice,
     const std::vector<double> &lattice_sign) {
     su2_readout_expansion out;
@@ -276,7 +280,7 @@ static su2_readout_expansion canonical_readout_from_su2_mps(
     for (int t = 0; t < (int)ctrie->size(); t++) {
         const double csf_coef = (double)ctrie->vals[t];
         if (std::fabs(csf_coef) < 1e-14) continue;
-        det_expansion site_dets = expand_csf_step((*ctrie)[t], target_twos);
+        det_expansion site_dets = expand_csf_step((*ctrie)[t], target_twos, target_twom);
         for (const auto &kv : site_dets) {
             det_image img = canonicalize_site_det(kv.first, canon_of_lattice, lattice_sign);
             add_det_coeff(out.determinants, img.occ, csf_coef * kv.second * img.phase);
@@ -396,7 +400,7 @@ void block2_casci_wrap::print_states(int, int, int print) {
         const std::vector<int> &det_orb_map = map_applies ? rbc.canon_of_lattice : solve_of_lattice;
         const std::vector<double> &det_sign = map_applies ? rbc.lattice_sign : plus_sign;
         su2_readout_expansion canonical =
-            canonical_readout_from_su2_mps(umps, n, e.twos, cutoff, det_orb_map, det_sign);
+            canonical_readout_from_su2_mps(umps, n, e.twos, e.twosz, cutoff, det_orb_map, det_sign);
 
         det_weights[st] = canonical.weight;
         report_leading_determinants(out_stream, st, e.E_states[st], S2, canonical.determinants,
