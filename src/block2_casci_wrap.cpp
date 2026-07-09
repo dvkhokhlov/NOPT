@@ -28,7 +28,9 @@
 using namespace block2;
 
 // ---- process-global block2 runtime ---------------------------------------------------
-namespace {
+// Shared block2-backend helpers. A named namespace (not anonymous) so the split TUs can link
+// against the cross-TU ones; per-TU `using` keeps call sites unqualified.
+namespace nopt_block2 {
 
 void report_dmrg_orbital_map(std::FILE *out, int n_act,
                              const std::vector<int> &canon_of_lattice,
@@ -234,7 +236,8 @@ dmrg_schedule build_warm_schedule(int max_m, int warm_sweeps, double sweep_tol) 
     return s;
 }
 
-} // namespace
+} // namespace nopt_block2
+using namespace nopt_block2;
 
 // -------------------------- engine: all block2 state ----------------------------------
 struct dmrgci_engine {
@@ -282,13 +285,6 @@ struct dmrgci_engine {
           print_number(print_number_), target(n_elec_, twos_, 0), orbsym(n_act_, 0),
           E_states(n_s_, 0.0) {}
 };
-
-// ---- P2.0 not-implemented sentinel ---------------------------------------------------
-[[noreturn]] static void nyi(const char *what) {
-    fprintf(out_stream,
-            "ERROR: block2_casci_wrap::%s not implemented yet (P2.0 skeleton)\n", what);
-    exit(0);
-}
 
 // Compute every state's spatial 2-RDM once per solve and cache them as n_s consecutive block2
 // D2[p,q,r,s] blocks. Each root is extracted from the state-averaged MultiMPS to its own single-root
