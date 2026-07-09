@@ -94,63 +94,19 @@ static report_peel peel_report_permutation(double *Rp, int n) {
     return rp;
 }
 
-// Rotate a MultiMPS by the residual continuous rotation between the solve and canonical bases. The full
-// solve->canonical rotation (localized or canonical; see print_states) is a signed permutation times a
-// residual; the caller peels the permutation off (peel_report_permutation) and passes only the residual
-// U (n_act x n_act, [a*n+p], ~ I, proper). kappa = log(U) is reindexed into the frozen lattice (Fiedler)
-// order and the one-body MPO exp(-kappa) is applied by rot_steps TangentSpace TE sweeps at bond dim
-// rot_m -- block2's orbital-rotation recipe, shared with the warm-start (evolve_sa_multimps). Mutates
-// mps in place; a no-op when the residual is negligible (an already-canonical or pure-permutation
-// solve). Unlike the warm-start there is no cold fallback: the read-out accepts the truncation,
-// reported downstream as the captured weight. Returns false (leaving mps untouched) only if the
-// generator still comes back complex despite the peel -- the caller then reports in the solve basis
-// without the permutation relabel.
+// Rotate a MultiMPS from the solve basis into the canonical reporting basis by the residual proper
+// rotation U (n_act x n_act, [a*n+p]) the caller peeled off the signed permutation. Unlike the
+// warm-start there is no norm-drift rejection -- the read-out accepts the truncation (captured weight).
+// Returns false (leaving mps in the solve basis) only if the generator still comes back complex.
 static bool rotate_multimps_to_canonical(dmrgci_engine &e,
                                          const std::shared_ptr<MultiMPS<SU2, double>> &mps,
                                          const double *U, int rot_m, int rot_steps) {
-    const int n = e.n_act;
-    const size_t nn = (size_t)n * n;
-    auto heap = std::make_shared<VectorAllocator<double>>(); // log temporaries off block2's LIFO stack
-
-    std::vector<double> Um(U, U + nn);
-    ComplexMatrixRef ck(nullptr, n, n);
-    ck.allocate(heap);
-    ck.clear();
-    ComplexMatrixFunctions::fill_complex(ck, MatrixRef(Um.data(), n, n), MatrixRef(nullptr, n, n));
-    ComplexMatrixFunctions::logarithm(ck); // kappa = log(U); real antisymmetric for a proper rotation
-    std::vector<double> kre(nn), kim(nn);
-    ComplexMatrixFunctions::extract_complex(ck, MatrixRef(kre.data(), n, n), MatrixRef(kim.data(), n, n));
-    ck.deallocate(heap);
-    if (MatrixFunctions::norm(MatrixRef(kim.data(), n, n)) > 1e-6) {
+    auto res = apply_orbital_rotation_mps(mps, U, e.n_act, e.n_elec, e.twos, e.orbsym,
+                                          e.reorder_perm, rot_m, rot_steps);
+    if (res.complex_generator) {
         fprintf(out_stream, "  warning: read-out rotation generator not real -> reporting in solve basis\n");
         return false;
     }
-
-    // NC MPO expects kappa^T; reindex into the frozen lattice order (as the warm-start rotation does).
-    const bool have_perm = !e.reorder_perm.empty();
-    std::vector<double> kap(nn);
-    double kmax = 0.0;
-    for (int i = 0; i < n; i++)
-        for (int j = 0; j < n; j++) {
-            int oi = have_perm ? e.reorder_perm[i] : i;
-            int oj = have_perm ? e.reorder_perm[j] : j;
-            kap[(size_t)i * n + j] = kre[(size_t)oj * n + oi];
-            kmax = std::max(kmax, std::fabs(kap[(size_t)i * n + j]));
-        }
-    if (kmax < 1e-8) return true; // exp(-kappa) ~ I: the MPS already sits in the reporting basis
-
-    auto fd_rot = std::make_shared<FCIDUMP<double>>();
-    fd_rot->initialize_h1e(n, e.n_elec, e.twos, /*isym=*/0, 0.0, kap.data(), nn);
-    auto hamil_rot = std::make_shared<HamiltonianQC<SU2, double>>(SU2(0), n, e.orbsym, fd_rot);
-    std::shared_ptr<MPO<SU2, double>> mpo_rot =
-        std::make_shared<MPOQC<SU2, double>>(hamil_rot, QCTypes::NC);
-    mpo_rot->basis = hamil_rot->basis;
-    mpo_rot = std::make_shared<SimplifiedMPO<SU2, double>>(
-        mpo_rot,
-        std::make_shared<AntiHermitianRuleQC<SU2, double>>(std::make_shared<RuleQC<SU2, double>>()),
-        true);
-    evolve_sa_multimps(mps, mpo_rot, (ubond_t)rot_m, 1.0 / rot_steps, rot_steps); // exp(-kappa t), t in [0,1]
-    mpo_rot->deallocate();
     return true;
 }
 

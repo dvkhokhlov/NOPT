@@ -166,3 +166,62 @@ double evolve_sa_multimps(const std::shared_ptr<MultiMPS<SU2, double>> &mps,
     threading_()->seq_type = saved_seq;
     return mps->nroots > 0 ? nsq / mps->nroots : nsq; // mean per-root norm^2
 }
+
+mps_rotation_result apply_orbital_rotation_mps(
+    const std::shared_ptr<MultiMPS<SU2, double>> &mps, const double *U, int n, int n_elec, int twos,
+    const std::vector<uint8_t> &orbsym, const std::vector<uint16_t> &reorder_perm,
+    int rot_m, int rot_steps) {
+    const size_t nn = (size_t)n * n;
+    mps_rotation_result res;
+
+    // kappa = log(U) (real antisymmetric for a proper rotation). Log/complex temporaries live on the
+    // heap, not block2's LIFO stack, which the subsequent environment build reads from.
+    auto heap = std::make_shared<VectorAllocator<double>>();
+    std::vector<double> Um(U, U + nn);
+    ComplexMatrixRef ck(nullptr, n, n);
+    ck.allocate(heap);
+    ck.clear();
+    ComplexMatrixFunctions::fill_complex(ck, MatrixRef(Um.data(), n, n), MatrixRef(nullptr, n, n));
+    ComplexMatrixFunctions::logarithm(ck);
+    std::vector<double> kre(nn), kim(nn);
+    ComplexMatrixFunctions::extract_complex(ck, MatrixRef(kre.data(), n, n), MatrixRef(kim.data(), n, n));
+    ck.deallocate(heap);
+    res.im_norm = MatrixFunctions::norm(MatrixRef(kim.data(), n, n));
+    if (res.im_norm > 1e-6) { // non-real generator -> not a proper rotation
+        res.complex_generator = true;
+        return res;
+    }
+
+    // NC MPO expects kappa^T; reindex into the frozen lattice order (site i holds orbital perm[i]).
+    const bool have_perm = !reorder_perm.empty();
+    std::vector<double> kap(nn);
+    double kmax = 0.0;
+    for (int i = 0; i < n; i++)
+        for (int j = 0; j < n; j++) {
+            int oi = have_perm ? reorder_perm[i] : i;
+            int oj = have_perm ? reorder_perm[j] : j;
+            kap[(size_t)i * n + j] = kre[(size_t)oj * n + oi];
+            kmax = std::max(kmax, std::fabs(kap[(size_t)i * n + j]));
+        }
+    // Below threshold exp(-kappa) ~ I: the MPS already sits in the target basis, and a numerically-zero
+    // generator makes a degenerate rotation MPO that block2's environment build reads past. Skip.
+    if (kmax < 1e-8) {
+        res.skipped = true;
+        return res;
+    }
+
+    // one-body rotation MPO exp(-kappa t), built from the (lattice-order) generator
+    auto fd_rot = std::make_shared<FCIDUMP<double>>();
+    fd_rot->initialize_h1e(n, n_elec, twos, /*isym=*/0, 0.0, kap.data(), nn);
+    auto hamil_rot = std::make_shared<HamiltonianQC<SU2, double>>(SU2(0), n, orbsym, fd_rot);
+    std::shared_ptr<MPO<SU2, double>> mpo_rot =
+        std::make_shared<MPOQC<SU2, double>>(hamil_rot, QCTypes::NC);
+    mpo_rot->basis = hamil_rot->basis;
+    mpo_rot = std::make_shared<SimplifiedMPO<SU2, double>>(
+        mpo_rot,
+        std::make_shared<AntiHermitianRuleQC<SU2, double>>(std::make_shared<RuleQC<SU2, double>>()),
+        true);
+    res.norm2 = evolve_sa_multimps(mps, mpo_rot, (ubond_t)rot_m, 1.0 / rot_steps, rot_steps);
+    mpo_rot->deallocate();
+    return res;
+}

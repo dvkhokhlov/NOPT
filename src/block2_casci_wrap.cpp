@@ -448,72 +448,21 @@ static bool rotate_retained_mps(dmrgci_engine &e) {
         return false;
     }
 
-    // --- kappa = log(U~) (real antisymmetric generator) ---
-    ComplexMatrixRef ck(nullptr, n, n);
-    ck.allocate(heap);
-    ck.clear();
-    ComplexMatrixFunctions::fill_complex(ck, MatrixRef(U.data(), n, n), MatrixRef(nullptr, n, n));
-    ComplexMatrixFunctions::logarithm(ck);
-    std::vector<double> kre(nn), kim(nn);
-    ComplexMatrixFunctions::extract_complex(ck, MatrixRef(kre.data(), n, n),
-                                            MatrixRef(kim.data(), n, n));
-    ck.deallocate(heap);
-    double imnorm = MatrixFunctions::norm(MatrixRef(kim.data(), n, n));
-    if (imnorm > 1e-6) { // non-real generator -> not a proper rotation
-        fprintf(out_stream, "  warm-start: complex generator (|Im k|=%.2e) -> cold fallback\n", imnorm);
+    // exp(-kappa) rotation of the retained MPS (kappa = log U~), shared with the read-out. One step
+    // reproduces the full rotation for small per-iter rotations; rot_steps guards larger ones.
+    const int rot_m = e.cfg.rot_m > 0 ? e.cfg.rot_m : e.cfg.m;
+    const int n_steps = e.cfg.rot_steps > 0 ? e.cfg.rot_steps : 10;
+    auto res = apply_orbital_rotation_mps(e.mps, U.data(), n, e.n_elec, e.twos, e.orbsym,
+                                          e.reorder_perm, rot_m, n_steps);
+    if (res.complex_generator) { // non-real generator -> not a proper rotation
+        fprintf(out_stream, "  warm-start: complex generator (|Im k|=%.2e) -> cold fallback\n",
+                res.im_norm);
         return false;
     }
-
-    // NC MPO expects kappa^T; reindex into the frozen lattice order (fcidump->reorder(perm) put
-    // orbital perm[i] on site i, so the generator on the lattice is kappa^T(perm[i], perm[j])).
-    const bool have_perm = !e.reorder_perm.empty();
-    std::vector<double> kap(nn);
-    for (int i = 0; i < n; i++)
-        for (int j = 0; j < n; j++) {
-            int oi = have_perm ? e.reorder_perm[i] : i;
-            int oj = have_perm ? e.reorder_perm[j] : j;
-            kap[(size_t)i * n + j] = kre[(size_t)oj * n + oi]; // transpose + permute
-        }
-
-    // Near convergence the localization-rotation vanishes (exp(-kappa) -> I), so the retained MPS
-    // already sits in the current basis to machine precision -- rotating is pointless. It is also
-    // unsafe: a numerically-zero one-body generator yields a degenerate rotation MPO whose
-    // SimplifiedMPO-pruned operator schema block2's environment build reads past the end of
-    // (initialize_tp -> a heap-dependent crash). Skip and reuse the reloaded MPS as-is; this is still
-    // a warm restart (the short re-solve follows). The threshold sits far above the generator's noise
-    // floor and far below any rotation an m-truncated DMRG could resolve.
-    double kmax = 0.0;
-    for (size_t t = 0; t < nn; t++) kmax = std::max(kmax, std::fabs(kap[t]));
-    if (kmax < 1e-8) {
+    if (res.skipped)
         return true; // negligible rotation (near convergence): reuse the reloaded MPS as-is
-    }
-
-    // --- one-body rotation MPO exp(-kappa t), built from the (lattice-order) generator ---
-    auto fd_rot = std::make_shared<FCIDUMP<double>>();
-    fd_rot->initialize_h1e(n, e.n_elec, e.twos, /*isym=*/0, 0.0, kap.data(), nn);
-    auto hamil_rot = std::make_shared<HamiltonianQC<SU2, double>>(SU2(0), n, e.orbsym, fd_rot);
-    std::shared_ptr<MPO<SU2, double>> mpo_rot =
-        std::make_shared<MPOQC<SU2, double>>(hamil_rot, QCTypes::NC);
-    mpo_rot->basis = hamil_rot->basis;
-    mpo_rot = std::make_shared<SimplifiedMPO<SU2, double>>(
-        mpo_rot,
-        std::make_shared<AntiHermitianRuleQC<SU2, double>>(std::make_shared<RuleQC<SU2, double>>()),
-        true);
-
-    // Propagate exp(-kappa) over t in [0,1] as a multi-root TangentSpace TE sweep (block2's own
-    // MultiMPS TE is complex-only, ket.size()==2; evolve_sa_multimps drives the per-root apply +
-    // shared-basis truncation). -dt convention verified in the tests/block harness.
-    const int rot_m = e.cfg.rot_m > 0 ? e.cfg.rot_m : e.cfg.m;
-    // exp(-kappa) over t in [0,1] as n_steps TangentSpace TE sweeps (dt = 1/n_steps). One step
-    // already reproduces the full rotation for small per-iter rotations (the sweep applies a
-    // Krylov matrix-exponential per site, not an Euler step); rot_steps guards larger rotations.
-    const int n_steps = e.cfg.rot_steps > 0 ? e.cfg.rot_steps : 10;
-    const double dt = 1.0 / n_steps;
-    const double norm2 = evolve_sa_multimps(e.mps, mpo_rot, (ubond_t)rot_m, dt, n_steps);
-    mpo_rot->deallocate();
-
-    if (std::fabs(norm2 - 1.0) > 1e-3) { // unitary propagation should preserve per-root norms
-        fprintf(out_stream, "  warm-start: rotation norm^2=%.6f drifted -> cold fallback\n", norm2);
+    if (std::fabs(res.norm2 - 1.0) > 1e-3) { // unitary propagation should preserve per-root norms
+        fprintf(out_stream, "  warm-start: rotation norm^2=%.6f drifted -> cold fallback\n", res.norm2);
         return false;
     }
     return true; // rotated MPS in place; benign success is silent (keeps the CASSCF table clean)
