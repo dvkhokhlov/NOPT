@@ -28,8 +28,8 @@ void block2_casci_wrap::init_state_storage(int n_s, int) {
 }
 bool block2_casci_wrap::has_coef(int) const { return impl_->storage_ready; }
 void block2_casci_wrap::set_act_rep_num(int *) {
-    // Symmetry deferred: the DMRG block runs in C1, so orbsym stays all-zero and the
-    // per-active-orbital irreps are ignored (mapped in once symmetry lands).
+    // The DMRG block runs in C1, so orbsym stays all-zero and the per-active-orbital irreps
+    // are ignored.
 }
 void block2_casci_wrap::set_localization(const double *U) {
     // Copy the localizing rotation (caller's buffer is transient); nullptr => no localization.
