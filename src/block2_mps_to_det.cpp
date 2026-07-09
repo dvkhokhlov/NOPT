@@ -154,63 +154,6 @@ static void add_det_coeff(det_expansion &dets, const det_occ &occ, double coef) 
     if (std::fabs(slot) < 1e-14) dets.erase(occ);
 }
 
-// Expand a block2 SU2 step-vector CSF into the Slater determinants of the target M_S projection
-// (target_twom = 2*M_S), in the same lattice order. The coefficients are Clebsch-Gordan products for
-// coupling each singly occupied orbital to the running spin path (u: S -> S+1/2, d: S -> S-1/2). Only
-// paths reaching both the total spin (target_twos) and the projection (target_twom) are retained; for
-// a closed/high-spin state these coincide, but an M_S=0 open shell needs target_twom=0 to match aldet.
-// The determinant phase is still the local site-ordered block2 phase; canonicalize_site_det converts
-// it to alpha-string/beta-string order.
-static void expand_csf_step_rec(const std::vector<uint8_t> &step, int site, int twos, int twom,
-                                det_occ &det, double coef, int target_twos, int target_twom,
-                                det_expansion &out) {
-    const int n = (int)step.size();
-    if (site == n) {
-        if (twos == target_twos && twom == target_twom) add_det_coeff(out, det, coef);
-        return;
-    }
-
-    const uint8_t s = step[site] & 3;
-    if (s == 0 || s == 3) {
-        det[site] = (s == 3) ? 3 : 0;
-        expand_csf_step_rec(step, site + 1, twos, twom, det, coef, target_twos, target_twom, out);
-        det[site] = 0;
-        return;
-    }
-
-    const double j = 0.5 * twos;
-    const double m = 0.5 * twom;
-    const double den = 2.0 * j + 1.0;
-    if (s == 1) { // spin-path increase
-        det[site] = 1; // alpha
-        expand_csf_step_rec(step, site + 1, twos + 1, twom + 1, det,
-                            coef * std::sqrt(std::max(0.0, (j + m + 1.0) / den)),
-                            target_twos, target_twom, out);
-        det[site] = 2; // beta
-        expand_csf_step_rec(step, site + 1, twos + 1, twom - 1, det,
-                            coef * std::sqrt(std::max(0.0, (j - m + 1.0) / den)),
-                            target_twos, target_twom, out);
-    } else if (twos > 0) { // spin-path decrease: block2's left-coupled Condon-Shortley convention
-        det[site] = 1; // alpha
-        expand_csf_step_rec(step, site + 1, twos - 1, twom + 1, det,
-                            -coef * std::sqrt(std::max(0.0, (j - m) / den)),
-                            target_twos, target_twom, out);
-        det[site] = 2; // beta
-        expand_csf_step_rec(step, site + 1, twos - 1, twom - 1, det,
-                            coef * std::sqrt(std::max(0.0, (j + m) / den)),
-                            target_twos, target_twom, out);
-    }
-    det[site] = 0;
-}
-
-static det_expansion expand_csf_step(const std::vector<uint8_t> &step, int target_twos,
-                                     int target_twom) {
-    det_expansion out;
-    det_occ det(step.size(), 0);
-    expand_csf_step_rec(step, 0, 0, 0, det, 1.0, target_twos, target_twom, out);
-    return out;
-}
-
 struct det_image {
     det_occ occ;
     double phase = 1.0;
@@ -265,27 +208,38 @@ struct su2_readout_expansion {
     double weight = 0.0;
 };
 
-// Extract the short SU2 step-vector expansion directly from the MPS, then expand the retained block2
-// CSFs locally into determinant coefficients in the requested canonical orbital order/sign gauge. This
-// avoids the expensive SU2->SZ MPS transform; only the retained read-out subspace is expanded.
+// Transform the retained SU2 MPS into the SZ M_S = twosz/2 sector, then enumerate its Slater
+// determinants (SZ DeterminantTRIE) in the requested canonical orbital order/sign gauge. SZ carries
+// M_S but no total spin, so the read-out reaches the native (aldet) projection directly and never trips
+// the SU2 spin-completeness assertion that aborts on open-shell (triplet) MPS. The SZ occupation
+// encoding (0/1/2/3 per spatial orbital, lattice order) is byte-identical to what
+// canonicalize_site_det consumes, so the sign/permutation handling carries over unchanged.
 static su2_readout_expansion canonical_readout_from_su2_mps(
     const std::shared_ptr<UnfusedMPS<SU2, double>> &su2_umps,
-    int n_sites, int target_twos, int target_twom, double cutoff,
+    int n_sites, int n_elec, int twosz, double cutoff,
     const std::vector<int> &canon_of_lattice,
-    const std::vector<double> &lattice_sign) {
+    const std::vector<double> &lattice_sign,
+    const std::shared_ptr<CG<SU2>> &cg, const std::string &sztag) {
     su2_readout_expansion out;
 
-    auto ctrie = std::make_shared<DeterminantTRIE<SU2, double>>(n_sites, true);
-    ctrie->evaluate(su2_umps, cutoff);
-    for (int t = 0; t < (int)ctrie->size(); t++) {
-        const double csf_coef = (double)ctrie->vals[t];
-        if (std::fabs(csf_coef) < 1e-14) continue;
-        det_expansion site_dets = expand_csf_step((*ctrie)[t], target_twos, target_twom);
-        for (const auto &kv : site_dets) {
-            det_image img = canonicalize_site_det(kv.first, canon_of_lattice, lattice_sign);
-            add_det_coeff(out.determinants, img.occ, csf_coef * kv.second * img.phase);
-        }
+    SZ targetz(n_elec, twosz, 0);  // 2*M_S = na - nb: the native (aldet) projection sector
+    auto sz_umps = TransUnfusedMPS<SU2, SZ, double>::forward(su2_umps, sztag, cg, targetz);
+    // Round-trip through a finalized MPS: the raw unfused transform has no clean single-target final
+    // state, so evaluate would trip its final-target assert; finalize rebuilds a proper one. Caveat:
+    // localize=off open shells at small extract_m can leave a degenerate SZ MPS that aborts finalize.
+    sz_umps = std::make_shared<UnfusedMPS<SZ, double>>(sz_umps->finalize());
+    auto dtrie = std::make_shared<DeterminantTRIE<SZ, double>>(n_sites, true);
+    dtrie->evaluate(sz_umps, cutoff);
+    for (int t = 0; t < (int)dtrie->size(); t++) {
+        const double c = (double)dtrie->vals[t];
+        if (std::fabs(c) < 1e-14) continue;
+        // canonicalize_site_det already applies the interleaved->alpha/beta spin-order parity together
+        // with the orbital-order parity, so do NOT call dtrie->convert_phase: it would apply the same
+        // two parities a second time and flip signs.
+        det_image img = canonicalize_site_det((*dtrie)[t], canon_of_lattice, lattice_sign);
+        add_det_coeff(out.determinants, img.occ, c * img.phase);
     }
+    remove_tag_files(sztag);
 
     out.weight = expansion_weight(out.determinants);
     return out;
@@ -305,6 +259,12 @@ static void report_leading_determinants(std::FILE *out, int state_idx, double E,
     std::fprintf(out,
                  "State %d  E  = % 18.10f S^2 = %.2f:\n",
                  state_idx, E, S2);
+
+    if (dets.empty()) {  // read-out captured zero weight (SZ transform empty in this M_S sector)
+        std::fprintf(out, "  (no determinants captured -- the canonical-basis open-shell rotation left "
+                          "nothing to enumerate here; use localize=pm for this state's read-out)\n");
+        return;
+    }
 
     std::vector<det_expansion::const_iterator> ord;
     ord.reserve(dets.size());
@@ -369,6 +329,11 @@ void block2_casci_wrap::print_states(int, int, int print) {
     for (int k = 0; k < n; k++) solve_of_lattice[k] = reord.empty() ? k : reord[k];
     std::vector<double> det_weights((size_t)e.n_s, 0.0);
 
+    // CG factors for the SU2->SZ read-out transform (live off the Hamiltonian; a fresh one is sized in
+    // its constructor should the Hamiltonian ever be released before the print).
+    std::shared_ptr<CG<SU2>> cg = e.mpo->tf->opf->cg;
+    if (cg == nullptr) cg = std::make_shared<CG<SU2>>();
+
     for (int st = 0; st < e.n_s; st++) {
         // Work on a copy of this root; e.mps stays in the localized basis for the property read-out.
         const std::string xtag = e.mps_info->tag + "-cf" + std::to_string(st);
@@ -399,8 +364,10 @@ void block2_casci_wrap::print_states(int, int, int print) {
 
         const std::vector<int> &det_orb_map = map_applies ? rbc.canon_of_lattice : solve_of_lattice;
         const std::vector<double> &det_sign = map_applies ? rbc.lattice_sign : plus_sign;
+        const std::string sztag = e.mps_info->tag + "-sz" + std::to_string(st);
         su2_readout_expansion canonical =
-            canonical_readout_from_su2_mps(umps, n, e.twos, e.twosz, cutoff, det_orb_map, det_sign);
+            canonical_readout_from_su2_mps(umps, n, e.n_elec, e.twosz, cutoff, det_orb_map, det_sign,
+                                           cg, sztag);
 
         det_weights[st] = canonical.weight;
         report_leading_determinants(out_stream, st, e.E_states[st], S2, canonical.determinants,
