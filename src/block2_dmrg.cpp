@@ -689,7 +689,11 @@ void block2_casci_wrap::calc_DMA(double *gamma, int a, int b) {
         gamma[k] += e.dmfull_cache[k];
 }
 void block2_casci_wrap::calc_DMB(double *, int, int) {
-    // No-op: the spin-summed 1-RDM is entirely reported by calc_DMA (SU2 is spin-adapted).
+    // No-op: SU2 is spin-adapted, so calc_DMA carries the full spin-summed 1-RDM and the host sums
+    // DMA+DMB. WARNING: the A/B split is NOT spin-resolved (all density in A, none in B) -- valid
+    // only for consumers that use the sum (CAS-SCF properties). A spin-resolving consumer (e.g.
+    // XMCQDPT2/CDAS PT tensors, which read DMA and DMB separately) needs a real SU2 spin-density
+    // (na-nb sector) 1-RDM here first.
 }
 // Compress a single MPS to bond dimension target_m by fitting a small-m MPS to it through the identity
 // MPO (block2 Linear "Normal" equation). State-preserving projection used only for the read-out: it
