@@ -24,12 +24,23 @@
 #include "localized_dmrg.h"   // rotate1/rotate2 (active-space basis transforms)
 #include "blas_link.h"        // cblas_dgemm (warm-start rotation regularization)
 #include "mps_rotation.h"     // evolve_sa_multimps (multi-root SA MPS rotation)
-#include "csf_readout.h"       // report_leading_csfs / report_csf_orbital_map (CSF read-out)
 
 using namespace block2;
 
 // ---- process-global block2 runtime ---------------------------------------------------
 namespace {
+
+void report_dmrg_orbital_map(std::FILE *out, int n_act,
+                             const std::vector<int> &canon_of_lattice,
+                             const std::vector<double> &lattice_sign,
+                             const char *basis_label) {
+    std::fprintf(out, "DMRG determinant read-out orbital map (lattice k -> %s p, sign):\n", basis_label);
+    std::fprintf(out, "  %-9s:", basis_label);
+    for (int k = 0; k < n_act; k++) std::fprintf(out, " %d", canon_of_lattice[k]);
+    std::fprintf(out, "\n  sign     :");
+    for (int k = 0; k < n_act; k++) std::fprintf(out, " %c", lattice_sign[k] < 0.0 ? '-' : '+');
+    std::fprintf(out, "\n");
+}
 
 // Process-global block2 runtime: owns the frame_/threading_ globals and the per-process scratch
 // dir, and tears all of it down (RAII) at program exit.
@@ -899,22 +910,22 @@ compress_single_mps(dmrgci_engine &e, const std::shared_ptr<MPS<SU2, double>> &k
     return bra;
 }
 
-// The discrete (signed-permutation) part of the solve->report basis change, peeled off so only a
-// proper rotation reaches the log. g maps report orbital -> residual; sigma is the per-report-orbital
+// The discrete (signed-permutation) part of the solve->canonical basis change, peeled off so only a
+// proper rotation reaches the log. g maps canonical orbital -> residual; sigma is the per-canonical-orbital
 // sign the rotation cannot carry (see peel_report_permutation).
 struct report_peel {
-    std::vector<int> g;         // report p -> residual index (g = id recovers the full-Rp read-out)
-    std::vector<double> sigma;  // report p -> +/-1: canon_p = sigma_p * residual_{g[p]}
+    std::vector<int> g;         // canonical p -> residual index (g = id recovers the full-Rp read-out)
+    std::vector<double> sigma;  // canonical p -> +/-1: canon_p = sigma_p * residual_{g[p]}
 };
 
-// Peel the discrete part off the solve->report basis change Rp (= R^T; column p is report orbital p in
+// Peel the discrete part off the solve->canonical basis change Rp (= R^T; column p is canonical orbital p in
 // solve coordinates). rotate_multimps_to_canonical evolves under exp(-log W), so a near-permutation Rp
 // makes log(Rp) hit the matrix-log branch cut (an eigenvalue near -1 -> complex generator) -- the
-// canon-only (non-localized) case, where the report orbitals are just the ascending-Fock-eigenvalue
+// canon-only (non-localized) case, where the canonical orbitals are just the ascending-Fock-eigenvalue
 // reordering of the solve orbitals. Factor Rp = Rt * Q with Q a signed permutation and Rt ~ I proper
-// (right factor: Q mixes the report/column index). Rotating by the residual Rt reads residual orbitals
+// (right factor: Q mixes the canonical/column index). Rotating by the residual Rt reads residual orbitals
 // (Fact F: site reads a column of the fed matrix). Overwrites Rp in place with Rt and returns Q as
-// (g, sigma): report orbital p is realized as sigma_p * (residual g[p]), so canon_p = sigma_p *
+// (g, sigma): canonical orbital p is realized as sigma_p * (residual g[p]), so canon_p = sigma_p *
 // residual_{g[p]}. The reflection sigma is a per-orbital orbital-sign gauge -- NOT a free constant: it
 // is theory-fixed by Rp and must be reinstated on the read-out (a determinant with p singly occupied
 // carries sigma_p; doubly/empty carry sigma_p^2 = +1 / nothing). The det-guard flip (an improper Rp
@@ -929,7 +940,7 @@ static report_peel peel_report_permutation(double *Rp, int n) {
             cells.push_back({std::fabs(Rp[(size_t)i * n + j]), i, j});
     std::sort(cells.begin(), cells.end(),
               [](const Cell &a, const Cell &b) { return a.mag > b.mag; });
-    std::vector<int> rho(n, -1);        // rho[a] = report column matched to solve row a (solve->report)
+    std::vector<int> rho(n, -1);        // rho[a] = canonical column matched to solve row a
     std::vector<double> sgn(n, 1.0);    // sgn[b] = aligned-entry sign of residual column b
     std::vector<char> row_used(n, 0), col_used(n, 0);
     for (const Cell &c : cells) {
@@ -963,8 +974,8 @@ static report_peel peel_report_permutation(double *Rp, int n) {
     return rp;
 }
 
-// Rotate a MultiMPS by the residual continuous rotation between the solve and report bases. The full
-// solve->report rotation (localized or canonical; see print_states) is a signed permutation times a
+// Rotate a MultiMPS by the residual continuous rotation between the solve and canonical bases. The full
+// solve->canonical rotation (localized or canonical; see print_states) is a signed permutation times a
 // residual; the caller peels the permutation off (peel_report_permutation) and passes only the residual
 // U (n_act x n_act, [a*n+p], ~ I, proper). kappa = log(U) is reindexed into the frozen lattice (Fiedler)
 // order and the one-body MPO exp(-kappa) is applied by rot_steps TangentSpace TE sweeps at bond dim
@@ -1152,84 +1163,14 @@ static double expansion_weight(const det_expansion &dets) {
     return w;
 }
 
-static det_occ determinant_config(const det_occ &det) {
-    det_occ cfg(det.size(), 0);
-    for (int i = 0; i < (int)det.size(); i++) {
-        const uint8_t x = det[i] & 3;
-        cfg[i] = (x == 3) ? 3 : (x == 0 ? 0 : 1); // collapse alpha/beta singles to one open shell
-    }
-    return cfg;
-}
-
-static void generate_csf_steps_rec(const det_occ &cfg, int site, int twos, int target_twos,
-                                   std::vector<uint8_t> &step,
-                                   std::vector<std::vector<uint8_t>> &steps) {
-    if (site == (int)cfg.size()) {
-        if (twos == target_twos) steps.push_back(step);
-        return;
-    }
-    if (cfg[site] == 0 || cfg[site] == 3) {
-        step[site] = cfg[site] == 3 ? 3 : 0;
-        generate_csf_steps_rec(cfg, site + 1, twos, target_twos, step, steps);
-        return;
-    }
-    step[site] = 1;
-    generate_csf_steps_rec(cfg, site + 1, twos + 1, target_twos, step, steps);
-    if (twos > 0) {
-        step[site] = 2;
-        generate_csf_steps_rec(cfg, site + 1, twos - 1, target_twos, step, steps);
-    }
-}
-
-static std::vector<std::vector<uint8_t>> generate_csf_steps(const det_occ &cfg, int target_twos) {
-    std::vector<std::vector<uint8_t>> steps;
-    std::vector<uint8_t> step(cfg.size(), 0);
-    generate_csf_steps_rec(cfg, 0, 0, target_twos, step, steps);
-    return steps;
-}
-
-static std::vector<leading_csf> project_determinants_to_csfs(const det_expansion &dets,
-                                                             int n, int target_twos) {
-    std::map<det_occ, det_expansion> by_config;
-    for (const auto &kv : dets) by_config[determinant_config(kv.first)][kv.first] = kv.second;
-
-    std::vector<int> identity(n);
-    std::iota(identity.begin(), identity.end(), 0);
-    std::vector<double> plus(n, 1.0);
-
-    std::vector<leading_csf> csfs;
-    for (const auto &grp : by_config) {
-        std::vector<std::vector<uint8_t>> steps = generate_csf_steps(grp.first, target_twos);
-        for (const std::vector<uint8_t> &step : steps) {
-            det_expansion local = expand_csf_step(step, target_twos);
-            double coef = 0.0;
-            for (const auto &kv : local) {
-                det_image img = canonicalize_site_det(kv.first, identity, plus);
-                auto it = grp.second.find(img.occ);
-                if (it != grp.second.end()) coef += it->second * kv.second * img.phase;
-            }
-            if (std::fabs(coef) > 1e-12) {
-                leading_csf lc;
-                lc.step = step;
-                lc.coef = coef;
-                csfs.push_back(std::move(lc));
-            }
-        }
-    }
-    return csfs;
-}
-
 struct su2_readout_expansion {
     det_expansion determinants;
-    std::vector<leading_csf> csfs;
     double weight = 0.0;
 };
 
-// Extract the short SU2 step-vector expansion directly from the MPS, then recast the retained CSFs
-// into the requested canonical orbital order/sign gauge. The recast is done by expanding each retained
-// lattice CSF locally into its determinant representation and projecting that small retained vector
-// onto canonical step-vector CSFs. This avoids the expensive SU2->SZ MPS transform; only the retained
-// read-out subspace is expanded to determinants for the temporary diagnostic and for the recoupling.
+// Extract the short SU2 step-vector expansion directly from the MPS, then expand the retained block2
+// CSFs locally into determinant coefficients in the requested canonical orbital order/sign gauge. This
+// avoids the expensive SU2->SZ MPS transform; only the retained read-out subspace is expanded.
 static su2_readout_expansion canonical_readout_from_su2_mps(
     const std::shared_ptr<UnfusedMPS<SU2, double>> &su2_umps,
     int n_sites, int target_twos, double cutoff,
@@ -1249,7 +1190,6 @@ static su2_readout_expansion canonical_readout_from_su2_mps(
         }
     }
 
-    out.csfs = project_determinants_to_csfs(out.determinants, n_sites, target_twos);
     out.weight = expansion_weight(out.determinants);
     return out;
 }
@@ -1264,11 +1204,9 @@ static void det_strings(const det_occ &det, std::string &alpha, std::string &bet
 }
 
 static void report_leading_determinants(std::FILE *out, int state_idx, double E, double S2,
-                                        const det_expansion &dets, int print_number,
-                                        double captured_weight) {
+                                        const det_expansion &dets, int print_number) {
     std::fprintf(out,
-                 "State %d determinant expansion (canonical basis, temporary)  E  = % 18.10f "
-                 "S^2 = %.2f:\n",
+                 "State %d  E  = % 18.10f S^2 = %.2f:\n",
                  state_idx, E, S2);
 
     std::vector<det_expansion::const_iterator> ord;
@@ -1284,15 +1222,23 @@ static void report_leading_determinants(std::FILE *out, int state_idx, double E,
         det_strings(ord[i]->first, alpha, beta);
         std::fprintf(out, "% .10e  | %s | %s\n", ord[i]->second, alpha.c_str(), beta.c_str());
     }
-    std::fprintf(out, "  (determinant weight %.6f)\n", captured_weight);
 }
 
-// Report each state's leading configurations in the canonical (delocalized MO) basis. The DMRG solve
-// runs in the localized + Fiedler-ordered basis; each state's MPS is rotated by the proper
-// (continuous) part of the solve->canonical change. The leading vector is extracted directly as SU2
-// step-vector CSFs. The remaining discrete map (lattice orbital -> canonical orbital plus orbital
-// order/sign) is applied by locally recoupling the retained SU2 vector through determinant projections.
-// Determinants are printed as a temporary diagnostic; canonical CSFs are the standard read-out.
+static void report_determinant_weights(std::FILE *out, const std::vector<double> &weights) {
+    std::fprintf(out, "\nDMRG determinant extraction weights:\n");
+    std::fprintf(out, "____________________________\n");
+    std::fprintf(out, " State| weight       |\n");
+    std::fprintf(out, "______|______________|\n");
+    for (int st = 0; st < (int)weights.size(); st++)
+        std::fprintf(out, "%5d | %.6f     |\n", st, weights[st]);
+    std::fprintf(out, "______|______________|\n");
+}
+
+// Report each state's leading determinant expansion in the canonical active-orbital basis. The DMRG
+// solve runs in the localized + Fiedler-ordered basis; each state's MPS is rotated by the proper
+// (continuous) part of the solve->canonical change. The retained block2 SU2 vector is expanded locally
+// into determinants, and the remaining discrete map (lattice orbital -> canonical orbital plus
+// orbital order/sign) is applied to those determinants.
 void block2_casci_wrap::print_states(int, int, int print) {
     if (!print) return;
     dmrgci_engine &e = *impl_;
@@ -1306,7 +1252,7 @@ void block2_casci_wrap::print_states(int, int, int print) {
     const int n = e.n_act;
     const double S = e.twos / 2.0, S2 = S * (S + 1.0);
     const double cutoff = e.cfg.extract_cutoff;
-    const int print_number = e.print_number; // leading CSFs per state (p_n, $act_space)
+    const int print_number = e.print_number; // leading determinants per state (p_n, $act_space)
     const int rot_m = e.cfg.det_rot_m, rot_steps = e.cfg.det_rot_steps, cm = e.cfg.extract_m;
 
     // Fiedler reorder (empty => input order): the DMRG lattice site k holds solve orbital reord[k].
@@ -1317,9 +1263,9 @@ void block2_casci_wrap::print_states(int, int, int print) {
         for (int i = 0; i < n; i++) iperm[reord[i]] = i;
     }
 
-    // Solve -> report (canonical) basis change: R = <canon|solve> is U_canon*U_loc (localizing), U_canon
+    // Solve -> canonical basis change: R = <canon|solve> is U_canon*U_loc (localizing), U_canon
     // (canonicalizing a delocalized solve), or U_loc. rotate_multimps_to_canonical consumes Rp = R^T
-    // (column p is report orbital p in solve coordinates). peel_report_permutation splits Rp = Rt * Q:
+    // (column p is canonical orbital p in solve coordinates). peel_report_permutation splits Rp = Rt * Q:
     // the proper residual Rt (real, short log) drives the rotation, and the signed permutation Q =
     // (g, sigma) is the discrete map from the extracted (lattice-order) CSFs to the canonical orbitals.
     std::vector<double> R_total, Rp;
@@ -1342,7 +1288,7 @@ void block2_casci_wrap::print_states(int, int, int print) {
         rp = peel_report_permutation(Rp.data(), n); // Rp <- residual Rt; rp = Q = (g, sigma)
     }
 
-    // Discrete map Q -> per-lattice-site (canonical orbital, sign): report orbital p is realized at the
+    // Discrete map Q -> per-lattice-site (canonical orbital, sign): canonical orbital p is realized at the
     // lattice site of residual g[p] (Fact F) with sign sigma_p. Without a rotation (R == nullptr) the
     // read-out sits in the solve basis: lattice site k holds solve orbital reord[k], signs +1.
     std::vector<int> canon_of_lattice(n);
@@ -1358,11 +1304,13 @@ void block2_casci_wrap::print_states(int, int, int print) {
     } else {
         for (int k = 0; k < n; k++) canon_of_lattice[k] = reord.empty() ? k : reord[k];
     }
-    report_csf_orbital_map(out_stream, n, canon_of_lattice, lattice_sign);
+    const char *basis_label = e.have_canon ? "canonical orbital" : "active orbital";
+    report_dmrg_orbital_map(out_stream, n, canon_of_lattice, lattice_sign, basis_label);
 
     std::vector<int> solve_of_lattice(n);
     std::vector<double> plus_sign(n, 1.0);
     for (int k = 0; k < n; k++) solve_of_lattice[k] = reord.empty() ? k : reord[k];
+    std::vector<double> det_weights((size_t)e.n_s, 0.0);
 
     for (int st = 0; st < e.n_s; st++) {
         // Work on a copy of this root; e.mps stays in the localized basis for the property read-out.
@@ -1372,7 +1320,7 @@ void block2_casci_wrap::print_states(int, int, int print) {
         // basis, where the reported orbital map no longer holds -- flag it.
         bool map_applies = true;
         if (!Rp.empty() && !rotate_multimps_to_canonical(e, imps, Rp.data(), rot_m, rot_steps)) {
-            fprintf(out_stream, "  warning: state %d rotation fell back to solve basis; CSF orbital "
+            fprintf(out_stream, "  warning: state %d rotation fell back to solve basis; determinant orbital "
                                 "map does not apply\n", st);
             map_applies = false;
         }
@@ -1380,7 +1328,7 @@ void block2_casci_wrap::print_states(int, int, int print) {
         const std::string stag = e.mps_info->tag + "-cs" + std::to_string(st);
         std::shared_ptr<MPS<SU2, double>> smps = imps->make_single(stag);
 
-        // Compress the canonical MPS for a cheaper TRIE search (opt-out with extract_m=0); the leading
+        // Compress the canonical-basis MPS for a cheaper TRIE search (opt-out with extract_m=0); the leading
         // configurations are low-rank-robust, so this preserves them (loss shows up as captured weight).
         std::string ctag;
         std::shared_ptr<MPS<SU2, double>> rmps = smps;
@@ -1392,20 +1340,20 @@ void block2_casci_wrap::print_states(int, int, int print) {
         std::shared_ptr<UnfusedMPS<SU2, double>> umps =
             std::make_shared<UnfusedMPS<SU2, double>>(rmps);
 
-        const std::vector<int> &csf_orb_map = map_applies ? canon_of_lattice : solve_of_lattice;
-        const std::vector<double> &csf_sign = map_applies ? lattice_sign : plus_sign;
+        const std::vector<int> &det_orb_map = map_applies ? canon_of_lattice : solve_of_lattice;
+        const std::vector<double> &det_sign = map_applies ? lattice_sign : plus_sign;
         su2_readout_expansion canonical =
-            canonical_readout_from_su2_mps(umps, n, e.twos, cutoff, csf_orb_map, csf_sign);
+            canonical_readout_from_su2_mps(umps, n, e.twos, cutoff, det_orb_map, det_sign);
 
+        det_weights[st] = canonical.weight;
         report_leading_determinants(out_stream, st, e.E_states[st], S2, canonical.determinants,
-                                    print_number, canonical.weight);
-        report_leading_csfs(out_stream, st, e.E_states[st], S2, n, canonical.csfs,
-                            print_number, canonical.weight);
+                                    print_number);
 
         remove_tag_files(xtag);
         remove_tag_files(stag);
         if (!ctag.empty()) remove_tag_files(ctag);
     }
+    report_determinant_weights(out_stream, det_weights);
     assert_stack_clean("leading-config read");
 }
 void block2_casci_wrap::write_civec(int, char *) { /* MPS write-out deferred */ }
