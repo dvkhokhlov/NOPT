@@ -86,4 +86,10 @@ void ensure_block2_runtime(const std::string &save_dir_root, int n_threads);
 void remove_tag_files(const std::string &tag);
 void assert_stack_clean(const char *where);
 
+// Fit a lower-bond-dim copy of an MPS (identity-MPO Linear) — a cheaper TRIE for the read-out.
+// Defined engine-side; called from the read-out TU.
+std::shared_ptr<MPS<SU2, double>>
+compress_single_mps(dmrgci_engine &e, const std::shared_ptr<MPS<SU2, double>> &ket,
+                    int target_m, const std::string &ctag);
+
 } // namespace nopt_block2
