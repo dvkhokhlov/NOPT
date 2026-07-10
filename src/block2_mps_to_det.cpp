@@ -1,7 +1,7 @@
 // block2_mps_to_det — leading-determinant read-out for the block2 DMRG backend.
 //
-// Each state's MPS is rotated into the canonical active-orbital basis, its determinants are
-// extracted (SU2 step-vector CSFs expanded locally), and the leading configurations printed.
+// Each state's MPS is rotated into the canonical active-orbital basis, its Slater determinants are
+// enumerated in the M_S = na-nb sector (via the SZ transform), and the leading configurations printed.
 
 #include <algorithm>
 #include <cmath>
@@ -208,30 +208,72 @@ struct su2_readout_expansion {
     double weight = 0.0;
 };
 
-// Transform the retained SU2 MPS into the SZ M_S = twosz/2 sector, then enumerate its Slater
-// determinants (SZ DeterminantTRIE) in the requested canonical orbital order/sign gauge. SZ carries
-// M_S but no total spin, so the read-out reaches the native (aldet) projection directly and never trips
-// the SU2 spin-completeness assertion that aborts on open-shell (triplet) MPS. The SZ occupation
-// encoding (0/1/2/3 per spatial orbital, lattice order) is byte-identical to what
-// canonicalize_site_det consumes, so the sign/permutation handling carries over unchanged.
+// Put the single MPS into a one-site canonical center at site 0 (the form to_singlet_embedding_wfn
+// needs), then singlet-embed it. The compressed read-out MPS lands in one of block2's post-sweep
+// canonical forms; the branches below relabel that boundary center as a one-site fused center exactly
+// as block2main's trans_mps_to_singlet_embedding does, then sweep any interior center to 0.
+static void singlet_embed_su2_mps(const std::shared_ptr<MPS<SU2, double>> &mps,
+                                  const std::shared_ptr<CG<SU2>> &cg) {
+    mps->load_mutable();
+    mps->info->load_mutable();
+    const int n = mps->n_sites;
+    std::string &cf = mps->canonical_form;
+    if (mps->center == 0 && cf[0] == 'C' && n > 1 && cf[1] == 'R')
+        cf[0] = 'K';                                     // one-site left-fused center at 0
+    else if (n > 1 && cf[n - 1] == 'C' && cf[n - 2] == 'L') {
+        cf[n - 1] = 'S';                                 // one-site right-fused center at n-1
+        mps->center = n - 1;
+    } else if (mps->center == n - 2 && n > 1 && cf[n - 2] == 'L')
+        mps->center = n - 1;
+    while (mps->center > 0) mps->move_left(cg, nullptr); // sweep the center down to site 0
+    mps->to_singlet_embedding_wfn(cg);
+}
+
+// Enumerate the retained MPS's leading Slater determinants (SZ DeterminantTRIE) in the requested
+// canonical orbital order/sign gauge. block2 cannot enumerate determinants from a spin-adapted (SU2)
+// MPS of a non-singlet state directly, so route through the SZ M_S = twosz/2 sector. The SZ occupation
+// encoding (0/1/2/3 per spatial orbital, lattice order) is byte-identical to what canonicalize_site_det
+// consumes, so the sign/permutation handling carries over unchanged.
+//
+//  * M_S = 0 (twosz == 0; closed shells and M_S = 0 open shells): the +/-M_S components are symmetric,
+//    so the plain SU2->SZ transform lands on a self-consistent M_S = 0 MPS and finalize rebuilds it cleanly.
+//  * M_S != 0 (twosz != 0; na != nb open shells): the plain transform's SZ bond spaces (all M_S mixed
+//    in, unfiltered) disagree with the projected tensors and finalize aborts. Follow block2's supported
+//    path instead -- singlet-embed the SU2 MPS (couples the physical spin S with a fictitious spin S at
+//    the boundary into a singlet), transform to the M_S = 0 (singlet) sector, then
+//    resolve_singlet_embedding(twosz) selects the M_S = na-nb projection and rebuilds a consistent MPS.
+//    The singlet embedding shares the state's norm across the 2S+1 projections, so the resolved sector
+//    carries norm^2 = 1/(2S+1); rescaling the coefficients by sqrt(2S+1) restores the physical (aldet)
+//    normalization, leaving the reported weight to reflect only the extraction truncation.
 static su2_readout_expansion canonical_readout_from_su2_mps(
-    const std::shared_ptr<UnfusedMPS<SU2, double>> &su2_umps,
-    int n_sites, int n_elec, int twosz, double cutoff,
+    const std::shared_ptr<MPS<SU2, double>> &su2_mps,
+    int n_sites, int n_elec, int twos, int twosz, double cutoff,
     const std::vector<int> &canon_of_lattice,
     const std::vector<double> &lattice_sign,
     const std::shared_ptr<CG<SU2>> &cg, const std::string &sztag) {
     su2_readout_expansion out;
 
-    SZ targetz(n_elec, twosz, 0);  // 2*M_S = na - nb: the native (aldet) projection sector
-    auto sz_umps = TransUnfusedMPS<SU2, SZ, double>::forward(su2_umps, sztag, cg, targetz);
+    std::shared_ptr<UnfusedMPS<SZ, double>> sz_umps;
+    double scale = 1.0;
+    if (twosz == 0) {
+        auto su2_umps = std::make_shared<UnfusedMPS<SU2, double>>(su2_mps);
+        SZ targetz(n_elec, 0, 0);  // M_S = 0: the native (aldet) projection sector
+        sz_umps = TransUnfusedMPS<SU2, SZ, double>::forward(su2_umps, sztag, cg, targetz);
+    } else {
+        singlet_embed_su2_mps(su2_mps, cg);  // target twos -> 0, n -> n_elec + twos (the M_S = 0 embedding)
+        auto su2_umps = std::make_shared<UnfusedMPS<SU2, double>>(su2_mps);
+        SZ targetz(su2_mps->info->target.n(), 0, 0);
+        sz_umps = TransUnfusedMPS<SU2, SZ, double>::forward(su2_umps, sztag, cg, targetz);
+        sz_umps->resolve_singlet_embedding(twosz);  // project onto M_S = na-nb, restore the physical n
+        scale = std::sqrt((double)(twos + 1));       // undo the 1/sqrt(2S+1) singlet-embedding norm
+    }
     // Round-trip through a finalized MPS: the raw unfused transform has no clean single-target final
-    // state, so evaluate would trip its final-target assert; finalize rebuilds a proper one. Caveat:
-    // localize=off open shells at small extract_m can leave a degenerate SZ MPS that aborts finalize.
+    // state, so evaluate would trip its final-target assert; finalize rebuilds a proper one.
     sz_umps = std::make_shared<UnfusedMPS<SZ, double>>(sz_umps->finalize());
     auto dtrie = std::make_shared<DeterminantTRIE<SZ, double>>(n_sites, true);
     dtrie->evaluate(sz_umps, cutoff);
     for (int t = 0; t < (int)dtrie->size(); t++) {
-        const double c = (double)dtrie->vals[t];
+        const double c = (double)dtrie->vals[t] * scale;
         if (std::fabs(c) < 1e-14) continue;
         // canonicalize_site_det already applies the interleaved->alpha/beta spin-order parity together
         // with the orbital-order parity, so do NOT call dtrie->convert_phase: it would apply the same
@@ -359,15 +401,12 @@ void block2_casci_wrap::print_states(int, int, int print) {
             rmps = compress_single_mps(e, smps, cm, ctag);
         }
 
-        std::shared_ptr<UnfusedMPS<SU2, double>> umps =
-            std::make_shared<UnfusedMPS<SU2, double>>(rmps);
-
         const std::vector<int> &det_orb_map = map_applies ? rbc.canon_of_lattice : solve_of_lattice;
         const std::vector<double> &det_sign = map_applies ? rbc.lattice_sign : plus_sign;
         const std::string sztag = e.mps_info->tag + "-sz" + std::to_string(st);
         su2_readout_expansion canonical =
-            canonical_readout_from_su2_mps(umps, n, e.n_elec, e.twosz, cutoff, det_orb_map, det_sign,
-                                           cg, sztag);
+            canonical_readout_from_su2_mps(rmps, n, e.n_elec, e.twos, e.twosz, cutoff, det_orb_map,
+                                           det_sign, cg, sztag);
 
         det_weights[st] = canonical.weight;
         report_leading_determinants(out_stream, st, e.E_states[st], S2, canonical.determinants,
