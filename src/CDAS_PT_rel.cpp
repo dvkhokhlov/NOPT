@@ -415,6 +415,10 @@ int CDAS_PT2_rel(molecule * M, cdas_par * cdas, char * job_name){
         fprintf(out_stream,"_______________________________________________________________________\n\n\n");
         
 //                 fPrintMatr(out_stream,T.RF_PH,n_act,n_act,1);
+        if(CAS.CI->as_aldet() == nullptr){
+            fprintf(out_stream,"ERROR: CDAS-PT (rel) requires the determinant CI backend (cisolver=aldet)\n");
+            exit(EXIT_FAILURE);
+        }
         CAS.CI->as_aldet()->PT2_import_data(T.RF_P3_JK,
                                 T.RF_P3_AB,
                                 T.RF_PV_JK,

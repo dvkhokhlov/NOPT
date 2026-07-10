@@ -162,13 +162,71 @@ int CAS_engine::init(cas_par * cas, molecule * ext_M){
     }
     else if (cas->ci_solver==CISOLVER_DMRG){
 #ifdef NOPT_HAS_BLOCK2
-        // block2 state averaging shares one renormalized basis with EQUAL root weights
-        if(n_s>1 && cas->w_state_type!=1)
-            for(size_t i=1;i<cas->w_state.size();i++)
-                if(fabs(cas->w_state[i]-cas->w_state[0])>1e-10){
-                    fprintf(out_stream,"ERROR: DMRG state averaging requires equal weights\n");
-                    exit(0);
+        // --- validate the DMRG request before constructing any block2 object ---
+        {
+            const int na = M->CI[0].na, nb = M->CI[0].nb, mult = M->CI[0].mult;
+            const int N = na + nb, twoS = mult - 1;
+            int dsz = na - nb; if(dsz < 0) dsz = -dsz;
+
+            // spin sector: block2 targets 2S=mult-1 in the (na-nb)/2 projection
+            if(mult < 1){
+                fprintf(out_stream,"ERROR: DMRG needs mult>=1 (got %d); mult=0 (all multiplicities) is unsupported\n", mult);
+                exit(EXIT_FAILURE);
+            }
+            if(N < 2){
+                fprintf(out_stream,"ERROR: DMRG-CASSCF wants >=2 active electrons to correlate -- CAS(%d,%d)"
+                                   " gives it nothing to chew on (one electron is Hartree-Fock's job, zero is nobody's)\n", N, n_act);
+                exit(EXIT_FAILURE);
+            }
+            if((N - twoS) % 2 != 0){
+                fprintf(out_stream,"ERROR: DMRG spin sector inconsistent: N=%d and 2S=%d differ in parity\n", N, twoS);
+                exit(EXIT_FAILURE);
+            }
+            if(dsz > twoS){
+                fprintf(out_stream,"ERROR: DMRG spin sector inconsistent: |na-nb|=%d exceeds 2S=%d\n", dsz, twoS);
+                exit(EXIT_FAILURE);
+            }
+            if(twoS > N || twoS > 2*n_act - N){
+                fprintf(out_stream,"ERROR: DMRG spin 2S=%d exceeds what %d electrons in %d orbitals allow\n", twoS, N, n_act);
+                exit(EXIT_FAILURE);
+            }
+            if(n_s < 1){
+                fprintf(out_stream,"ERROR: DMRG needs n_s>=1 (got %d)\n", n_s);
+                exit(EXIT_FAILURE);
+            }
+
+            // symmetry: the block2 backend runs in C1 -- no linear (Lambda/parity) or spatial-irrep targeting
+            if(LINEAR){
+                fprintf(out_stream,"ERROR: DMRG backend does not support linear-molecule symmetry (Lambda/parity); use cisolver=aldet\n");
+                exit(EXIT_FAILURE);
+            }
+            if(cas->w_state_type == 2){
+                fprintf(out_stream,"ERROR: DMRG does not support by-irrep state selection (wstate rep)\n");
+                exit(EXIT_FAILURE);
+            }
+
+            // state weights: block2 shares one renormalized basis with EQUAL root weights (each 1/nroots).
+            // Accept only equal weights -- `wstate all_1` (w_state_type==1, materialized to n_s ones), or an
+            // explicit wstate vector of exactly n_s positive, all-equal entries.
+            if(cas->w_state_type != 1){
+                if((int)cas->w_state.size() != n_s){
+                    fprintf(out_stream,"ERROR: DMRG requires exactly n_s state weights (got %d for n_s=%d);"
+                                       " use `wstate all_1` or give n_s equal positive weights\n",
+                                       (int)cas->w_state.size(), n_s);
+                    exit(EXIT_FAILURE);
                 }
+                for(int i=0;i<n_s;i++)
+                    if(cas->w_state[i] <= 0.0){
+                        fprintf(out_stream,"ERROR: DMRG state weights must be positive\n");
+                        exit(EXIT_FAILURE);
+                    }
+                for(int i=1;i<n_s;i++)
+                    if(fabs(cas->w_state[i]-cas->w_state[0]) > 1e-10){
+                        fprintf(out_stream,"ERROR: DMRG state averaging requires equal weights\n");
+                        exit(EXIT_FAILURE);
+                    }
+            }
+        }
         CI_owner = std::make_unique<block2_casci_wrap>(
             n_act, M->CI[0].na, M->CI[0].nb, M->CI[0].mult, n_s, M->CI[0].print_number, cas->dmrg);
 #else
