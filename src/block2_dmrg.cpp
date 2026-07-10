@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cmath>
+#include <limits>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
@@ -548,7 +549,7 @@ int block2_casci_wrap::solve(int, int, bool) {
     } else {
         fprintf(out_stream,
                 "ERROR: DMRG schedule option not implemented yet (only 'default')\n");
-        exit(0);
+        exit(EXIT_FAILURE);
     }
 
     if (!warm) {
@@ -568,7 +569,7 @@ int block2_casci_wrap::solve(int, int, bool) {
         } else {
             fprintf(out_stream,
                     "ERROR: DMRG hf_occ option not implemented yet (only 'integral')\n");
-            exit(0);
+            exit(EXIT_FAILURE);
         }
         e.mps = std::make_shared<MultiMPS<SU2, double>>(e.mpo->n_sites, 0, 2, e.n_s);
         e.mps->initialize(e.mps_info);
@@ -597,28 +598,46 @@ int block2_casci_wrap::solve(int, int, bool) {
 
     // per-root energies (ascending; root 0 = ground state). block2's energy precision is FPLS
     // (long double for FL=double), so bind via auto and narrow to NOPT's double.
+    if (dmrg->energies.empty()) {
+        fprintf(out_stream, "ERROR: DMRG produced no sweep energies\n");
+        exit(EXIT_FAILURE);
+    }
     const auto &eng = dmrg->energies.back();
+    if ((int)eng.size() < e.n_s) {
+        fprintf(out_stream, "ERROR: DMRG returned %d roots < n_s=%d (requested state count likely"
+                            " exceeds the sector dimension)\n", (int)eng.size(), e.n_s);
+        exit(EXIT_FAILURE);
+    }
     e.E_states.assign(e.n_s, 0.0);
-    for (int s = 0; s < e.n_s && s < (int)eng.size(); s++)
+    for (int s = 0; s < e.n_s; s++) {
+        if (!std::isfinite((double)eng[s])) {
+            fprintf(out_stream, "ERROR: DMRG root %d energy is not finite\n", s);
+            exit(EXIT_FAILURE);
+        }
         e.E_states[s] = (double)eng[s];
+    }
 
-    // sweeps actually run (block2 early-stops at sweep_tol) and the convergence achieved at the
-    // last sweep, measured on the state-averaged energy (block2's own stopping criterion).
+    // sweeps actually run (block2 early-stops at sweep_tol). Residual = max over roots of the last
+    // two sweeps' |dE|: a mean can cancel opposite-moving roots and hide a still-moving one. A single
+    // sweep leaves the residual unmeasurable (NaN), which flags rather than fakes convergence.
     e.last_n_sweeps = (int)dmrg->energies.size();
-    e.last_sweep_dE = 0.0;
     if (dmrg->energies.size() >= 2) {
         const auto &e1 = dmrg->energies[dmrg->energies.size() - 1];
         const auto &e0 = dmrg->energies[dmrg->energies.size() - 2];
-        double a1 = 0.0, a0 = 0.0;
-        const int nr = (int)e1.size();
-        for (int r = 0; r < nr; r++) { a1 += (double)e1[r]; a0 += (double)e0[r]; }
-        if (nr > 0)
-            e.last_sweep_dE = std::fabs(a1 / nr - a0 / nr);
+        const int nr = (int)e1.size() < (int)e0.size() ? (int)e1.size() : (int)e0.size();
+        double dmax = 0.0;
+        for (int r = 0; r < nr; r++) {
+            double d = std::fabs((double)e1[r] - (double)e0[r]);
+            if (d > dmax) dmax = d;
+        }
+        e.last_sweep_dE = dmax;
+    } else {
+        e.last_sweep_dE = std::numeric_limits<double>::quiet_NaN();
     }
-    // Exhausted the sweep budget without meeting block2's sweep_tol early-stop -> possibly
-    // under-converged CI vector (flagged in the CAS-SCF table). A run that converges exactly on
-    // its last scheduled sweep has last_sweep_dE <= sweep_tol and is not flagged.
-    e.last_hit_max = (e.last_n_sweeps >= sch.n_sweeps) && (e.last_sweep_dE > e.cfg.sweep_tol);
+    // Exhausted the sweep budget without block2's sweep_tol early-stop -> possibly under-converged
+    // (flagged in the CAS-SCF table). An unmeasurable one-sweep residual (NaN) also flags.
+    e.last_hit_max = (e.last_n_sweeps >= sch.n_sweeps) &&
+                     (std::isnan(e.last_sweep_dE) || e.last_sweep_dE > e.cfg.sweep_tol);
 
     me->remove_partition_files(); // keep mps/mps_info alive for the RDM read-out
     return e.last_n_sweeps;
@@ -629,7 +648,7 @@ void block2_casci_wrap::calc_DM_diag(double *gamma, int /*i_set*/) {
     if (e.n_elec < 2) { // the 2-RDM trace cannot recover the 1-RDM for <2 electrons
         fprintf(out_stream,
                 "ERROR: DMRG 1-RDM via 2-RDM trace needs N_elec>=2 (got %d)\n", e.n_elec);
-        exit(0);
+        exit(EXIT_FAILURE);
     }
     ensure_2rdm(e);
     // Per state: 1-RDM as a partial trace of that state's spatial 2-RDM:
@@ -678,7 +697,7 @@ void block2_casci_wrap::calc_DMA(double *gamma, int a, int b) {
     // so the host only ever asks for the full n_s x n_s block, gamma[(bra*n_s+ket)*n_act^2].
     if (a != 0 || b != 0) {
         fprintf(out_stream, "ERROR: DMRG backend expects a single state set (got a=%d b=%d)\n", a, b);
-        exit(0);
+        exit(EXIT_FAILURE);
     }
     dmrgci_engine &e = *impl_;
     ensure_dm_full(e);

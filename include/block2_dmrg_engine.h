@@ -75,10 +75,11 @@ namespace nopt_block2 {
 // Pin block2 to the host OpenMP/BLAS thread count on entering a block2 region; restore on exit.
 struct host_threads_guard {
     int omp_saved;
-    host_threads_guard() : omp_saved(omp_get_max_threads()) {}
+    int blas_saved;
+    host_threads_guard() : omp_saved(omp_get_max_threads()), blas_saved(openblas_get_num_threads()) {}
     ~host_threads_guard() {
         omp_set_num_threads(omp_saved);
-        openblas_set_num_threads(omp_saved);
+        openblas_set_num_threads(blas_saved); // restore the host's OpenBLAS count independently of OMP
     }
     host_threads_guard(const host_threads_guard &) = delete;
     host_threads_guard &operator=(const host_threads_guard &) = delete;

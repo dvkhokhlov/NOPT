@@ -231,7 +231,7 @@ int CAS_engine::init(cas_par * cas, molecule * ext_M){
             n_act, M->CI[0].na, M->CI[0].nb, M->CI[0].mult, n_s, M->CI[0].print_number, cas->dmrg);
 #else
         fprintf(out_stream,"ERROR: CISOLVER=dmrg selected, but this build was compiled without block2 (set USE_BLOCK2=yes)\n");
-        exit(0);
+        exit(EXIT_FAILURE);
 #endif
     }
     else{
@@ -1379,10 +1379,14 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
         fprintf(out_stream,"\n");
     }
     if(write_ci){
-        fprintf(out_stream,"Writing CAS_SCF WaveFunctions:\n");
-        sprintf(name,"%s_CAS.ci\0",job_name);
-        CAS.CI->write_civec(0, name);
-        fprintf(out_stream,"data file         : %s\n",name);
+        if(cas->ci_solver == CISOLVER_DMRG){
+            fprintf(out_stream,"CI/MPS wavefunction output not supported by the DMRG backend -- skipped\n");
+        } else {
+            fprintf(out_stream,"Writing CAS_SCF WaveFunctions:\n");
+            sprintf(name,"%s_CAS.ci\0",job_name);
+            CAS.CI->write_civec(0, name);
+            fprintf(out_stream,"data file         : %s\n",name);
+        }
     }
     
     
