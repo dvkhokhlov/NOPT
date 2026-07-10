@@ -27,6 +27,8 @@ endif
 ifeq ($(USE_GRPP), yes)
 GRPP_DEF:=-D_USE_GRPP
 GRPP_LIB:=-llibgrpp
+GRPP_H:=-I$(GRPP_H_DIR)
+GRPP_LDIR:=-L$(GRPP_L_DIR)
 endif
 ifeq ($(USE_GRPP), no)
 GRPP_DEF:=
@@ -64,17 +66,20 @@ LIBS:=-lgfortran -lint2 -lpthread $(XDR_LIB) $(BLOCK2_LIB) $(BLAS_LIB) $(GRPP_LI
 
 DEFINITIONS:=-DADD_ -DLIBINT -DLBFGS_RETURN_STEP -DLBFGS_CALC_HESS -D_RI -D_LIBINT_INITIAL_SHELLS -DLIBINT2_DISABLE_BOOST_CONTAINER_SMALL_VECTOR $(BLAS_DEF) $(BLAS_PAR) -DNOPT_LIB="\"$(NOPT_lib_DIR)\"" -DL_MAX=$(L_MAX) -DRI_L_MAX=$(RI_L_MAX) -DGTO_MAX=$(GTO_MAX) $(extra_def) $(GRPP_DEF) $(XDR_DEF) $(NOPT_BLOCK2_DEF)
 
-INCLUDE_DIRS:=-Iinclude -I$(BLAS_DIR)/include -I$(LIBINT_H_DIR) -I$(EIGEN_DIR) $(XDR_H) -I$(GRPP_H_DIR)
+INCLUDE_DIRS:=-Iinclude -I$(BLAS_DIR)/include -I$(LIBINT_H_DIR) -I$(EIGEN_DIR) $(XDR_H) $(GRPP_H)
 ifeq ($(MANUAL_BOOST_PATH),yes)
 INCLUDE_DIRS:= $(INCLUDE_DIRS) -I$(BOOST_DIR)
 endif
 
 
-LIB_DIRS:=$(BLAS_LDIR) -L$(LIBINT_L_DIR) -L$(GRPP_L_DIR)
+LIB_DIRS:=$(BLAS_LDIR) -L$(LIBINT_L_DIR) $(GRPP_LDIR)
 
 
 
 all:$(progs)
+
+# auto-generated header dependencies (from -MMD -MP); empty on a fresh tree
+-include $(wildcard src/*.d src/progs/*.d)
 
 print:
 	@echo $(progs_cpp)
@@ -87,24 +92,24 @@ run_%:src/progs/%.o src/molecule.o src/molecule2.o src/chem_data.o src/MO2.o src
 # block2 TUs: the ones that include block2 headers — need the block2 ABI macros + include
 # path on top of the usual flags (see USE_BLOCK2 block above).
 src/block2_dmrg.o:src/block2_dmrg.cpp
-	$(CXX) -o $@ -c $< $(OPT_LEVEL) -fopenmp $(DEFINITIONS) $(INCLUDE_DIRS) $(BLOCK2_DEF) $(BLOCK2_INC) -fmax-errors=5
+	$(CXX) -o $@ -c $< $(OPT_LEVEL) -fopenmp -MMD -MP $(DEFINITIONS) $(INCLUDE_DIRS) $(BLOCK2_DEF) $(BLOCK2_INC) -fmax-errors=5
 
 src/dmrg_wrap.o:src/dmrg_wrap.cpp
-	$(CXX) -o $@ -c $< $(OPT_LEVEL) -fopenmp $(DEFINITIONS) $(INCLUDE_DIRS) $(BLOCK2_DEF) $(BLOCK2_INC) -fmax-errors=5
+	$(CXX) -o $@ -c $< $(OPT_LEVEL) -fopenmp -MMD -MP $(DEFINITIONS) $(INCLUDE_DIRS) $(BLOCK2_DEF) $(BLOCK2_INC) -fmax-errors=5
 
 src/block2_mps_to_det.o:src/block2_mps_to_det.cpp
-	$(CXX) -o $@ -c $< $(OPT_LEVEL) -fopenmp $(DEFINITIONS) $(INCLUDE_DIRS) $(BLOCK2_DEF) $(BLOCK2_INC) -fmax-errors=5
+	$(CXX) -o $@ -c $< $(OPT_LEVEL) -fopenmp -MMD -MP $(DEFINITIONS) $(INCLUDE_DIRS) $(BLOCK2_DEF) $(BLOCK2_INC) -fmax-errors=5
 
 src/mps_rotation.o:src/mps_rotation.cpp
-	$(CXX) -o $@ -c $< $(OPT_LEVEL) -fopenmp $(DEFINITIONS) $(INCLUDE_DIRS) $(BLOCK2_DEF) $(BLOCK2_INC) -fmax-errors=5
+	$(CXX) -o $@ -c $< $(OPT_LEVEL) -fopenmp -MMD -MP $(DEFINITIONS) $(INCLUDE_DIRS) $(BLOCK2_DEF) $(BLOCK2_INC) -fmax-errors=5
 
 %.o:%.cpp
-	$(CXX) -o $@ -c $< $(OPT_LEVEL) -fopenmp $(DEFINITIONS) $(INCLUDE_DIRS) -fmax-errors=5
+	$(CXX) -o $@ -c $< $(OPT_LEVEL) -fopenmp -MMD -MP $(DEFINITIONS) $(INCLUDE_DIRS) -fmax-errors=5
 
 %.o:%.c
-	$(CC) -o $@ -c $< $(OPT_LEVEL) -fopenmp $(DEFINITIONS) $(INCLUDE_DIRS) -fmax-errors=5
+	$(CC) -o $@ -c $< $(OPT_LEVEL) -fopenmp -MMD -MP $(DEFINITIONS) $(INCLUDE_DIRS) -fmax-errors=5
 
 clean:
-	rm $(progs) src/*.o src/progs/*.o
+	rm -f $(progs) src/*.o src/progs/*.o src/*.d src/progs/*.d
 clean_gcov:
 	rm src/*.gcda src/progs/*.gcda src/*.gcno src/progs/*.gcno
