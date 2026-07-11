@@ -36,6 +36,7 @@
 #define DMRG_SWEEPS_DEFAULT 40
 #define DMRG_SWEEP_TOL_DEFAULT 1e-8
 #define DMRG_SAVE_DIR_DEFAULT "/dev/shm"   // block2 scratch root (RAM-backed by default)
+#define DMRG_MEMORY_DEFAULT 1.0            // block2 double-stack size, GB
 #define DMRG_WARM_START_DEFAULT 1          // MPS warm-start across macro-iterations: on by default
 #define DMRG_WARM_SWEEPS_DEFAULT 0         // max sweeps for the warm re-solve; 0 = auto (sweeps/2)
 #define DMRG_ROT_M_DEFAULT 0               // MPS-rotation time-evolution bond dim (0 = use m)

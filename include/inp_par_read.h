@@ -86,6 +86,7 @@ class dmrg_par // settings for the DMRG (block2) CI backend; see $DMRG group
         int    dump_loc_orbs;  // dump localized orbitals (GAMESS .out) at iteration 0, then continue
         int    loc_order;      // DMRG orbital ordering (dmrg_locorder_kind): fiedler | gaopt | none
         std::string save_dir;  // block2 scratch root (renormalized ops / MPS)
+        double memory;         // block2 double-stack size, GB (> 0)
         int    warm_start;       // MPS warm-start across macro-iterations (dmrg_warm_kind): off | on
         int    warm_sweeps;      // max sweeps for the warm re-solve; 0 = auto (sweeps/2)
         int    rot_m;            // MPS-rotation time-evolution bond dim (0 = use m)

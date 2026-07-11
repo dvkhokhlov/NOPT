@@ -19,7 +19,7 @@ block2_casci_wrap::block2_casci_wrap(int n_act, int na, int nb, int mult, int n_
     host_threads_guard htg;
     int nthr = omp_get_max_threads();
     if (nthr < 1) nthr = 1;
-    ensure_block2_runtime(cfg.save_dir, nthr);
+    ensure_block2_runtime(cfg.save_dir, cfg.memory, nthr);
 }
 
 block2_casci_wrap::~block2_casci_wrap() = default;

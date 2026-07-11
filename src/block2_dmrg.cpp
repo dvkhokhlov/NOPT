@@ -35,15 +35,17 @@ namespace nopt_block2 {
 struct Block2Runtime {
     std::string scratch;
 
-    Block2Runtime(const std::string &save_dir_root, int n_threads) {
+    Block2Runtime(const std::string &save_dir_root, double memory_gb, int n_threads) {
         // Per-process scratch subdir under the configured root (default /dev/shm), so
         // concurrent/repeated runs never share block2's renormalized-operator files.
         scratch = save_dir_root + "/nopt_dmrg_" + std::to_string((long)getpid());
 
         Random::rand_seed(0);
-        // isize/dsize are BYTE sizes of the integer/double stacks
+        // isize/dsize are BYTE sizes of the integer/double stacks. The double stack holds the
+        // renormalized operators and is what a large active space / bond dimension exhausts, so it
+        // is sized by $DMRG memory (GB); the integer stack is bookkeeping only and stays fixed.
         frame_<double>() = std::make_shared<DataFrame<double>>(
-            (size_t)1 << 24, (size_t)1 << 30, scratch);
+            (size_t)1 << 24, (size_t)(memory_gb * (double)((size_t)1 << 30)), scratch);
         frame_<double>()->use_main_stack = false;
         frame_<double>()->minimal_disk_usage = true;
         frame_<double>()->minimal_memory_usage = false;
@@ -70,8 +72,8 @@ struct Block2Runtime {
 };
 
 // Build the runtime once, on first use; its destructor runs at program exit (see above).
-void ensure_block2_runtime(const std::string &save_dir_root, int n_threads) {
-    static Block2Runtime runtime(save_dir_root, n_threads);
+void ensure_block2_runtime(const std::string &save_dir_root, double memory_gb, int n_threads) {
+    static Block2Runtime runtime(save_dir_root, memory_gb, n_threads);
     (void)runtime;
 }
 

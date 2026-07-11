@@ -180,6 +180,8 @@ vector<const char *>dmrg_schedule_default_kw{{"default"}};
 
 vector<const char *>dmrg_save_dir_kw{{"save_dir"}};
 
+vector<const char *>dmrg_memory_kw{{"memory"}};
+
 vector<const char *>dmrg_localize_kw{{"localize"}};
 vector<const char *>dmrg_localize_off_kw{{"off"}};
 vector<const char *>dmrg_localize_pm_kw{{"pm"}};

@@ -732,6 +732,7 @@ dmrg_par::dmrg_par(){
     hf_occ    = DMRG_HF_OCC_INTEGRAL;
     schedule  = DMRG_SCHED_DEFAULT;
     save_dir  = DMRG_SAVE_DIR_DEFAULT;
+    memory    = DMRG_MEMORY_DEFAULT;
     localize  = DMRG_LOC_OFF;
     dump_loc_orbs = 0;
     loc_order = DMRG_LOCORDER_FIEDLER;
@@ -799,6 +800,10 @@ int dmrg_par::read_line(char * inp){
         char* tmp=nullptr;
         kw_to_s(&tmp, inp, dmrg_save_dir_kw);
         if(tmp){ save_dir=tmp; delete[] tmp; }
+    }
+
+    if(key_word_comp(inp, dmrg_memory_kw)){
+        memory = kw_to_f(inp, dmrg_memory_kw, DMRG_MEMORY_DEFAULT);
     }
 
     if(key_word_comp(inp, dmrg_localize_kw)){
@@ -917,6 +922,10 @@ int dmrg_par::validate(){
         fprintf(out_stream,"ERROR: $DMRG save_dir must not be empty\n");
         ok=0;
     }
+    if(memory<=0){
+        fprintf(out_stream,"ERROR: $DMRG memory=%g must be > 0 (block2 double-stack size in GB)\n",memory);
+        ok=0;
+    }
     if(warm_start==DMRG_WARM_UNKNOWN){
         fprintf(out_stream,"ERROR: $DMRG unknown warm_start value; accepted: off, on\n");
         ok=0;
@@ -983,6 +992,7 @@ int dmrg_par::write_info(){
     if(loc_order==DMRG_LOCORDER_NONE)
         fprintf(out_stream,"DMRG orbital ordering:            none (input order)\n");
     fprintf(out_stream,"Scratch directory (save_dir):     %s\n",save_dir.c_str());
+    fprintf(out_stream,"Memory (block2 double stack):     %g GB\n",memory);
     if(warm_start==DMRG_WARM_ON){
         fprintf(out_stream,"MPS warm-start:                   on (after %d cold iter)\n",warm_start_after);
         fprintf(out_stream,"Warm re-solve sweeps:             %d\n",warm_sweeps);
