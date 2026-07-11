@@ -30,6 +30,7 @@ class CAS_engine{
         
         //for CI
         int n_CI;
+        int ci_solver;                            // CISOLVER_ALDET / CISOLVER_DMRG (cas is not kept)
         casci_solver * CI;                        // drives any CI backend (aldet, DMRG, …)
         std::unique_ptr<casci_solver> CI_owner;   // owns the concrete backend instance
         dav_par dav;

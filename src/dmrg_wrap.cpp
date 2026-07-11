@@ -55,6 +55,12 @@ void block2_casci_wrap::set_report_rotation(const double *U) {
     e.U_canon.assign(U, U + (size_t)e.n_act * e.n_act);
     e.have_canon = true;
 }
+void block2_casci_wrap::set_state_weights(const double *w, int n_s) {
+    // The weights the state-averaged 2-RDM is accumulated with; none => equal weights.
+    dmrgci_engine &e = *impl_;
+    if (w == nullptr) { e.w_state.clear(); return; }
+    e.w_state.assign(w, w + n_s);
+}
 
 int    block2_casci_wrap::n_states()      const { return impl_->n_s; }
 int    block2_casci_wrap::mult()          const { return impl_->mult; }

@@ -44,6 +44,10 @@ public:
     // A backend that can't rotate its own CI vector uses it to report its leading configurations in
     // the canonical basis. aldet and rotation-capable backends ignore it (they already canonicalize).
     virtual void set_report_rotation(const double* U) {}
+    // State-average weights (n_s entries, positive; the backend normalizes by their sum) the
+    // optimizer consumes the RDMs with. Only a backend that averages internally needs them; one that
+    // hands back per-state RDMs ignores it.
+    virtual void set_state_weights(const double* w, int n_s) {}
 
     // --- solve ---
     // Encapsulates the full diagonalisation (aldet: copy_coef -> set_par -> H_diag_calc -> run).
@@ -55,7 +59,10 @@ public:
     // entry (orbital occupation) satisfies 0 <= gamma_tt <= 2.
     virtual void calc_DM_diag(double* gamma, int a) = 0;
     // 2-RDM, NOPT convention: E2 = 1/2 * sum_{tuvw} GAMMA_{tuvw} (tu|vw),
-    // packed GAMMA[((t*n_act+u)*n_act+v)*n_act+w].
+    // packed GAMMA[((t*n_act+u)*n_act+v)*n_act+w]. A backend holding per-state tensors writes n_s
+    // consecutive blocks and the optimizer averages them; one that only ever forms the state average
+    // (DMRG: the per-state tensors never coexist) writes that single block. CAS_engine sizes GAMMA
+    // and skips the averaging accordingly.
     virtual void G_calc(double* GAMMA) = 0;
     // spin-resolved / transition 1-RDM blocks (properties): alpha and beta.
     virtual void calc_DMA(double* g, int a, int b) = 0;

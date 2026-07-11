@@ -25,6 +25,7 @@ public:
     void set_localization(const double* U) override;
     void set_active_rotation(const double* R) override;
     void set_report_rotation(const double* U) override;
+    void set_state_weights(const double* w, int n_s) override;
     void import_integrals(double* aaaa, double* f_act, double e_core) override;
 
     // --- solve ---

@@ -157,6 +157,7 @@ int CAS_engine::init(cas_par * cas, molecule * ext_M){
         fprintf(out_stream,"ERROR: n_CI=%d is not supported by the casci_solver\n",n_CI);
         exit(0);
     }
+    ci_solver=cas->ci_solver;
     if      (cas->ci_solver==CISOLVER_ALDET){
         CI_owner = std::make_unique<aldet_casci_wrap>(M->CI+0, &dav, n_s);
     }
@@ -192,6 +193,15 @@ int CAS_engine::init(cas_par * cas, molecule * ext_M){
             }
             if(n_s < 1){
                 fprintf(out_stream,"ERROR: DMRG needs n_s>=1 (got %d)\n", n_s);
+                exit(EXIT_FAILURE);
+            }
+
+            // Separate minimization builds one orbital gradient per state, so it reads the per-state
+            // 2-RDMs. The DMRG backend only ever forms their state average -- the per-state tensors
+            // never coexist -- which is what block2's shared renormalized basis solves for anyway.
+            if(cas->method != 1){
+                fprintf(out_stream,"ERROR: DMRG supports state-averaged CAS-SCF only (method=1);"
+                                   " separate minimization needs the per-state 2-RDMs\n");
                 exit(EXIT_FAILURE);
             }
 
@@ -359,7 +369,16 @@ int CAS_engine::SCF_alloc(){
     aaag_ints = new double[n_act*n_act*n_act*n_ao];
     F_tot     = new double[n_ao*n_ao*n_s_opt];
     G_ga      = new double[n_act*n_ao*n_s_opt];
-    GAMMA     = new double[n_act*n_act*n_act*n_act*n_s];
+    // GAMMA takes the CI backend's 2-RDM: n_s per-state tensors, averaged here (aldet), or the
+    // single state-averaged one the backend already accumulated (DMRG).
+    int n_s_GAMMA;
+    if      (ci_solver==CISOLVER_ALDET) n_s_GAMMA = n_s;
+    else if (ci_solver==CISOLVER_DMRG ) n_s_GAMMA = 1;
+    else{
+        fprintf(out_stream,"ERROR: unknown CISOLVER (%d); accepted: aldet, dmrg\n",ci_solver);
+        exit(0);
+    }
+    GAMMA     = new double[n_act*n_act*n_act*n_act*n_s_GAMMA];
     G         = new double[(n_core*n_act+n_core*n_vac+n_act*n_vac)*n_s_opt];
     B         = new double[(n_core*n_act+n_core*n_vac+n_act*n_vac)*n_s_opt];
     MO_BUF    = new double[n_ao*n_ao];
@@ -545,6 +564,9 @@ int CAS_engine::CI_calc(int primary, int create_track_data,int read){
 //     for(int i=0;i<n_s_opt;i++)
 //         printf("%d\n",i_s_opt[i]);
 //     getchar();
+
+    //the weights this iteration's RDMs are averaged with (a backend that averages internally)
+    CI->set_state_weights(wstate_actual.data(),n_s);
     
     
     
@@ -797,9 +819,18 @@ double CAS_engine::SA_grad_hess_calc(int no_rot_v){
     
     //calc 2DM
     CI->G_calc(GAMMA);
-    average_DM(GAMMA,wstate_actual,n_act*n_act*n_act*n_act,n_s);
-    
-    
+    if      (ci_solver==CISOLVER_ALDET){
+        average_DM(GAMMA,wstate_actual,n_act*n_act*n_act*n_act,n_s);
+    }
+    else if (ci_solver==CISOLVER_DMRG ){
+        // already state-averaged in the backend, with the same weights
+    }
+    else{
+        fprintf(out_stream,"ERROR: unknown CISOLVER (%d); accepted: aldet, dmrg\n",ci_solver);
+        exit(0);
+    }
+
+
     calc_G(G_ga,gamma,GAMMA);
     
     //calc orb grad

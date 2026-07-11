@@ -52,8 +52,10 @@ struct dmrgci_engine {
     std::shared_ptr<MPO<SU2, double>> mpo;
     std::shared_ptr<MultiMPSInfo<SU2>> mps_info;  // persists solve -> RDM read-out
     std::shared_ptr<MultiMPS<SU2, double>> mps;   // the converged (state-averaged) wavefunction
-    std::vector<double> d2_cache;                 // per-state block2 2-RDM: n_s blocks of n_act^4
-    bool d2_valid = false;                        // is d2_cache current for this solve?
+    std::vector<double> d2_av;                    // state-averaged block2 2-RDM: one n_act^4 block
+    std::vector<double> d1_states;                // per-state 1-RDM: n_s blocks of n_act^2
+    std::vector<double> w_state;                  // host SA weights (n_s); empty => equal weights
+    bool d2_valid = false;                        // are d2_av/d1_states current for this solve?
     std::vector<double> dmfull_cache;             // full n_s x n_s spin-summed 1-RDM (properties), delocalized
     bool dmfull_valid = false;                     // is dmfull_cache current for this solve?
     int solve_count = 0;                        // macro-iteration index -> unique MPS tag
