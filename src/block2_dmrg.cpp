@@ -594,6 +594,40 @@ static void adjust_mps_two_dot(dmrgci_engine &e) {
     mps->save_data();
 }
 
+// Re-order the lattice for a cold fallback. import_integrals commits the order before solve() is
+// allowed to decline the warm rotation, so a declined rotation -- which happens precisely when the
+// basis moved too far for the previous orbitals to still describe it -- leaves the FCIDUMP on those
+// orbitals' Fiedler order. Re-order the already-permuted FCIDUMP in place: Fiedler on a relabelled
+// exchange graph is the same ordering up to that relabelling, so the fresh permutation composes with
+// the frozen one and no un-permuted integrals need to be kept.
+static void recompute_cold_order(dmrgci_engine &e) {
+    if (e.cfg.loc_order != DMRG_LOCORDER_FIEDLER || e.reorder_perm.empty())
+        return;
+    const int n = e.n_act;
+    std::vector<double> kmat((size_t)n * n, 0.0);
+    for (int i = 0; i < n; i++)
+        for (int j = 0; j < n; j++)
+            if (i != j)
+                kmat[(size_t)i * n + j] = std::fabs(e.fcidump->v(i, j, j, i)) +
+                                          1e-7 * std::fabs(e.fcidump->t(i, j));
+    std::vector<uint16_t> p2 = OrbitalOrdering::fiedler((uint16_t)n, kmat);
+    bool unchanged = true;
+    for (int k = 0; k < n && unchanged; k++)
+        unchanged = (p2[k] == (uint16_t)k);
+    if (unchanged)
+        return; // the frozen order already is the fresh one: nothing to rebuild
+    e.fcidump->reorder(p2);
+    std::vector<uint16_t> composed((size_t)n); // site k now carries the orbital that sat at site p2[k]
+    for (int k = 0; k < n; k++)
+        composed[k] = e.reorder_perm[p2[k]];
+    e.reorder_perm.swap(composed);
+
+    SU2 vacuum(0);
+    e.hamil = std::make_shared<HamiltonianQC<SU2, double>>(vacuum, n, e.orbsym, e.fcidump);
+    e.hamil->opf->seq->mode = SeqTypes::Tasked;
+    e.mpo = build_qc_mpo(e.hamil);
+}
+
 int block2_casci_wrap::solve(int, int, bool) {
     dmrgci_engine &e = *impl_;
     host_threads_guard htg;
@@ -604,6 +638,8 @@ int block2_casci_wrap::solve(int, int, bool) {
     // Warm-start: rotate the retained MPS into the current basis and re-solve from it. Requires a
     // usable retained MPS and a rotation from the host; the rotation itself may decline (return
     // false) if the basis change is too large, in which case we cold-start this iteration.
+    // Same condition import_integrals keyed the frozen lattice order on, before the rotation could decline.
+    const bool order_frozen = (e.have_rotation && !e.reorder_perm.empty());
     bool warm = (e.cfg.warm_start == DMRG_WARM_ON && e.have_rotation && e.mps != nullptr &&
                  e.mps_info != nullptr);
     if (warm) {
@@ -614,6 +650,8 @@ int block2_casci_wrap::solve(int, int, bool) {
         // the basis change. Proven crash-free and == cold; the safe fallback if rotation is declined.
     }
     e.have_rotation = false; // consumed; the host supplies a fresh R each warm iteration
+    if (!warm && order_frozen)
+        recompute_cold_order(e); // the order was pinned to a basis we are no longer in
 
     // --- sweep schedule: short warm re-solve vs full cold ramp ---
     dmrg_schedule sch;
