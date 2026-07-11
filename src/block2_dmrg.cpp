@@ -553,6 +553,42 @@ void block2_casci_wrap::import_integrals(double *aaaa, double *f_act, double e_c
     e.mpo = build_qc_mpo(e.hamil);
 }
 
+// One-site sweeps closing every solve. Mirrors block2's default schedule, which ends two sweeps
+// into the noise-free stage in one-site mode (pyblock2/driver/parser.py sets twodot_to_onedot =
+// last_iter + 2 unless the input overrides it).
+static const int DMRG_ONEDOT_TAIL = 2;
+
+// Put the MPS back into a two-site center after a one-site tail. A one-site sweep ends with a fused
+// single-site center ('J'/'T') at a boundary, and `dot` describes the sweep, not the tensors -- every
+// consumer downstream (RDM read-out, MPS rotation, determinant read-out, the next macro-iteration's
+// sweeps) builds its layout from canonical_form/center/dot, so all three must agree again.
+// Port of block2's DMRGDriver::adjust_mps(dot=2) (pyblock2/driver/core.py).
+static void adjust_mps_two_dot(dmrgci_engine &e) {
+    auto &mps = e.mps;
+    auto cg = e.mpo->tf->opf->cg;
+    const int n = mps->n_sites;
+    auto flip = [&](int c) { // fused-left <-> fused-right; refresh the in-memory copy
+        mps->flip_fused_form(c, cg, nullptr);
+        mps->save_data();
+        mps->load_mutable();
+        mps->info->load_mutable();
+    };
+    if (mps->center == 0 && (mps->canonical_form[0] == 'S' || mps->canonical_form[0] == 'T'))
+        flip(0); // S->K, T->J
+    mps->dot = 2;
+    const char cf = mps->canonical_form[mps->center];
+    if (cf == 'L' && mps->center != n - 2)
+        mps->center += 1;
+    else if ((cf == 'C' || cf == 'M') && mps->center != 0)
+        mps->center -= 1;
+    if (mps->center == n - 1) {
+        if (mps->canonical_form[mps->center] == 'K' || mps->canonical_form[mps->center] == 'J')
+            flip(mps->center); // K->S, J->T
+        mps->center = n - 2;
+    }
+    mps->save_data();
+}
+
 int block2_casci_wrap::solve(int, int, bool) {
     dmrgci_engine &e = *impl_;
     host_threads_guard htg;
@@ -629,6 +665,35 @@ int block2_casci_wrap::solve(int, int, bool) {
     dmrg->davidson_soft_max_iter = 200;
     dmrg->iprint = 0;
     dmrg->solve(sch.n_sweeps, e.mps->center == 0, e.cfg.sweep_tol);
+
+    // Close with one-site sweeps at zero noise. A two-site sweep reports the Davidson eigenvalue of
+    // the untruncated two-site center -- a vector of Schmidt rank up to M*d across the central bond,
+    // so not the bond-M MPS that actually gets stored. The one-site center reshapes to (M*d) x M, so
+    // for a single root its density matrix has rank <= M and the center move is an exact gauge
+    // transformation: the sweep is truncation-free and its energy is the energy of the stored MPS.
+    //
+    // State-averaged roots share one renormalized basis, so the density matrix is
+    // sum_j w_j Theta_j Theta_j^T with rank up to min(M*d, n_s*M) > M and the move does truncate --
+    // the tail is not exact for n_s > 1, and cannot be. That is accepted: the loss is an ordinary
+    // DMRG truncation error (it vanishes with M like any other), the energies the CAS-SCF consumes
+    // come from the RDMs and are exact for the stored MPS either way, and what the tail buys is a
+    // deterministic noise-free endgame, an MPS already in the one-site form the RDM read-out wants,
+    // and parity with block2's own default schedule -- which applies this same tail at every n_roots.
+    //
+    // Zero noise is a correctness condition, not a tuning choice: block2's perturbative noise
+    // deliberately raises the density-matrix rank, which is exactly what would break rank <= M.
+    if (DMRG_ONEDOT_TAIL > 0) {
+        const int n2 = (int)dmrg->energies.size(); // two-site sweeps actually run (may early-stop)
+        const int total = n2 + DMRG_ONEDOT_TAIL;
+        dmrg->me->dot = 1;
+        dmrg->bond_dims.assign(total, (ubond_t)e.cfg.m);
+        dmrg->noises.assign(total, 0.0);
+        dmrg->davidson_conv_thrds.assign(total, sch.dav_thrds.back());
+        dmrg->solve(total, dmrg->forward, e.cfg.sweep_tol, n2);
+        e.mps->dot = 1; // the sweep switched me->dot; the MPS must say so too, or every consumer
+        e.mps->save_data(); // that reads canonical_form/center/dot builds a two-site layout on it
+        adjust_mps_two_dot(e); // ... and back to a two-site center for those consumers
+    }
 
     // per-root energies (ascending; root 0 = ground state). block2's energy precision is FPLS
     // (long double for FL=double), so bind via auto and narrow to NOPT's double.
