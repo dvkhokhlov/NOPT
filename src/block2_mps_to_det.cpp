@@ -367,6 +367,16 @@ static void report_determinant_weights(std::FILE *out, const std::vector<double>
     for (int st = 0; st < (int)weights.size(); st++)
         std::fprintf(out, "%5d | %.6f     |\n", st, weights[st]);
     std::fprintf(out, "______|______________|\n");
+
+    // The printed configurations are a qualitative picture, not a quantitative norm; say so when the
+    // extraction keeps too little of the vector for even that to be trusted.
+    const double note_below = 0.9;
+    double lo = 1.0;
+    for (double w : weights) lo = std::min(lo, w);
+    if (lo < note_below)
+        std::fprintf(out, "  note: only %.3f of the CI weight is captured -- the leading-configuration\n"
+                          "        picture is incomplete (lower $DMRG extract_cutoff, and raise or drop\n"
+                          "        extract_m if the extraction MPS is being compressed)\n", lo);
 }
 
 // Report each state's leading determinant expansion in the canonical active-orbital basis. The DMRG

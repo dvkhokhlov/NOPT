@@ -45,5 +45,5 @@
 #define DMRG_PRINT_DETS_DEFAULT 1          // report leading determinants after convergence: on by default
 #define DMRG_DET_ROT_M_DEFAULT 0           // bond dim for the localized->canonical read-out rotation (0 = auto: min(2m,1500))
 #define DMRG_DET_ROT_STEPS_DEFAULT 10      // TE steps for the read-out rotation (larger than warm-start's: this rotation is big)
-#define DMRG_EXTRACT_M_DEFAULT 50          // bond dim the canonical MPS is compressed to before determinant extraction (0 = none)
+#define DMRG_EXTRACT_M_DEFAULT 0           // bond dim the canonical MPS is compressed to before determinant extraction (0 = none)
 #define DMRG_EXTRACT_CUTOFF_DEFAULT 1e-3   // determinant magnitude cutoff for the TRIE extraction search
