@@ -215,11 +215,39 @@ using namespace nopt_block2;
 
 // struct dmrgci_engine (all block2 state) + host_threads_guard live in block2_dmrg_engine.h.
 
+// Exact energy of the stored MPS for one root: contract that root's 2-RDM (and the 1-RDM partial
+// trace of it) with the integrals the solver actually used. block2's sweep energy is the Davidson
+// eigenvalue of the *untruncated* center, so it is not the energy of the bond-M MPS that is kept --
+// this is, and it is the same functional the CAS-SCF orbital gradient is built from. `d2` must
+// still be in the solver's (lattice-ordered, localized) basis, i.e. before ensure_2rdm un-permutes
+// and delocalizes it.
+static double rdm_energy(const dmrgci_engine &e, const double *d2) {
+    const int n = e.n_act;
+    const double inv = 1.0 / (e.n_elec - 1);
+    double e1 = 0.0, e2 = 0.0;
+    for (int p = 0; p < n; p++)
+        for (int s = 0; s < n; s++) {
+            double d1 = 0.0; // D1[p,s] = 1/(N-1) sum_k D2[p,k,k,s]
+            for (int k = 0; k < n; k++)
+                d1 += d2[(((size_t)p * n + k) * n + k) * n + s];
+            e1 += e.fcidump->t(p, s) * inv * d1;
+        }
+    for (int p = 0; p < n; p++)
+        for (int q = 0; q < n; q++)
+            for (int r = 0; r < n; r++)
+                for (int s = 0; s < n; s++)
+                    e2 += e.fcidump->v(p, s, q, r) *
+                          d2[(((size_t)p * n + q) * n + r) * n + s];
+    return (double)e.fcidump->e() + e1 + 0.5 * e2;
+}
+
 // Compute every state's spatial 2-RDM once per solve and cache them as n_s consecutive block2
 // D2[p,q,r,s] blocks. Each root is extracted from the state-averaged MultiMPS to its own single-root
 // MPS, then one Expect sweep reads that root's 2-RDM (1-RDM is a partial trace of it, so CASSCF
 // needs only this one sweep per root). A single sweep per root means the stale-`forward` landmine
-// (consecutive sweeps flipping the center) never arises.
+// (consecutive sweeps flipping the center) never arises. Extracting first also keeps the sweep
+// exact: a PDM sweep straight on the MultiMPS would truncate the shared basis when it moves the
+// center, while a single-root MPS moves its center losslessly.
 static void ensure_2rdm(dmrgci_engine &e) {
     if (e.d2_valid)
         return;
@@ -258,6 +286,11 @@ static void ensure_2rdm(dmrgci_engine &e) {
         // GTensor data is contiguous row-major [p,q,r,s] = the block2 D2 layout we cache; copy the
         // flat buffer straight into this state's block (no per-element accessor, no index leak).
         std::copy(d2->data->begin(), d2->data->end(), e.d2_cache.begin() + (size_t)st * blk);
+
+        // Report this root's true energy, not the solver's pre-truncation sweep value. Do it here,
+        // while the 2-RDM is still in the same basis as e.fcidump.
+        if (e.n_elec >= 2)
+            e.E_states[st] = rdm_energy(e, e.d2_cache.data() + (size_t)st * blk);
 
         if (!e.reorder_perm.empty()) { // map the 2-RDM out of block2's Fiedler lattice order
             double *blkp = e.d2_cache.data() + (size_t)st * blk;
@@ -519,6 +552,7 @@ void block2_casci_wrap::import_integrals(double *aaaa, double *f_act, double e_c
     e.hamil->opf->seq->mode = SeqTypes::Tasked;
     e.mpo = build_qc_mpo(e.hamil);
 }
+
 int block2_casci_wrap::solve(int, int, bool) {
     dmrgci_engine &e = *impl_;
     host_threads_guard htg;
