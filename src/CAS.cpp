@@ -1326,17 +1326,20 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
     // frame. Hand it the canonicalization -- eigenvectors of the active Fock block, ascending
     // eigenvalue, the same convention as diag_X_MO_block but without rotating the orbitals -- so it
     // can report its determinants in the canonical basis.
+    // Kept alive to the orbital write: the file has to carry the very same rotation the read-out
+    // reports its determinants in, or the coefficients and the orbitals they refer to are
+    // different bases (nullptr for a backend that canonicalizes its own CI vector).
+    double * U_canon  = nullptr;
+    double * ev_canon = nullptr;
     if(!CAS.CI->supports_civec_rotation() && CAS.n_act>0){
-        double * U_canon = new double[CAS.n_act*CAS.n_act];
-        double * ev      = new double[CAS.n_act];
+        U_canon  = new double[CAS.n_act*CAS.n_act];
+        ev_canon = new double[CAS.n_act];
         for(int i=0;i<CAS.n_act;i++)
             for(int j=0;j<CAS.n_act;j++)
                 U_canon[i*CAS.n_act+j]=CAS.F_tot[(i+CAS.n_core)*CAS.n_ao+(j+CAS.n_core)];
-        lapack_diag(U_canon, ev, CAS.n_act);
+        lapack_diag(U_canon, ev_canon, CAS.n_act);
         normalize_rotation_rows(U_canon, CAS.n_act);
         CAS.CI->set_report_rotation(U_canon);
-        delete[] ev;
-        delete[] U_canon;
     }
     n_dav_conv =CAS.CI_calc(0,0,1);
     if(LINEAR)CAS.rotate();
@@ -1360,7 +1363,31 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
     fprintf(out_stream,"\n\n");
     if(write_orbs){
         fprintf(out_stream,"Writing CAS_SCF canonical orbitals:\n");
-        
+
+        // A backend that cannot rotate its CI vector left the active orbitals in the SA-converged
+        // frame while reporting its determinants in the canonical one. Rotate the active orbitals
+        // with that same U_canon (and install its eigenvalues as the active orbital energies) for
+        // the write, then put the solve basis back: the RDMs behind the properties and the natural
+        // orbitals below live in it, and both are basis-invariant anyway.
+        double * MO_act_save = nullptr;
+        double * ev_act_save = nullptr;
+        if(U_canon!=nullptr){
+            const int n_a = CAS.n_act, n_o = M->n_ao, n_0 = CAS.n_core;
+            MO_act_save = new double[n_a*n_o];
+            ev_act_save = new double[n_a];
+            double * B  = new double[n_a*n_o];
+            memcpy(MO_act_save, M->MO_VEC+n_0*n_o    , n_a*n_o*sizeof(double));
+            memcpy(ev_act_save, M->orb_energy+n_0    , n_a    *sizeof(double));
+            cblas_dgemm(CblasRowMajor,CblasNoTrans,CblasNoTrans,
+                        n_a,n_o,n_a,1.0,
+                        U_canon,n_a,
+                        M->MO_VEC+n_0*n_o,n_o,0.0,
+                        B,n_o);
+            memcpy(M->MO_VEC+n_0*n_o , B       , n_a*n_o*sizeof(double));
+            memcpy(M->orb_energy+n_0 , ev_canon, n_a    *sizeof(double));
+            delete[] B;
+        }
+
         M->MO_gamess_format();
         sprintf(name,"%s_CAS.out\0",job_name);
         M->GAMESS_type_out_print(name,-1);
@@ -1370,7 +1397,14 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
         M->MO_print(name);
         fprintf(out_stream,"data file         : %s\n",name);
         fprintf(out_stream,"\n");
-        
+
+        if(MO_act_save!=nullptr){
+            memcpy(M->MO_VEC+CAS.n_core*M->n_ao, MO_act_save, CAS.n_act*M->n_ao*sizeof(double));
+            memcpy(M->orb_energy+CAS.n_core    , ev_act_save, CAS.n_act        *sizeof(double));
+            delete[] MO_act_save;
+            delete[] ev_act_save;
+        }
+
         fprintf(out_stream,"Writing CAS_SCF natural orbitals:\n");
         
         sprintf(name,"%s_CAS\0",job_name);
@@ -1395,8 +1429,10 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
     fprintf(out_stream,"\n");
     fprintf(out_stream,"\n");
     printf_timer("CAS_SCF");
-    
+
     delete[] name;
+    delete[] U_canon;
+    delete[] ev_canon;
 //     delete[] S_track;
     
 //     libint2::finalize();
