@@ -536,12 +536,15 @@ void block2_casci_wrap::import_integrals(double *aaaa, double *f_act, double e_c
     } else {
         e.reorder_perm.clear();
         if (e.cfg.loc_order == DMRG_LOCORDER_FIEDLER) {
+            // block2's metric: the exchange graph, with the one-electron coupling as a tie-break so a
+            // disconnected or tied exchange graph still orders reproducibly (pyblock2 parser.py).
             std::vector<double> kmat((size_t)n * n, 0.0);
             for (int i = 0; i < n; i++)
                 for (int j = 0; j < n; j++)
                     if (i != j)
                         kmat[(size_t)i * n + j] =
-                            std::fabs(h2[(((size_t)i * n + j) * n + j) * n + i]);
+                            std::fabs(h2[(((size_t)i * n + j) * n + j) * n + i]) +
+                            1e-7 * std::fabs(h1[(size_t)i * n + j]);
             e.reorder_perm = OrbitalOrdering::fiedler((uint16_t)n, kmat);
             e.fcidump->reorder(e.reorder_perm);
         }
