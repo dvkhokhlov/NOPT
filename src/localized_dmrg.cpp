@@ -5,19 +5,32 @@
 
 #include "blas_link.h"   // cblas_dgemm
 
+#include <algorithm>
 #include <cmath>
 #include <vector>
 
 namespace {
 
+// Quarter-transform scratch of rotate2, grown on demand and kept across calls: the caller's out is
+// the other half of a two-buffer ping-pong, so no n^4 buffer is allocated (or zero-filled) per call.
+thread_local std::vector<double> qt_scratch;
+
 // Cyclic index move on a 4-index tensor laid out [first][rest], rest = n^3 contiguous:
 // transpose the (n x n^3) view to (n^3 x n), i.e. send the leading index to the back
-// (abcd -> bcda). Mirrors matr.cpp's transpose_A_to_B
+// (abcd -> bcda). Mirrors matr.cpp's transpose_A_to_B. Blocked over the long index so the
+// gathered reads and the n-wide write band both stay resident; pure data movement.
 void cycle_first_to_last(const double* in, double* out, int n) {
     const size_t n3 = (size_t)n * n * n;
-    for (size_t r = 0; r < n3; ++r)
+    const size_t tile = 64;
+    const long n_tiles = (long)((n3 + tile - 1) / tile);
+    // Small tensors stay in cache and the fork/join costs more than the move (crossover ~n=12).
+#pragma omp parallel for schedule(static) if (n3 * n >= 16384)
+    for (long t = 0; t < n_tiles; ++t) {
+        const size_t r0 = (size_t)t * tile, r1 = std::min(r0 + tile, n3);
         for (int p = 0; p < n; ++p)
-            out[r * n + p] = in[(size_t)p * n3 + r];
+            for (size_t r = r0; r < r1; ++r)
+                out[r * n + p] = in[(size_t)p * n3 + r];
+    }
 }
 
 } // namespace
@@ -43,19 +56,20 @@ void rotate1(const double* X, const double* U, int n, double* out, bool forward)
 
 void rotate2(const double* G, const double* U, int n, double* out, bool forward) {
     const size_t n3 = (size_t)n * n * n, n4 = n3 * n;
-    std::vector<double> a(n4), b(n4);
+    if (qt_scratch.size() < n4) qt_scratch.resize(n4);
+    double* b = qt_scratch.data();
     const double* src = G; // pass 0 reads the input directly (no initial copy)
     for (int pass = 0; pass < 4; ++pass) {
         // Quarter-transform the leading index of the (n x n^3) view.
         //   forward : b = U^T src  -> contracts U's first (deloc) index
         //   backward: b = U   src  -> contracts U's second (loc) index
         cblas_dgemm(CblasRowMajor, forward ? CblasTrans : CblasNoTrans, CblasNoTrans, n, (int)n3,
-                    n, 1.0, U, n, src, (int)n3, 0.0, b.data(), (int)n3);
-        // Move the just-transformed index to the back; after 4 passes order is restored.
-        cycle_first_to_last(b.data(), a.data(), n);
-        src = a.data();
+                    n, 1.0, U, n, src, (int)n3, 0.0, b, (int)n3);
+        // Move the just-transformed index to the back; after 4 passes order is restored. out is the
+        // scratch's ping-pong partner, so the last pass lands the result in place.
+        cycle_first_to_last(b, out, n);
+        src = out;
     }
-    std::copy(a.begin(), a.end(), out);
 }
 
 double orthogonality_error(const double* U, int n) {

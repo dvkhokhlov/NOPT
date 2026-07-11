@@ -18,7 +18,8 @@
 void rotate1(const double* X, const double* U, int n, double* out, bool forward);
 
 // Four-index transform of the 2-body tensor G[((a*n+b)*n+c)*n+d] (chemist (ab|cd) integral or
-// 2-RDM): four sequential quarter-transforms, O(n^5). G and out must not alias.
+// 2-RDM): four sequential quarter-transforms, O(n^5). out doubles as quarter-transform scratch
+// (it is overwritten from the first pass on), so G and out must not alias.
 void rotate2(const double* G, const double* U, int n, double* out, bool forward);
 
 // Returns max |(U^T U - I)| — the orthogonality deviation of U (n x n). Callers assert on it.
