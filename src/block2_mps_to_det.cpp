@@ -208,6 +208,31 @@ struct su2_readout_expansion {
     double weight = 0.0;
 };
 
+// Put the MPS in the one-site read-out form: left-canonical throughout with a single right-fused
+// center at the last site. For a non-singlet target the SU2 -> SZ unfused transform can only
+// rebuild LEFT-canonical site tensors -- with the center at the left end every other site is
+// right-canonical and UnfusedMPS::backward_right_fused finds the SZ bond dims disagree (asserts in
+// block2's mps_unfused.hpp). Which end the read-out MPS lands on is otherwise uncontrolled: the
+// compression fit early-stops, so its sweep count -- and with it the final center -- varies with
+// the state. Pinning the end makes the read-out deterministic. Harmless for a singlet, required
+// for anything else; the twosz != 0 path embeds to a singlet first, so it is exempt.
+static void pin_right_end(const std::shared_ptr<MPS<SU2, double>> &mps,
+                          const std::shared_ptr<CG<SU2>> &cg) {
+    mps->load_mutable();
+    mps->info->load_mutable();
+    const int n = mps->n_sites;
+    std::string &cf = mps->canonical_form;
+    if (mps->center == 0 && cf[0] == 'C' && n > 1 && cf[1] == 'R')
+        cf[0] = 'K';                                     // one-site left-fused center at 0
+    else if (n > 1 && cf[n - 1] == 'C' && cf[n - 2] == 'L') {
+        cf[n - 1] = 'S';                                 // one-site right-fused center at n-1
+        mps->center = n - 1;
+    } else if (mps->center == n - 2 && n > 1 && cf[n - 2] == 'L')
+        mps->center = n - 1;
+    while (mps->center < n - 1) mps->move_right(cg, nullptr);
+    mps->save_data();
+}
+
 // Put the single MPS into a one-site canonical center at site 0 (the form to_singlet_embedding_wfn
 // needs), then singlet-embed it. The compressed read-out MPS lands in one of block2's post-sweep
 // canonical forms; the branches below relabel that boundary center as a one-site fused center exactly
@@ -256,6 +281,7 @@ static su2_readout_expansion canonical_readout_from_su2_mps(
     std::shared_ptr<UnfusedMPS<SZ, double>> sz_umps;
     double scale = 1.0;
     if (twosz == 0) {
+        pin_right_end(su2_mps, cg);  // non-singlet targets only transform from the left-canonical form
         auto su2_umps = std::make_shared<UnfusedMPS<SU2, double>>(su2_mps);
         SZ targetz(n_elec, 0, 0);  // M_S = 0: the native (aldet) projection sector
         sz_umps = TransUnfusedMPS<SU2, SZ, double>::forward(su2_umps, sztag, cg, targetz);
