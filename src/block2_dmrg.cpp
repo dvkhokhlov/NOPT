@@ -8,6 +8,8 @@
 #include <limits>
 #include <cstdio>
 #include <cstdlib>
+#include <cerrno>
+#include <csignal>
 #include <filesystem>
 #include <map>
 #include <numeric>
@@ -30,6 +32,31 @@ using namespace block2;
 namespace nopt_block2 {
 
 
+// Reclaim scratch dirs left by runs that died before their destructor could remove them. Each dir is
+// named for the process that owns it, so once that process is gone nothing will ever reclaim it --
+// and the default root is /dev/shm, i.e. RAM. A dir whose pid is still alive is left alone, as is one
+// we cannot signal (someone else's), so pid reuse only ever makes this skip, never delete in error.
+static void reap_orphan_scratch(const std::string &root) {
+    std::error_code ec;
+    const std::string tag = "nopt_dmrg_";
+    for (const auto &de : std::filesystem::directory_iterator(root, ec)) {
+        if (!de.is_directory(ec))
+            continue;
+        const std::string name = de.path().filename().string();
+        if (name.rfind(tag, 0) != 0)
+            continue;
+        const std::string digits = name.substr(tag.size());
+        if (digits.empty() || digits.find_first_not_of("0123456789") != std::string::npos)
+            continue;
+        const long pid = strtol(digits.c_str(), nullptr, 10);
+        if (pid <= 0 || pid == (long)getpid())
+            continue;
+        if (kill((pid_t)pid, 0) == 0 || errno == EPERM)
+            continue; // still running (EPERM: alive, just not ours)
+        std::filesystem::remove_all(de.path(), ec);
+    }
+}
+
 // Process-global block2 runtime: owns the frame_/threading_ globals and the per-process scratch
 // dir, and tears all of it down (RAII) at program exit.
 struct Block2Runtime {
@@ -38,6 +65,7 @@ struct Block2Runtime {
     Block2Runtime(const std::string &save_dir_root, double memory_gb, int n_threads) {
         // Per-process scratch subdir under the configured root (default /dev/shm), so
         // concurrent/repeated runs never share block2's renormalized-operator files.
+        reap_orphan_scratch(save_dir_root);
         scratch = save_dir_root + "/nopt_dmrg_" + std::to_string((long)getpid());
 
         Random::rand_seed(0);

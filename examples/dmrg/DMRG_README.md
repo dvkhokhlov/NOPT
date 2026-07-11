@@ -68,6 +68,8 @@ Default shown in parentheses.
 - **schedule** *(default)* — bond-dimension / noise sweep schedule. Only `default` accepted.
 - **save_dir** *(/dev/shm)* — block2 scratch root (renormalized operators, MPS tensors).
   RAM-backed by default.
+- **memory** *(1.0)* — size of block2's double stack, in GB. This is what a large active space
+  or bond dimension exhausts; raise it if block2 aborts on a stack overflow.
 
 ### Localization & ordering
 
@@ -94,8 +96,9 @@ Default shown in parentheses.
 ### Determinant read-out (leading CI configurations after convergence)
 
 - **print_dets** *(on)* — report the leading determinants after convergence. `on | off`.
-- **extract_m** *(50)* — bond dimension the canonical MPS is compressed to before
-  determinant enumeration. `0` = no compression.
+- **extract_m** *(0 = no compression)* — bond dimension the canonical MPS is compressed to
+  before determinant enumeration. Compression is lossy (see below); the default extracts from
+  the uncompressed MPS.
 - **extract_cutoff** *(1e-3)* — magnitude cutoff for the determinant search; drops
   determinants below it.
 - **det_rot_m** *(0 = auto)* — bond dimension for the localized→canonical rotation applied
@@ -111,8 +114,17 @@ Default shown in parentheses.
 - **`save_dir` defaults to `/dev/shm` (RAM).** Fast, but a large-`m` or long run can exhaust
   RAM; point it at a disk path for big active spaces.
 
+- **CAS-SCF must be state-averaged (`method=1`, the default).** Separate minimization needs a
+  2-RDM per state; the DMRG backend only forms their average. It is also not well defined here:
+  block2 solves the state-averaged roots in one shared renormalized basis, so the individual
+  roots are not variational and minimizing orbitals against them separately is not a stationary
+  point of anything. `method != 1` with `cisolver=dmrg` is rejected.
+
 ### Known problems
 
-- **Small `extract_m` corrupts the determinant dump.** Read-out compresses the converged
-  MPS to `extract_m` before enumerating determinants; if `extract_m` ≪ `m` the compression
-  is lossy and, in certain systems, can trigger segfault on block2 side.
+- **Small `extract_m` corrupts the determinant dump.** Setting `extract_m` > 0 compresses the
+  converged MPS before enumerating determinants; if `extract_m` ≪ `m` the compression is lossy
+  and, in certain systems, can trigger a segfault on the block2 side. The default (`0`) does not
+  compress. If you do set it, watch the captured-weight table printed under the determinants —
+  a note is emitted when too little of the CI vector is captured for the leading-configuration
+  picture to mean anything.
