@@ -55,9 +55,11 @@ protected:
                                       double* Ug, const loc_options& opt) = 0;
 };
 
-// Pipek-Mezey localizer. Constructed from a molecule (for S_AO + shells); caches the per-atom
-// symmetric overlap blocks S^A once (they are C-independent and fixed across macro-iterations).
-// Maximizes L(U) = sum_A sum_i (Q^A_ii)^2, Q^A = C^T S^A C the Mulliken atomic-population matrix.
+// Pipek-Mezey localizer. Constructed from a molecule (for S_AO + shells); caches only the AO->atom
+// map (C-independent and fixed across macro-iterations).
+// Maximizes L(U) = sum_A sum_i (Q^A_ii)^2, with the symmetrized Mulliken population matrix
+//   Q^A_pq = 1/2 sum_{mu in A} ( C[mu,p] (SC)[mu,q] + (SC)[mu,p] C[mu,q] ),   SC = S_AO C,
+// built directly in the active space — no dense n_ao x n_ao S^A per atom.
 class pm_localizer : public orbital_localizer {
 public:
     explicit pm_localizer(molecule& mol);
@@ -69,7 +71,8 @@ protected:
 private:
     int n_ao_   = 0;
     int n_atoms_ = 0;
-    std::vector<std::vector<double>> SA_;   // SA_[atom]: n_ao*n_ao symmetric S^A (RAII)
+    const double* S_AO_ = nullptr;   // molecule-owned AO overlap (n_ao*n_ao), not owned
+    std::vector<int> ao_atom_;       // AO -> atom, from the shell centers
 };
 
 // Pure 2x2 Jacobi sweep

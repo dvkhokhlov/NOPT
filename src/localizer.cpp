@@ -1,7 +1,7 @@
 #include "localizer.h"
 
-#include "molecule.h"     // molecule; transform_from_col_MO (V1^T M V2)
-#include "trcamm.h"       // gen_atomic_DM (symmetrized atomic overlap block S^A)
+#include "blas_link.h"    // cblas_dgemm
+#include "molecule.h"     // molecule
 #include "common_vars.h"  // out_stream
 
 #include <cmath>
@@ -150,18 +150,30 @@ pm_localizer::pm_localizer(molecule& mol) {
     if (mol.S_AO == nullptr) {
         fprintf(loc_os(),
                 "pm_localizer: molecule::S_AO is null (call calc_S_AO() first); localizer disabled\n");
-        return;                // SA_ stays empty; localize_block guards on it
+        return;                // S_AO_ stays null; localize_block guards on it
     }
-    SA_.resize(n_atoms_);
-    for (int a = 0; a < n_atoms_; ++a) {
-        SA_[a].assign((size_t)n_ao_ * n_ao_, 0.0);
-        gen_atomic_DM(SA_[a].data(), mol.S_AO, a, &mol.s, &mol.shell_center, n_ao_);
+
+    // AO -> atom from the shell centers (AOs of a shell are contiguous and sit on its center).
+    ao_atom_.assign((size_t)n_ao_, -1);
+    int ao_num = 0;
+    for (size_t sh = 0; sh < mol.s.size(); ++sh) {
+        int sh_s = mol.s[sh].contr[0].size();
+        for (int i = 0; i < sh_s && ao_num + i < n_ao_; ++i)
+            ao_atom_[ao_num + i] = mol.shell_center[sh];
+        ao_num += sh_s;
     }
+    if (ao_num != n_ao_) {
+        fprintf(loc_os(),
+                "pm_localizer: shells span %d AOs, expected %d; localizer disabled\n", ao_num, n_ao_);
+        ao_atom_.clear();
+        return;
+    }
+    S_AO_ = mol.S_AO;
 }
 
 loc_result pm_localizer::localize_block(const double* C_blk, int n_ao, int n_g,
                                         double* Ug, const loc_options& opt) {
-    if (SA_.empty() || n_ao != n_ao_) {
+    if (S_AO_ == nullptr || n_ao != n_ao_) {
         if (n_ao != n_ao_)
             fprintf(loc_os(), "pm_localizer: n_ao mismatch (%d vs cached %d) -> U=I fallback\n",
                     n_ao, n_ao_);
@@ -181,13 +193,24 @@ loc_result pm_localizer::localize_block(const double* C_blk, int n_ao, int n_g,
             Ceff[(size_t)ao * n_g + p] = acc;
         }
 
-    // Q^A = Ceff^T S^A Ceff for each atom (n_g x n_g, symmetric).
+    // SC = S_AO * Ceff (n_ao x n_g), then each atom's Q^A (n_g x n_g, symmetric) straight from its
+    // AO rows: Q^A_pq = 1/2 sum_{mu in A} ( Ceff[mu,p] SC[mu,q] + SC[mu,p] Ceff[mu,q] ).
+    std::vector<double> SC((size_t)n_ao_ * n_g, 0.0);
+    cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans,
+                n_ao_, n_g, n_ao_, 1.0,
+                S_AO_, n_ao_,
+                Ceff.data(), n_g, 0.0,
+                SC.data(), n_g);
+
     std::vector<double> Qpops((size_t)n_atoms_ * n_g * n_g, 0.0);
-    for (int a = 0; a < n_atoms_; ++a)
-        transform_from_col_MO(Qpops.data() + (size_t)a * n_g * n_g,
-                              SA_[a].data(), n_ao_,
-                              Ceff.data(), n_g,
-                              Ceff.data(), n_g);
+    for (int ao = 0; ao < n_ao_; ++ao) {
+        double* Q = Qpops.data() + (size_t)ao_atom_[ao] * n_g * n_g;
+        const double* ce = Ceff.data() + (size_t)ao * n_g;
+        const double* sc = SC.data()   + (size_t)ao * n_g;
+        for (int p = 0; p < n_g; ++p)
+            for (int q = 0; q < n_g; ++q)
+                Q[p * n_g + q] += 0.5 * (ce[p] * sc[q] + sc[p] * ce[q]);
+    }
 
     if (opt.verbose) {
         // self-check: sum_A Q^A should be the identity for S-orthonormal C.
