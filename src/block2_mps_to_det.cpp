@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <map>
 #include <string>
 #include <vector>
@@ -74,6 +75,7 @@ static report_basis_change build_report_basis_change(const dmrgci_engine &e, int
     Rp.assign((size_t)n * n, 0.0);
     for (int i = 0; i < n; i++)
         for (int j = 0; j < n; j++) Rp[(size_t)i * n + j] = R[(size_t)j * n + i];
+    const std::vector<double> Rp0 = Rp; // un-peeled copy: verifies the Rt/Q factorization below
 
     struct Cell { double mag; int i, j; };
     std::vector<Cell> cells;
@@ -117,13 +119,21 @@ static report_basis_change build_report_basis_change(const dmrgci_engine &e, int
         out.lattice_sign[k] = sgn[resid];
     }
 
-    // det(Q)=+1 gauge: LAPACK eigenvector signs are arbitrary, so an odd number of map signs is only a
-    // canonical-MO phase choice -- normalize by flipping orbital 0's sign.
-    double prod = 1.0;
-    for (double s : out.lattice_sign) prod *= (s < 0.0 ? -1.0 : 1.0);
-    if (prod < 0.0)
-        for (int k = 0; k < n; k++)
-            if (out.canon_of_lattice[k] == 0) { out.lattice_sign[k] = -out.lattice_sign[k]; break; }
+    // Rt and Q are a factorization of Rp: Rp[a][j] = Rt[a][g[j]] * sgn[g[j]]. The read-out rotates the
+    // MPS by Rt and reinstates Q by relabelling sites and signing single occupations, so a sign carried
+    // by only one of the two halves is not a gauge choice -- it negates every determinant with orbital j
+    // singly occupied. Q itself may be improper; only Rt must be proper, and it is made so above.
+    double dev = 0.0;
+    for (int a = 0; a < n; a++)
+        for (int j = 0; j < n; j++) {
+            const double rec = Rp[(size_t)a * n + g[j]] * sgn[g[j]];
+            dev = std::max(dev, std::fabs(rec - Rp0[(size_t)a * n + j]));
+        }
+    if (dev > 1e-10) {
+        fprintf(out_stream, "ERROR: DMRG read-out basis change does not factorize into a rotation and a "
+                            "signed permutation (max deviation %.3e)\n", dev);
+        exit(EXIT_FAILURE);
+    }
 
     return out;
 }
