@@ -67,6 +67,9 @@ LIB_DIRS:=$(BLAS_LDIR) -L$(LIBINT_L_DIR) $(GRPP_LDIR)
 
 all:$(progs)
 
+# auto-generated header dependencies (from -MMD -MP); empty on a fresh tree
+-include $(wildcard src/*.d src/progs/*.d)
+
 print:
 	@echo $(progs_cpp)
 	@echo $(progs)
@@ -76,12 +79,12 @@ run_%:src/progs/%.o src/molecule.o src/molecule2.o src/chem_data.o src/MO2.o src
 	$(CXX) $^ $(OPT_LEVEL) -fopenmp $(LIB_DIRS) $(LIBS)  -o $@
 
 %.o:%.cpp
-	$(CXX) -o $@ -c $< $(OPT_LEVEL) -fopenmp $(DEFINITIONS) $(INCLUDE_DIRS) -fmax-errors=5
+	$(CXX) -o $@ -c $< $(OPT_LEVEL) -fopenmp -MMD -MP $(DEFINITIONS) $(INCLUDE_DIRS) -fmax-errors=5
 
 %.o:%.c
-	$(CC) -o $@ -c $< $(OPT_LEVEL) -fopenmp $(DEFINITIONS) $(INCLUDE_DIRS) -fmax-errors=5
+	$(CC) -o $@ -c $< $(OPT_LEVEL) -fopenmp -MMD -MP $(DEFINITIONS) $(INCLUDE_DIRS) -fmax-errors=5
 
 clean:
-	rm $(progs) src/*.o src/progs/*.o
+	rm -f $(progs) src/*.o src/progs/*.o src/*.d src/progs/*.d
 clean_gcov:
 	rm src/*.gcda src/progs/*.gcda src/*.gcno src/progs/*.gcno
