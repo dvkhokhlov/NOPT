@@ -581,7 +581,9 @@ static bool rotate_retained_mps(dmrgci_engine &e) {
     }
     if (res.skipped)
         return true; // negligible rotation (near convergence): reuse the reloaded MPS as-is
-    if (std::fabs(res.norm2 - 1.0) > 1e-3) { // unitary propagation should preserve per-root norms
+    // Unitary propagation should preserve per-root norms. Negated rather than `> 1e-3` so a non-finite
+    // norm falls back too: every comparison with NaN is false, so `fabs(NaN) > 1e-3` would accept it.
+    if (!(std::fabs(res.norm2 - 1.0) <= 1e-3)) {
         fprintf(out_stream, "  warm-start: rotation norm^2=%.6f drifted -> cold fallback\n", res.norm2);
         return false;
     }
