@@ -8,6 +8,7 @@
 #include <limits>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <cerrno>
 #include <csignal>
 #include <filesystem>
@@ -32,10 +33,14 @@ using namespace block2;
 namespace nopt_block2 {
 
 
-// Reclaim scratch dirs left by runs that died before their destructor could remove them. Each dir is
-// named for the process that owns it, so once that process is gone nothing will ever reclaim it --
-// and the default root is /dev/shm, i.e. RAM. A dir whose pid is still alive is left alone, as is one
-// we cannot signal (someone else's), so pid reuse only ever makes this skip, never delete in error.
+// Reclaim scratch dirs left by runs that died before their destructor could remove them: once the
+// owning process is gone nothing else will ever reclaim it, and the default root is /dev/shm, i.e.
+// RAM. Each dir is named <pid>_<unique> (see below), so the pid says whose it is: one whose pid is
+// still alive is left alone, as is one we cannot signal (someone else's). The unique half is what
+// makes the removal safe -- a pid recycled between the liveness check and remove_all belongs to a run
+// under a different dir name, so this can never delete a live run's scratch.
+// Not covered: a scratch root shared across pid namespaces (containers), where a pid dead here may be
+// alive there. Only an ownership lock settles that; /dev/shm on a single node does not need one.
 static void reap_orphan_scratch(const std::string &root) {
     std::error_code ec;
     const std::string tag = "nopt_dmrg_";
@@ -45,8 +50,12 @@ static void reap_orphan_scratch(const std::string &root) {
         const std::string name = de.path().filename().string();
         if (name.rfind(tag, 0) != 0)
             continue;
-        const std::string digits = name.substr(tag.size());
-        if (digits.empty() || digits.find_first_not_of("0123456789") != std::string::npos)
+        const std::string rest = name.substr(tag.size());
+        const size_t us = rest.find('_');
+        if (us == 0 || us == std::string::npos)
+            continue; // no unique suffix: not one of ours to judge
+        const std::string digits = rest.substr(0, us);
+        if (digits.find_first_not_of("0123456789") != std::string::npos)
             continue;
         const long pid = strtol(digits.c_str(), nullptr, 10);
         if (pid <= 0 || pid == (long)getpid())
@@ -63,10 +72,22 @@ struct Block2Runtime {
     std::string scratch;
 
     Block2Runtime(const std::string &save_dir_root, double memory_gb, int n_threads) {
-        // Per-process scratch subdir under the configured root (default /dev/shm), so
-        // concurrent/repeated runs never share block2's renormalized-operator files.
+        // Per-run scratch subdir under the configured root (default /dev/shm), so concurrent/repeated
+        // runs never share block2's renormalized-operator files. Identity is <pid>_<unique>: the pid
+        // is what lets a later run tell whether this one is gone (reap_orphan_scratch), the unique
+        // suffix is what makes the dir this run's alone. A pid alone is not an identity -- it is
+        // recycled, so a fresh run could inherit a dead run's dir and read back its tag files.
+        // mkdtemp creates the dir atomically, so the suffix is unique by construction, not by luck.
         reap_orphan_scratch(save_dir_root);
-        scratch = save_dir_root + "/nopt_dmrg_" + std::to_string((long)getpid());
+        std::string tmpl = save_dir_root + "/nopt_dmrg_" + std::to_string((long)getpid()) + "_XXXXXX";
+        std::vector<char> tbuf(tmpl.begin(), tmpl.end());
+        tbuf.push_back('\0');
+        if (mkdtemp(tbuf.data()) == nullptr) {
+            fprintf(out_stream, "ERROR: cannot create DMRG scratch under %s: %s\n",
+                    save_dir_root.c_str(), strerror(errno));
+            exit(EXIT_FAILURE);
+        }
+        scratch = tbuf.data();
 
         Random::rand_seed(0);
         // isize/dsize are BYTE sizes of the integer/double stacks. The double stack holds the
