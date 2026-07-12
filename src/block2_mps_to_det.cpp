@@ -307,7 +307,11 @@ static su2_readout_expansion canonical_readout_from_su2_mps(
     // state, so evaluate would trip its final-target assert; finalize rebuilds a proper one.
     sz_umps = std::make_shared<UnfusedMPS<SZ, double>>(sz_umps->finalize());
     auto dtrie = std::make_shared<DeterminantTRIE<SZ, double>>(n_sites, true);
-    dtrie->evaluate(sz_umps, cutoff);
+    // The singlet embedding leaves this sector at norm^2 = 1/(2S+1), and the TRIE prunes on the
+    // coefficient magnitude in the MPS's own normalization -- so it must be given the cutoff in that
+    // same normalization. Passing the physical one would make it act as cutoff*sqrt(2S+1): stricter
+    // for every non-singlet, dropping determinants that were asked for and biasing the weight low.
+    dtrie->evaluate(sz_umps, cutoff / scale);
     for (int t = 0; t < (int)dtrie->size(); t++) {
         const double c = (double)dtrie->vals[t] * scale;
         if (std::fabs(c) < 1e-14) continue;
