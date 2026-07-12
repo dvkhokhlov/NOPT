@@ -12,7 +12,7 @@ Compilation options:
 selected command  line options:
 -i           naphtalene_DMRG_T.inp	 input file
 
-Calculation started at: 15:46 (EEST), 11 July 2026 (Saturday).
+Calculation started at: 13:36 (EEST), 12 July 2026 (Sunday).
 
 _______________________________________________________________________
 
@@ -49,7 +49,7 @@ Input file:
   28: _MO INP=naphtalene_RHF_T.orb
   29: $END
   30: $CAS n_s=1 w_state=all_1; cisolver=dmrg maxit=50 dE=1e-12 grad=1e-6 p_cutoff=0.03 $END
-  31: $DMRG m=300 sweep_tol=1e-8 localize=pm extract_m=100 $END
+  31: $DMRG m=300 sweep_tol=1E-10 localize=pm $END
 _______________________________________________________________________
 
 
@@ -1155,8 +1155,8 @@ X,Y,Z - cartesian coordinates (Bohr)
 
 
 Calculation of 1-el matrices:
-Time to step -    0.26344
-Full time    -    0.26344
+Time to step -    0.24452
+Full time    -    0.24452
 
 
 
@@ -1188,20 +1188,21 @@ CI solver:                        DMRG
 DMRG settings:
 Bond dimension (m):               300
 Maximum number of sweeps:         40
-Sweep energy convergence:         1.000000e-08
+Sweep energy convergence:         1.000000e-10
 Initial occupancy:                integral
 Sweep schedule:                   default
 Active-space localization:        Pipek-Mezey
 DMRG orbital ordering:            Fiedler
 Scratch directory (save_dir):     /dev/shm
-MPS warm-start:                   on (after 1 cold iter)
+Memory (block2 double stack):     1 GB
+MPS warm-start:                   on (after 0 cold iter)
 Warm re-solve sweeps:             20
 Rotate reused MPS:                yes
 MPS-rotation bond dim (rot_m):    300
 MPS-rotation TE steps (rot_steps):1
 Leading determinants:             on
   read-out rotation bond dim:     600 (10 TE steps)
-  extraction compression:         m=100, cutoff=1.000000e-03
+  extraction:                     no compression, cutoff=1.000000e-03
 
 _______________________________________________________________________
 
@@ -1209,8 +1210,8 @@ _______________________________________________________________________
 
 
 RI integrals calculation:
-Time to step -    0.46101
-Full time    -    0.72445
+Time to step -    0.39755
+Full time    -    0.64207
 WARNING: orbital canonicalization (rotate) disabled - the CI backend does not support CI-vector rotation
 
 
@@ -1218,58 +1219,58 @@ CAS_SCF density averaging:
 __________________________________________
  State| E                 | S^2  | weight |
 ______|___________________|______|________|
-    0 |   -383.3730525672 | 2.00 | 1.00   |
+    0 |   -383.3730525637 | 2.00 | 1.00   |
 ______|___________________|______|________|
 
 Start CAS_SCF iterations
 _________________________________________________________________________________
   N | E                 | dE         | LAG.ASYM. | ROT.STEP  | N_dav | sweep_dE  |
 ____|___________________|____________|___________|___________|_______|___________|
-  0 |   -383.3730525546 | -3.834e+02 | 9.360e-02 | 1.000e+00 |  19   | 3.143e-09 |
+  0 |   -383.3730525637 | -3.834e+02 | 9.360e-02 | 1.000e+00 |  20   | 8.868e-12 |
 SOSCF is scaling rotation angle matrix Xmax=0.194882     |
-  1 |   -383.3929511116 | -1.990e-02 | 6.617e-02 | 1.000e-01 |   3   | 2.200e-09 |
+  1 |   -383.3929510883 | -1.990e-02 | 6.617e-02 | 1.000e-01 |   4   | 3.809e-12 |
 SOSCF is scaling rotation angle matrix Xmax=0.257249     |
-  2 |   -383.4044391392 | -1.149e-02 | 3.927e-02 | 1.000e-01 |   3   | 1.672e-09 |
-  3 |   -383.4077537465 | -3.315e-03 | 4.648e-03 | 7.370e-02 |   3   | 1.470e-09 |
-  4 |   -383.4078458223 | -9.208e-05 | 2.865e-03 | 1.249e-02 |   3   | 1.264e-09 |
-  5 |   -383.4078579730 | -1.215e-05 | 4.220e-04 | 5.284e-03 |   3   | 1.313e-09 |
-  6 |   -383.4078584109 | -4.379e-07 | 1.480e-04 | 7.709e-04 |   3   | 1.204e-09 |
-  7 |   -383.4078584622 | -5.130e-08 | 4.834e-05 | 2.439e-04 |   3   | 1.344e-09 |
-  8 |   -383.4078584608 |  1.327e-09 | 1.173e-05 | 6.245e-05 |   3   | 1.462e-09 |
-  9 |   -383.4078584656 | -4.814e-09 | 2.943e-06 | 1.524e-05 |   3   | 1.511e-09 |
- 10 |   -383.4078584614 |  4.213e-09 | 6.227e-07 | 4.649e-06 |   3   | 1.510e-09 |
+  2 |   -383.4044391792 | -1.149e-02 | 3.927e-02 | 1.000e-01 |   4   | 6.821e-12 |
+  3 |   -383.4077537481 | -3.315e-03 | 4.648e-03 | 7.370e-02 |   4   | 7.446e-12 |
+  4 |   -383.4078458269 | -9.208e-05 | 2.865e-03 | 1.249e-02 |   4   | 2.558e-12 |
+  5 |   -383.4078579738 | -1.215e-05 | 4.220e-04 | 5.284e-03 |   4   | 2.899e-12 |
+  6 |   -383.4078584165 | -4.428e-07 | 1.472e-04 | 7.710e-04 |   4   | 3.581e-12 |
+  7 |   -383.4078584628 | -4.625e-08 | 4.930e-05 | 2.462e-04 |   4   | 4.093e-12 |
+  8 |   -383.4078584656 | -2.870e-09 | 1.198e-05 | 6.345e-05 |   4   | 1.648e-12 |
+  9 |   -383.4078584658 | -1.463e-10 | 2.614e-06 | 1.504e-05 |   4   | 9.095e-13 |
+ 10 |   -383.4078584658 | -3.769e-11 | 5.291e-07 | 4.459e-06 |   4   | 3.979e-13 |
 ____|___________________|____________|___________|___________|_______|
 
 Lagrangian converged after 10 iterations
 
 CAS_SCF iterations:
-Time to step -   47.69747
-Full time    -   48.42192
+Time to step -   40.83860
+Full time    -   41.48067
 Preparation of canonical orbitals:
-Time to step -    1.39874
-Full time    -   49.82066
+Time to step -    0.06524
+Full time    -   41.54591
 CAS_SCF WaveFunctions:
 
 DMRG determinant read-out orbital map (lattice k -> canonical orbital p, sign):
-  canonical orbital: 8 1 4 5 9 0 7 2 6 3
-  sign     : + + - - - + + + - +
-State 0  E  =    -383.4078584677 S^2 = 2.00:
--6.0624615734e-01  | 1111100000 | 1111010000
- 6.0624615734e-01  | 1111010000 | 1111100000
--1.5577006218e-01  | 1101100100 | 1111100000
- 1.5577006218e-01  | 1111100000 | 1101100100
- 1.0526219932e-01  | 1111100000 | 1110101000
--1.0526219932e-01  | 1110101000 | 1111100000
--8.1455279591e-02  | 1011100010 | 1111100000
- 8.1455279591e-02  | 1111100000 | 1011100010
--7.2804955710e-02  | 1111010000 | 1101010100
- 7.2804955710e-02  | 1101010100 | 1111010000
+  canonical orbital: 1 3 7 2 9 0 5 4 6 8
+  sign     : - + + + - + + - - -
+State 0  E  =    -383.4078584658 S^2 = 2.00:
+ 6.0625002271e-01  | 1111100000 | 1111010000
+-6.0625002271e-01  | 1111010000 | 1111100000
+-1.5578200270e-01  | 1111100000 | 1101100100
+ 1.5578200270e-01  | 1101100100 | 1111100000
+-1.0526665031e-01  | 1111100000 | 1110101000
+ 1.0526665031e-01  | 1110101000 | 1111100000
+ 8.1433372060e-02  | 1011100010 | 1111100000
+-8.1433372060e-02  | 1111100000 | 1011100010
+ 7.2814059193e-02  | 1111010000 | 1101010100
+-7.2814059193e-02  | 1101010100 | 1111010000
 
 DMRG determinant extraction weights:
 ____________________________
  State| weight       |
 ______|______________|
-    0 | 0.997832     |
+    0 | 0.998388     |
 ______|______________|
 
 
@@ -1277,17 +1278,17 @@ CAS_SCF density averaging:
 __________________________________________
  State| E                 | S^2  | weight |
 ______|___________________|______|________|
-    0 |   -383.4078584677 | 2.00 | 1.00   |
+    0 |   -383.4078584658 | 2.00 | 1.00   |
 ______|___________________|______|________|
 
 
 CAS_SCF Energy summary:
-E[  0] = -383.4078584677
+E[  0] = -383.4078584658
 
 
 CAS_SCF Dipole moment:
 
-d[  0,  0] = {-3.004468e-14, 2.224839e-06,-9.016000e-08} |d| = 2.226665e-06
+d[  0,  0] = {-3.011302e-14,-3.540464e-08, 3.156681e-09} |d| = 3.554509e-08
 
 
 
@@ -1304,8 +1305,8 @@ _______________________________________________________________________
 
 
 CAS_SCF:
-Time to step -    5.13513
-Full time    -   54.95579
+Time to step -    4.33924
+Full time    -   45.88515
 
 
-Calculation finished at: 15:47 (EEST), 11 July 2026 (Saturday).
+Calculation finished at: 13:37 (EEST), 12 July 2026 (Sunday).
