@@ -363,21 +363,29 @@ static void report_leading_determinants(std::FILE *out, int state_idx, double E,
     }
 }
 
-static void report_determinant_weights(std::FILE *out, const std::vector<double> &weights) {
+// `reported` marks the roots that actually produced an expansion; a root whose read-out was declined
+// has no weight to quote and must not be read as one that captured nothing.
+static void report_determinant_weights(std::FILE *out, const std::vector<double> &weights,
+                                       const std::vector<char> &reported) {
     std::fprintf(out, "\nDMRG determinant extraction weights:\n");
     std::fprintf(out, "____________________________\n");
     std::fprintf(out, " State| weight       |\n");
     std::fprintf(out, "______|______________|\n");
     for (int st = 0; st < (int)weights.size(); st++)
-        std::fprintf(out, "%5d | %.6f     |\n", st, weights[st]);
+        if (reported[st])
+            std::fprintf(out, "%5d | %.6f     |\n", st, weights[st]);
+        else
+            std::fprintf(out, "%5d | n/a          |\n", st);
     std::fprintf(out, "______|______________|\n");
 
     // The printed configurations are a qualitative picture, not a quantitative norm; say so when the
     // extraction keeps too little of the vector for even that to be trusted.
     const double note_below = 0.9;
     double lo = 1.0;
-    for (double w : weights) lo = std::min(lo, w);
-    if (lo < note_below)
+    bool any = false;
+    for (int st = 0; st < (int)weights.size(); st++)
+        if (reported[st]) { lo = std::min(lo, weights[st]); any = true; }
+    if (any && lo < note_below)
         std::fprintf(out, "  note: only %.3f of the CI weight is captured -- the leading-configuration\n"
                           "        picture is incomplete (lower $DMRG extract_cutoff, and raise or drop\n"
                           "        extract_m if the extraction MPS is being compressed)\n", lo);
@@ -416,10 +424,8 @@ void block2_casci_wrap::print_states(int, int, int print) {
     const char *basis_label = e.have_canon ? "canonical orbital" : "active orbital";
     report_dmrg_orbital_map(out_stream, n, rbc.canon_of_lattice, rbc.lattice_sign, basis_label);
 
-    std::vector<int> solve_of_lattice(n);
-    std::vector<double> plus_sign(n, 1.0);
-    for (int k = 0; k < n; k++) solve_of_lattice[k] = reord.empty() ? k : reord[k];
     std::vector<double> det_weights((size_t)e.n_s, 0.0);
+    std::vector<char> det_reported((size_t)e.n_s, 1);
 
     // CG factors for the SU2->SZ read-out transform (live off the Hamiltonian; a fresh one is sized in
     // its constructor should the Hamiltonian ever be released before the print).
@@ -431,12 +437,17 @@ void block2_casci_wrap::print_states(int, int, int print) {
         const std::string xtag = e.mps_info->tag + "-cf" + std::to_string(st);
         std::shared_ptr<MultiMPS<SU2, double>> imps = e.mps->extract(st, xtag);
         // Rotate by the proper residual. A complex residual (guarded inside) leaves the MPS in the solve
-        // basis, where the reported orbital map no longer holds -- flag it.
-        bool map_applies = true;
+        // basis, while the orbitals this run writes carry U_canon: printing the solve-basis determinants
+        // would hand out coefficients and orbitals that refer to different bases. Report nothing for this
+        // root rather than something incompatible with the orbital file shipped alongside it.
         if (rbc.has_rotation && !rotate_multimps_to_canonical(e, imps, rbc.residual.data(), rot_m, rot_steps)) {
-            fprintf(out_stream, "  warning: state %d rotation fell back to solve basis; determinant orbital "
-                                "map does not apply\n", st);
-            map_applies = false;
+            fprintf(out_stream, "State %d  E  = % 18.10f S^2 = %.2f:\n", st, e.E_states[st], S2);
+            fprintf(out_stream, "  (no determinant read-out: the solve -> canonical rotation generator is "
+                                "not real, so this root cannot be expressed in the orbital basis the CAS\n"
+                                "   orbitals are written in)\n");
+            det_reported[st] = 0;
+            remove_tag_files(xtag);
+            continue;
         }
 
         const std::string stag = e.mps_info->tag + "-cs" + std::to_string(st);
@@ -451,12 +462,10 @@ void block2_casci_wrap::print_states(int, int, int print) {
             rmps = compress_single_mps(e, smps, cm, ctag);
         }
 
-        const std::vector<int> &det_orb_map = map_applies ? rbc.canon_of_lattice : solve_of_lattice;
-        const std::vector<double> &det_sign = map_applies ? rbc.lattice_sign : plus_sign;
         const std::string sztag = e.mps_info->tag + "-sz" + std::to_string(st);
         su2_readout_expansion canonical =
-            canonical_readout_from_su2_mps(rmps, n, e.n_elec, e.twos, e.twosz, cutoff, det_orb_map,
-                                           det_sign, cg, sztag);
+            canonical_readout_from_su2_mps(rmps, n, e.n_elec, e.twos, e.twosz, cutoff,
+                                           rbc.canon_of_lattice, rbc.lattice_sign, cg, sztag);
 
         det_weights[st] = canonical.weight;
         report_leading_determinants(out_stream, st, e.E_states[st], S2, canonical.determinants,
@@ -466,7 +475,7 @@ void block2_casci_wrap::print_states(int, int, int print) {
         remove_tag_files(stag);
         if (!ctag.empty()) remove_tag_files(ctag);
     }
-    report_determinant_weights(out_stream, det_weights);
+    report_determinant_weights(out_stream, det_weights, det_reported);
     assert_stack_clean("leading-config read");
 }
 void block2_casci_wrap::write_civec(int, char *) { /* MPS write-out deferred */ }
