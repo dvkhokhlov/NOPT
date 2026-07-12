@@ -208,7 +208,7 @@ cas_par::cas_par(){
     method=0;
     
     //states
-    int n_s=1;
+    n_s=1;
     w_state.resize(1);
     w_state[0]=1.0;
     
