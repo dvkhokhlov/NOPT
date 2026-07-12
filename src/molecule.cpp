@@ -1806,12 +1806,56 @@ int molecule::NO_print(const char * name, char S){
     memcpy(MO_VEC    , MO_backup, sizeof(double)*n_ao*(n_cor_orb+n_act_orb[0]));
     memcpy(orb_energy,  e_backup, sizeof(double)*     (n_cor_orb+n_act_orb[0]));
     memcpy(rep_num   , rn_backup, sizeof(int   )*     (n_cor_orb+n_act_orb[0]));
-    
+
     delete[] MO_backup;
     delete[]  e_backup;
-    
+
     return 0;
-    
+
+}
+
+int molecule::LOC_print(const char * name, const double * U){
+    const int na    = n_act_orb[0];
+    const int ncore = n_cor_orb;
+    double * MO_backup = new double[n_ao*(ncore+na)];
+    double *  e_backup = new double[      ncore+na ];
+    int    * rn_backup = new int   [      ncore+na ];
+    memcpy(MO_backup, MO_VEC    , sizeof(double)*n_ao*(ncore+na));
+    memcpy( e_backup, orb_energy, sizeof(double)*     (ncore+na));
+    memcpy(rn_backup, rep_num   , sizeof(int   )*     (ncore+na));
+
+    // localized active orbitals (rows ncore..ncore+na): C_loc[p][ao] = sum_a C_act[a][ao] U[a,p],
+    // read from the backed-up active block so the in-place overwrite below is safe. They carry no
+    // canonical energy/irrep, so flag them (energy 0, rep -1).
+    for(int p=0;p<na;p++){
+        orb_energy[ncore+p]=0.0;
+        rep_num   [ncore+p]=-1;
+        for(int j=0;j<n_ao;j++){
+            double s=0.0;
+            for(int a=0;a<na;a++) s += MO_backup[(a+ncore)*n_ao+j]*U[a*na+p];
+            MO_VEC[(ncore+p)*n_ao+j]=s;
+        }
+    }
+
+    check_orb_symmetry();
+    MO_gamess_format();
+
+    char * file_name = new char[BUF_LINE_LENGTH];
+    sprintf(file_name,"%s_LocOrb.out",name);
+    GAMESS_type_out_print(file_name, ncore+na);
+    fprintf(out_stream,"visualization file: %s\n",file_name);
+    sprintf(file_name,"%s_LocOrb.orb",name);
+    MO_print(file_name);
+    fprintf(out_stream,"data file         : %s\n",file_name);
+    delete[] file_name;
+
+    memcpy(MO_VEC    , MO_backup, sizeof(double)*n_ao*(ncore+na));
+    memcpy(orb_energy,  e_backup, sizeof(double)*     (ncore+na));
+    memcpy(rep_num   , rn_backup, sizeof(int   )*     (ncore+na));
+    delete[] MO_backup;
+    delete[]  e_backup;
+    delete[] rn_backup;
+    return 0;
 }
 
 
@@ -4057,6 +4101,7 @@ int molecule::diag_X_MO_block(double * X, int n0, int dim, double * U){
             F[i*dim+j]=X[(i+n0)*n_ao+j+n0];
         
         lapack_diag(F,ev,dim);
+        normalize_rotation_rows(F, dim);
         
 //         PrintMatr(ev,dim,1,0);
 //         exit(0);
@@ -4111,6 +4156,7 @@ int molecule::diag_X_MO_block(double * X, int n0, int dim, double * U){
                     ii++;
                 }
                 lapack_diag(F[i_r],ev,dim_r[i_r]);
+                normalize_rotation_rows(F[i_r], dim_r[i_r]);
                 if(U!=nullptr){
                     
                     for(int i=0;i<dim_r[i_r];i++){

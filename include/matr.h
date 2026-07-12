@@ -45,6 +45,7 @@ int transpose_3d_abc_to_abc_part_c_sum(double * Out, double * In, int na, int nb
 int transpose_3d_abc_to_bac_int(int * Out, int * In, int na, int nb, int nc);
 
 int lapack_diag(double * mat, double * eval, int n);
+int normalize_rotation_rows(double * U, int n);
 extern "C"{
     int lapack_herm_diag(double* Mr, double* Mi, double * eval, int n);
 }
