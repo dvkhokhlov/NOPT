@@ -199,6 +199,7 @@ rhf_par::~rhf_par(){
 //CAS
 cas_par::cas_par(){
     y=0;
+    ci_solver = CISOLVER_ALDET;
     //convergence
     max_it = CAS_MAX_IT_DEFAULT;
     e_conv = CAS_EN_CON_DEFAULT;
@@ -308,9 +309,10 @@ int cas_par::w_state_by_rep_read(char * inp){
 
 }
 int cas_par::read_group(char * inp){
-    
+
     dav.read_group(inp);
-    
+    dmrg.read_group(inp);
+
     recursive_file P;
     char line[BUF_LINE_LENGTH];
     
@@ -350,7 +352,9 @@ int cas_par::read_group(char * inp){
     }
     method--;
     if(method==-1)method=CAS_METHOD_DEFAULT;
-        
+
+    if(ci_solver==CISOLVER_DMRG) dmrg.validate();
+
     return 0;
 }
 
@@ -362,6 +366,15 @@ int cas_par::read_line(char * inp){
     
     
     
+    if(key_word_comp(inp, cisolver_kw)){
+        if      (kw_to_kw(inp, cisolver_kw, cisolver_aldet_kw)) ci_solver = CISOLVER_ALDET;
+        else if (kw_to_kw(inp, cisolver_kw, cisolver_dmrg_kw )) ci_solver = CISOLVER_DMRG;
+        else{
+            fprintf(out_stream,"ERROR: unknown CISOLVER value; accepted: aldet, dmrg\n");
+            exit(1);
+        }
+    }
+
     if(key_word_comp(inp, cas_track_kw)){
         track=1;
     }
@@ -475,7 +488,17 @@ int cas_par::write_info(int n_a, int n_b, int n_o, int n_c, int mult){
     fprintf(out_stream,"Maximum number of iterations:     %d\n",max_it);
     fprintf(out_stream,"Maximum SOSCF step          :     %e\n",x_max);
     fprintf(out_stream,"\n");
-    dav.write_info();
+    if      (ci_solver==CISOLVER_ALDET){
+        fprintf(out_stream,"CI solver:                        determinant CI (aldet)\n");
+        dav.write_info();
+    }
+    else if (ci_solver==CISOLVER_DMRG){
+        fprintf(out_stream,"CI solver:                        DMRG\n");
+        dmrg.write_info();
+    }
+    else{
+        fprintf(out_stream,"CI solver:                        unknown (%d)\n",ci_solver);
+    }
     
 //     fprintf(out_stream,"Folder for output files: %s\n",out_folder_name);
     fprintf(out_stream,"_______________________________________________________________________\n\n\n");
@@ -695,7 +718,308 @@ int dav_par::write_info(){
 }
 
 dav_par::~dav_par(){
-    
+
+}
+
+//-----------------------------------------------------------------------------------------------------
+
+//DMRG
+dmrg_par::dmrg_par(){
+
+    m         = DMRG_M_DEFAULT;          // 0 = unset; required when CISOLVER=dmrg
+    sweeps    = DMRG_SWEEPS_DEFAULT;
+    sweep_tol = DMRG_SWEEP_TOL_DEFAULT;
+    hf_occ    = DMRG_HF_OCC_INTEGRAL;
+    schedule  = DMRG_SCHED_DEFAULT;
+    save_dir  = DMRG_SAVE_DIR_DEFAULT;
+    memory    = DMRG_MEMORY_DEFAULT;
+    localize  = DMRG_LOC_OFF;
+    dump_loc_orbs = 0;
+    loc_order = DMRG_LOCORDER_FIEDLER;
+    warm_start       = DMRG_WARM_START_DEFAULT;
+    warm_sweeps      = DMRG_WARM_SWEEPS_DEFAULT;
+    rot_m            = DMRG_ROT_M_DEFAULT;
+    rot_steps        = DMRG_ROT_STEPS_DEFAULT;
+    warm_start_after = DMRG_WARM_START_AFTER_DEFAULT;
+    warm_rotate      = DMRG_WARM_ROTATE_DEFAULT;
+    print_dets       = DMRG_PRINT_DETS_DEFAULT;
+    det_rot_m        = DMRG_DET_ROT_M_DEFAULT;
+    det_rot_steps    = DMRG_DET_ROT_STEPS_DEFAULT;
+    extract_m        = DMRG_EXTRACT_M_DEFAULT;
+    extract_cutoff   = DMRG_EXTRACT_CUTOFF_DEFAULT;
+
+}
+
+int dmrg_par::read_group(char * inp){
+
+    recursive_file P;
+    char line[BUF_LINE_LENGTH];
+
+    P.r_open(inp);
+
+    P.r_gets(line,BUF_LINE_LENGTH);;
+    while((key_word_comp(line, dmrg_group_start)==0)&&(!P.r_eof()))P.r_gets(line,BUF_LINE_LENGTH);;
+    if(key_word_comp(line, dmrg_group_start)==0){
+        return 0;
+    }
+
+    while(!P.r_eof()){
+        read_line(line);
+        if(key_word_comp(line, dmrg_group_end))break;
+        P.r_gets(line,BUF_LINE_LENGTH);;
+    }
+
+    return 0;
+}
+
+int dmrg_par::read_line(char * inp){
+
+    if(key_word_comp(inp, dmrg_m_kw)){
+        m = kw_to_i(inp, dmrg_m_kw, DMRG_M_DEFAULT);
+    }
+
+    if(key_word_comp(inp, dmrg_sweeps_kw)){
+        sweeps = kw_to_i(inp, dmrg_sweeps_kw, DMRG_SWEEPS_DEFAULT);
+    }
+
+    if(key_word_comp(inp, dmrg_sweep_tol_kw)){
+        sweep_tol = kw_to_f(inp, dmrg_sweep_tol_kw, DMRG_SWEEP_TOL_DEFAULT);
+    }
+
+    if(key_word_comp(inp, dmrg_hf_occ_kw)){
+        if(kw_to_kw(inp, dmrg_hf_occ_kw, dmrg_hf_occ_integral_kw)) hf_occ = DMRG_HF_OCC_INTEGRAL;
+        else                                                       hf_occ = DMRG_HF_OCC_UNKNOWN;
+    }
+
+    if(key_word_comp(inp, dmrg_schedule_kw)){
+        if(kw_to_kw(inp, dmrg_schedule_kw, dmrg_schedule_default_kw)) schedule = DMRG_SCHED_DEFAULT;
+        else                                                          schedule = DMRG_SCHED_UNKNOWN;
+    }
+
+    if(key_word_comp(inp, dmrg_save_dir_kw)){
+        char* tmp=nullptr;
+        kw_to_s(&tmp, inp, dmrg_save_dir_kw);
+        if(tmp){ save_dir=tmp; delete[] tmp; }
+    }
+
+    if(key_word_comp(inp, dmrg_memory_kw)){
+        memory = kw_to_f(inp, dmrg_memory_kw, DMRG_MEMORY_DEFAULT);
+    }
+
+    if(key_word_comp(inp, dmrg_localize_kw)){
+        if     (kw_to_kw(inp, dmrg_localize_kw, dmrg_localize_off_kw))  localize = DMRG_LOC_OFF;
+        else if(kw_to_kw(inp, dmrg_localize_kw, dmrg_localize_pm_kw))   localize = DMRG_LOC_PM;
+        else if(kw_to_kw(inp, dmrg_localize_kw, dmrg_localize_boys_kw)) localize = DMRG_LOC_BOYS;
+        else                                                           localize = DMRG_LOC_UNKNOWN;
+    }
+
+    if(key_word_comp(inp, dmrg_dump_loc_kw)){
+        dump_loc_orbs = 1;
+    }
+
+    if(key_word_comp(inp, dmrg_loc_order_kw)){
+        if     (kw_to_kw(inp, dmrg_loc_order_kw, dmrg_loc_order_fiedler_kw)) loc_order = DMRG_LOCORDER_FIEDLER;
+        else if(kw_to_kw(inp, dmrg_loc_order_kw, dmrg_loc_order_gaopt_kw))   loc_order = DMRG_LOCORDER_GAOPT;
+        else if(kw_to_kw(inp, dmrg_loc_order_kw, dmrg_loc_order_none_kw))    loc_order = DMRG_LOCORDER_NONE;
+        else                                                                loc_order = DMRG_LOCORDER_UNKNOWN;
+    }
+
+    if(key_word_comp(inp, dmrg_warm_start_kw)){
+        if     (kw_to_kw(inp, dmrg_warm_start_kw, dmrg_warm_off_kw)) warm_start = DMRG_WARM_OFF;
+        else if(kw_to_kw(inp, dmrg_warm_start_kw, dmrg_warm_on_kw))  warm_start = DMRG_WARM_ON;
+        else                                                         warm_start = DMRG_WARM_UNKNOWN;
+    }
+
+    if(key_word_comp(inp, dmrg_warm_sweeps_kw)){
+        warm_sweeps = kw_to_i(inp, dmrg_warm_sweeps_kw, DMRG_WARM_SWEEPS_DEFAULT);
+    }
+
+    if(key_word_comp(inp, dmrg_rot_m_kw)){
+        rot_m = kw_to_i(inp, dmrg_rot_m_kw, DMRG_ROT_M_DEFAULT);
+    }
+
+    if(key_word_comp(inp, dmrg_rot_steps_kw)){
+        rot_steps = kw_to_i(inp, dmrg_rot_steps_kw, DMRG_ROT_STEPS_DEFAULT);
+    }
+
+    if(key_word_comp(inp, dmrg_warm_start_after_kw)){
+        warm_start_after = kw_to_i(inp, dmrg_warm_start_after_kw, DMRG_WARM_START_AFTER_DEFAULT);
+    }
+
+    if(key_word_comp(inp, dmrg_warm_rotate_kw)){
+        if     (kw_to_kw(inp, dmrg_warm_rotate_kw, dmrg_warm_off_kw)) warm_rotate = DMRG_WARM_OFF;
+        else if(kw_to_kw(inp, dmrg_warm_rotate_kw, dmrg_warm_on_kw))  warm_rotate = DMRG_WARM_ON;
+        else                                                          warm_rotate = DMRG_WARM_UNKNOWN;
+    }
+
+    if(key_word_comp(inp, dmrg_print_dets_kw)){
+        if     (kw_to_kw(inp, dmrg_print_dets_kw, dmrg_warm_off_kw)) print_dets = DMRG_WARM_OFF;
+        else if(kw_to_kw(inp, dmrg_print_dets_kw, dmrg_warm_on_kw))  print_dets = DMRG_WARM_ON;
+        else                                                         print_dets = DMRG_WARM_UNKNOWN;
+    }
+
+    if(key_word_comp(inp, dmrg_det_rot_m_kw)){
+        det_rot_m = kw_to_i(inp, dmrg_det_rot_m_kw, DMRG_DET_ROT_M_DEFAULT);
+    }
+
+    if(key_word_comp(inp, dmrg_det_rot_steps_kw)){
+        det_rot_steps = kw_to_i(inp, dmrg_det_rot_steps_kw, DMRG_DET_ROT_STEPS_DEFAULT);
+    }
+
+    if(key_word_comp(inp, dmrg_extract_m_kw)){
+        extract_m = kw_to_i(inp, dmrg_extract_m_kw, DMRG_EXTRACT_M_DEFAULT);
+    }
+
+    if(key_word_comp(inp, dmrg_extract_cutoff_kw)){
+        extract_cutoff = kw_to_f(inp, dmrg_extract_cutoff_kw, DMRG_EXTRACT_CUTOFF_DEFAULT);
+    }
+
+    return 0;
+}
+
+int dmrg_par::validate(){
+
+    int ok=1;
+
+    if(m<=0){
+        fprintf(out_stream,"ERROR: $DMRG bond dimension m=%d must be > 0 (set 'm' in $DMRG)\n",m);
+        ok=0;
+    }
+    if(sweeps<=0){
+        fprintf(out_stream,"ERROR: $DMRG sweeps=%d must be > 0\n",sweeps);
+        ok=0;
+    }
+    if(warm_sweeps<=0){ warm_sweeps = sweeps/2; if(warm_sweeps<1) warm_sweeps = 1; } // auto = sweeps/2
+    if(sweep_tol<=0){
+        fprintf(out_stream,"ERROR: $DMRG sweep_tol=%e must be > 0\n",sweep_tol);
+        ok=0;
+    }
+    if(hf_occ==DMRG_HF_OCC_UNKNOWN){
+        fprintf(out_stream,"ERROR: $DMRG unknown hf_occ value; accepted: integral\n");
+        ok=0;
+    }
+    if(schedule==DMRG_SCHED_UNKNOWN){
+        fprintf(out_stream,"ERROR: $DMRG unknown schedule value; accepted: default\n");
+        ok=0;
+    }
+    if(localize==DMRG_LOC_UNKNOWN){
+        fprintf(out_stream,"ERROR: $DMRG unknown localize value; accepted: off, pm, boys\n");
+        ok=0;
+    }
+    if(localize==DMRG_LOC_BOYS){
+        fprintf(out_stream,"ERROR: $DMRG localize=boys not implemented yet; accepted: off, pm\n");
+        ok=0;
+    }
+    if(loc_order==DMRG_LOCORDER_UNKNOWN){
+        fprintf(out_stream,"ERROR: $DMRG unknown loc_order value; accepted: fiedler, none\n");
+        ok=0;
+    }
+    if(loc_order==DMRG_LOCORDER_GAOPT){
+        fprintf(out_stream,"ERROR: $DMRG loc_order=gaopt not implemented yet; accepted: fiedler, none\n");
+        ok=0;
+    }
+    if(save_dir.empty()){
+        fprintf(out_stream,"ERROR: $DMRG save_dir must not be empty\n");
+        ok=0;
+    }
+    if(memory<=0){
+        fprintf(out_stream,"ERROR: $DMRG memory=%g must be > 0 (block2 double-stack size in GB)\n",memory);
+        ok=0;
+    }
+    if(warm_start==DMRG_WARM_UNKNOWN){
+        fprintf(out_stream,"ERROR: $DMRG unknown warm_start value; accepted: off, on\n");
+        ok=0;
+    }
+    if(warm_rotate==DMRG_WARM_UNKNOWN){
+        fprintf(out_stream,"ERROR: $DMRG unknown warm_rotate value; accepted: off, on\n");
+        ok=0;
+    }
+    if(print_dets==DMRG_WARM_UNKNOWN){
+        fprintf(out_stream,"ERROR: $DMRG unknown print_dets value; accepted: off, on\n");
+        ok=0;
+    }
+    if(det_rot_m<=0){ det_rot_m = 2*m < 1500 ? 2*m : 1500; } // auto = min(2m, 1500)
+    if(det_rot_steps<=0){
+        fprintf(out_stream,"ERROR: $DMRG det_rot_steps=%d must be > 0\n",det_rot_steps);
+        ok=0;
+    }
+    if(extract_m<0){
+        fprintf(out_stream,"ERROR: $DMRG extract_m=%d must be >= 0 (0 = no compression)\n",extract_m);
+        ok=0;
+    }
+    if(extract_cutoff<=0){
+        fprintf(out_stream,"ERROR: $DMRG extract_cutoff=%e must be > 0\n",extract_cutoff);
+        ok=0;
+    }
+    if(warm_start==DMRG_WARM_ON){
+        if(rot_m<0){
+            fprintf(out_stream,"ERROR: $DMRG rot_m=%d must be >= 0 (0 = use m)\n",rot_m);
+            ok=0;
+        }
+        if(rot_steps<=0){
+            fprintf(out_stream,"ERROR: $DMRG rot_steps=%d must be > 0\n",rot_steps);
+            ok=0;
+        }
+        if(warm_start_after<0){
+            fprintf(out_stream,"ERROR: $DMRG warm_start_after=%d must be >= 0\n",warm_start_after);
+            ok=0;
+        }
+    }
+
+    if(!ok)exit(1);
+
+    return 0;
+}
+
+int dmrg_par::write_info(){
+
+    fprintf(out_stream,"DMRG settings:\n");
+    fprintf(out_stream,"Bond dimension (m):               %d\n",m);
+    fprintf(out_stream,"Maximum number of sweeps:         %d\n",sweeps);
+    fprintf(out_stream,"Sweep energy convergence:         %e\n",sweep_tol);
+    if(hf_occ==DMRG_HF_OCC_INTEGRAL)
+        fprintf(out_stream,"Initial occupancy:                integral\n");
+    if(schedule==DMRG_SCHED_DEFAULT)
+        fprintf(out_stream,"Sweep schedule:                   default\n");
+    if(localize==DMRG_LOC_OFF)
+        fprintf(out_stream,"Active-space localization:        off\n");
+    if(localize==DMRG_LOC_PM)
+        fprintf(out_stream,"Active-space localization:        Pipek-Mezey\n");
+    if(dump_loc_orbs)
+        fprintf(out_stream,"Dump localized orbitals:          yes\n");
+    if(loc_order==DMRG_LOCORDER_FIEDLER)
+        fprintf(out_stream,"DMRG orbital ordering:            Fiedler\n");
+    if(loc_order==DMRG_LOCORDER_NONE)
+        fprintf(out_stream,"DMRG orbital ordering:            none (input order)\n");
+    fprintf(out_stream,"Scratch directory (save_dir):     %s\n",save_dir.c_str());
+    fprintf(out_stream,"Memory (block2 double stack):     %g GB\n",memory);
+    if(warm_start==DMRG_WARM_ON){
+        fprintf(out_stream,"MPS warm-start:                   on (after %d cold iter)\n",warm_start_after);
+        fprintf(out_stream,"Warm re-solve sweeps:             %d\n",warm_sweeps);
+        fprintf(out_stream,"Rotate reused MPS:                %s\n",warm_rotate==DMRG_WARM_ON?"yes":"no (reuse-only)");
+        fprintf(out_stream,"MPS-rotation bond dim (rot_m):    %d\n",rot_m==0?m:rot_m);
+        if(warm_rotate==DMRG_WARM_ON)
+            fprintf(out_stream,"MPS-rotation TE steps (rot_steps):%d\n",rot_steps);
+    }
+    else
+        fprintf(out_stream,"MPS warm-start:                   off\n");
+    if(print_dets==DMRG_WARM_ON){
+        fprintf(out_stream,"Leading determinants:             on\n");
+        fprintf(out_stream,"  read-out rotation bond dim:     %d (%d TE steps)\n",det_rot_m,det_rot_steps);
+        if(extract_m>0)
+            fprintf(out_stream,"  extraction compression:         m=%d, cutoff=%e\n",extract_m,extract_cutoff);
+        else
+            fprintf(out_stream,"  extraction:                     no compression, cutoff=%e\n",extract_cutoff);
+    }
+    else
+        fprintf(out_stream,"Leading determinants:             off\n");
+    fprintf(out_stream,"\n");
+
+    return 0;
+}
+
+dmrg_par::~dmrg_par(){
+
 }
 
 //XMC

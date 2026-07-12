@@ -2,6 +2,7 @@
 #define IPR_H
 
 # include <vector>
+# include <string>
 
 class backup_par // read/write/calc
 {
@@ -63,10 +64,56 @@ class dav_par
 };
 
 
+// CI backend driving the CAS-SCF active-space solve.
+enum cisolver_kind { CISOLVER_ALDET = 0, CISOLVER_DMRG = 1 };
+
+// $DMRG group — value sets validated against keyword lists (dmrg_par::read_line).
+enum dmrg_hf_occ_kind   { DMRG_HF_OCC_UNKNOWN = -1, DMRG_HF_OCC_INTEGRAL = 0 };
+enum dmrg_schedule_kind { DMRG_SCHED_UNKNOWN  = -1, DMRG_SCHED_DEFAULT   = 0 };
+enum dmrg_localize_kind { DMRG_LOC_UNKNOWN = -1, DMRG_LOC_OFF = 0, DMRG_LOC_PM = 1, DMRG_LOC_BOYS = 2 };
+enum dmrg_locorder_kind { DMRG_LOCORDER_UNKNOWN = -1, DMRG_LOCORDER_FIEDLER = 0, DMRG_LOCORDER_GAOPT = 1, DMRG_LOCORDER_NONE = 2 };
+enum dmrg_warm_kind     { DMRG_WARM_UNKNOWN = -1, DMRG_WARM_OFF = 0, DMRG_WARM_ON = 1 };
+
+class dmrg_par // settings for the DMRG (block2) CI backend; see $DMRG group
+{
+    public:
+        int    m;          // bond dimension (required, > 0)
+        int    sweeps;     // maximum number of DMRG sweeps
+        double sweep_tol;  // sweep energy convergence tolerance
+        int    hf_occ;     // initial occupancy scheme (dmrg_hf_occ_kind)
+        int    schedule;   // sweep schedule (dmrg_schedule_kind)
+        int    localize;       // active-space localization (dmrg_localize_kind): off | pm | boys
+        int    dump_loc_orbs;  // dump localized orbitals (GAMESS .out) at iteration 0, then continue
+        int    loc_order;      // DMRG orbital ordering (dmrg_locorder_kind): fiedler | gaopt | none
+        std::string save_dir;  // block2 scratch root (renormalized ops / MPS)
+        double memory;         // block2 double-stack size, GB (> 0)
+        int    warm_start;       // MPS warm-start across macro-iterations (dmrg_warm_kind): off | on
+        int    warm_sweeps;      // max sweeps for the warm re-solve; 0 = auto (sweeps/2)
+        int    rot_m;            // MPS-rotation time-evolution bond dim (0 = use m)
+        int    rot_steps;        // MPS-rotation TE steps (dt = 1/rot_steps; total time 1)
+        int    warm_start_after; // cold macro-iterations before freezing the localized frame
+        int    warm_rotate;      // rotate the reused MPS into the new basis (dmrg_warm_kind): off = reuse-only | on
+        int    print_dets;       // report leading determinants after convergence (dmrg_warm_kind): off | on
+        int    det_rot_m;        // bond dim for the localized->canonical read-out rotation (0 = auto: min(2m,1500))
+        int    det_rot_steps;    // TE steps for the read-out rotation
+        int    extract_m;        // bond dim the canonical MPS is compressed to before extraction (0 = none)
+        double extract_cutoff;   // determinant magnitude cutoff for the extraction search
+
+        dmrg_par();
+        int read_group(char * inp);
+        int read_line(char * inp);
+        int validate();        // enforces the value checks; exits loudly on a bad value
+        int write_info();
+        ~dmrg_par();
+
+};
+
 class cas_par
 {
     public:
         int y;
+        //CI backend
+        int ci_solver;     // cisolver_kind: ALDET (default) | DMRG
         //convergence
         int max_it;
         double e_conv;
@@ -99,7 +146,9 @@ class cas_par
         
         //davidson
         dav_par dav;
-        
+        //dmrg (when ci_solver == CISOLVER_DMRG)
+        dmrg_par dmrg;
+
         cas_par();
         int read_group(char * inp); 
         int read_line(char * inp); 
