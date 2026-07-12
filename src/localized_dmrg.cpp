@@ -6,7 +6,6 @@
 #include "blas_link.h"   // cblas_dgemm
 
 #include <algorithm>
-#include <cmath>
 #include <vector>
 
 namespace {
@@ -70,19 +69,6 @@ void rotate2(const double* G, const double* U, int n, double* out, bool forward)
         cycle_first_to_last(b, out, n);
         src = out;
     }
-}
-
-double orthogonality_error(const double* U, int n) {
-    double maxdev = 0.0;
-    for (int i = 0; i < n; ++i)
-        for (int j = 0; j < n; ++j) {
-            double s = 0.0;
-            for (int k = 0; k < n; ++k)
-                s += U[k * n + i] * U[k * n + j]; // (U^T U)[i,j]
-            double d = std::fabs(s - (i == j ? 1.0 : 0.0));
-            if (d > maxdev) maxdev = d;
-        }
-    return maxdev;
 }
 
 void build_loc_orbitals(const double* C_act, const double* U, int n_ao, int n_act, double* C_loc) {

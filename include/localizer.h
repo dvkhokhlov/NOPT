@@ -78,6 +78,3 @@ private:
 // Pure 2x2 Jacobi sweep
 loc_result pm_jacobi_sweep(double* Qpops, int n_atoms, int n_blk,
                            double* U, const loc_options& opt);
-
-// Localize a DMRG active space: PM-localize the whole active block (by_irrep=false)
-void localize_dmrg_active(molecule& mol, const double* ACT_CVEC, int n_ao, int n_act, double* U);

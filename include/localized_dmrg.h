@@ -22,9 +22,6 @@ void rotate1(const double* X, const double* U, int n, double* out, bool forward)
 // (it is overwritten from the first pass on), so G and out must not alias.
 void rotate2(const double* G, const double* U, int n, double* out, bool forward);
 
-// Returns max |(U^T U - I)| — the orthogonality deviation of U (n x n). Callers assert on it.
-double orthogonality_error(const double* U, int n);
-
 // Build the localized active orbitals C_loc = C_act * U for the diagnostic orbital dump.
 //   C_act, C_loc: n_ao x n_act, row-major [ao*n_act+orb] (== CAS_engine::ACT_CVEC layout).
 //   U: n_act x n_act, [a*n_act+p]. C_act and C_loc must not alias.

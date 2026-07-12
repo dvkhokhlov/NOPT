@@ -229,10 +229,3 @@ loc_result pm_localizer::localize_block(const double* C_blk, int n_ao, int n_g,
 
     return pm_jacobi_sweep(Qpops.data(), n_atoms_, n_g, Ug, opt);
 }
-
-void localize_dmrg_active(molecule& mol, const double* ACT_CVEC, int n_ao, int n_act, double* U) {
-    pm_localizer loc(mol);
-    loc_result r = loc.localize(ACT_CVEC, n_ao, n_act, nullptr, U, loc_options());
-    if (!r.converged)
-        fprintf(loc_os(), "localize_dmrg_active: localization did not converge (U=I returned)\n");
-}
