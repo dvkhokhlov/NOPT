@@ -41,7 +41,7 @@
 #define DMRG_WARM_SWEEPS_DEFAULT 0         // max sweeps for the warm re-solve; 0 = auto (sweeps/2)
 #define DMRG_ROT_M_DEFAULT 0               // MPS-rotation time-evolution bond dim (0 = use m)
 #define DMRG_ROT_STEPS_DEFAULT 1           // MPS-rotation TE steps (dt = 1/rot_steps; total time 1)
-#define DMRG_WARM_START_AFTER_DEFAULT 1    // cold macro-iterations before freezing the localized frame
+#define DMRG_WARM_START_AFTER_DEFAULT 0    // CI solves run cold before the localized frame is frozen
 #define DMRG_WARM_ROTATE_DEFAULT 1         // rotate the reused MPS into the new basis: on by default (off = reuse-only)
 #define DMRG_PRINT_DETS_DEFAULT 1          // report leading determinants after convergence: on by default
 #define DMRG_DET_ROT_M_DEFAULT 0           // bond dim for the localized->canonical read-out rotation (0 = auto: min(2m,1500))

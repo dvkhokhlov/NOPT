@@ -86,7 +86,7 @@ Default shown in parentheses.
 - **warm_start** *(on)* — reuse the previous macro-iteration's MPS as the next guess.
   `on | off`.
 - **warm_sweeps** *(0 = auto)* — max sweeps for a warm re-solve. `0` = auto = `sweeps/2`.
-- **warm_start_after** *(1)* — cold macro-iterations before the localized frame is frozen
+- **warm_start_after** *(0)* — CI solves run cold before the localized frame is frozen
   and warm start begins.
 - **warm_rotate** *(on)* — rotate the reused MPS into the new orbital basis.
   `on | off` (off = reuse tensors without rotation).

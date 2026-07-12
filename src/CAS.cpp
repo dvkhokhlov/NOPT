@@ -1283,7 +1283,11 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
     
     n_dav_conv = CAS.CI_calc(1,0,0);
     CAS.av_DM_and_F_calc(1);
-    n_dav_conv = CAS.CI_calc(0,1,1);
+    // The canonicalization above rotates the active orbitals only for a backend that can carry its
+    // CI vector along; for one that cannot, the active Hamiltonian is unchanged and the solve just
+    // done still holds, so re-solving would only discard it.
+    if(CAS.CI->supports_civec_rotation())
+        n_dav_conv = CAS.CI_calc(0,1,1);
 //     CAS.F_vac();
 
     if(cas->dmrg.dump_loc_orbs && CAS.localizer_){
@@ -1372,7 +1376,12 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
         normalize_rotation_rows(U_canon, CAS.n_act);
         CAS.CI->set_report_rotation(U_canon);
     }
-    n_dav_conv =CAS.CI_calc(0,0,1);
+    // Only the core and virtual blocks were canonicalized for such a backend, which leaves the active
+    // Hamiltonian -- and its solution -- untouched. Re-solving would report determinants, properties
+    // and energies from a different wavefunction than the RDMs, Fock matrix, canonical rotation and
+    // natural orbitals prepared above.
+    if(CAS.CI->supports_civec_rotation())
+        n_dav_conv =CAS.CI_calc(0,0,1);
     if(LINEAR)CAS.rotate();
     
     printf_timer("Preparation of canonical orbitals");
