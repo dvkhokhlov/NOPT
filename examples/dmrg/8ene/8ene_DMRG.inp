@@ -45,4 +45,4 @@ $act_space n_alp=8 n_bet=8 n_val=16 mult=1 p_n=10 reorder=1 orbitals=50,51,52,53
 _MO INP=8ene_RHF.orb
 $END
 $CAS n_s=3 w_state=all_1; cisolver=dmrg maxit=50 dE=1e-12 grad=1e-6 p_cutoff=0.03 $END
-$DMRG m=300 sweep_tol=1e-8 localize=pm extract_m=100 $END
+$DMRG m=300 sweep_tol=1E-10 localize=pm $END

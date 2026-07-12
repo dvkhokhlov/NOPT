@@ -29,4 +29,4 @@ $act_space n_alp=5 n_bet=5 n_val=10 mult=1 p_n=10 reorder=1 orbitals=27,31,32,33
 _MO INP=naphtalene_RHF_S.orb
 $END
 $CAS n_s=1 w_state=all_1; cisolver=dmrg maxit=50 dE=1e-12 grad=1e-6 p_cutoff=0.03 $END
-$DMRG m=300 sweep_tol=1e-8 localize=pm extract_m=100 $END
+$DMRG m=300 sweep_tol=1E-10 localize=pm $END
