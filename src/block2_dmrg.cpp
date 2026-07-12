@@ -793,6 +793,30 @@ int block2_casci_wrap::solve(int, int, bool) {
     dmrg->iprint = 0;
     dmrg->solve(sch.n_sweeps, e.mps->center == 0, e.cfg.sweep_tol);
 
+    // Convergence of the variational (two-site) phase, taken before the tail appends to the same
+    // history. block2 early-stops at sweep_tol, so a run that used the whole budget never met it.
+    // Residual = max over roots of the last two sweeps' |dE|: a mean can cancel opposite-moving roots
+    // and hide a still-moving one. A single sweep leaves the residual unmeasurable (NaN), which flags
+    // rather than fakes convergence.
+    const int n2 = (int)dmrg->energies.size(); // two-site sweeps actually run (may early-stop)
+    if (n2 >= 2) {
+        const auto &e1 = dmrg->energies[n2 - 1];
+        const auto &e0 = dmrg->energies[n2 - 2];
+        const int nr = (int)e1.size() < (int)e0.size() ? (int)e1.size() : (int)e0.size();
+        double dmax = 0.0;
+        for (int r = 0; r < nr; r++) {
+            double d = std::fabs((double)e1[r] - (double)e0[r]);
+            if (d > dmax) dmax = d;
+        }
+        e.last_sweep_dE = dmax;
+    } else {
+        e.last_sweep_dE = std::numeric_limits<double>::quiet_NaN();
+    }
+    // Exhausted the sweep budget without block2's sweep_tol early-stop -> possibly under-converged
+    // (flagged in the CAS-SCF table). An unmeasurable one-sweep residual (NaN) also flags.
+    e.last_hit_max = (n2 >= sch.n_sweeps) &&
+                     (std::isnan(e.last_sweep_dE) || e.last_sweep_dE > e.cfg.sweep_tol);
+
     // Close with one-site sweeps at zero noise. A two-site sweep reports the Davidson eigenvalue of
     // the untruncated two-site center -- a vector of Schmidt rank up to M*d across the central bond,
     // so not the bond-M MPS that actually gets stored. The one-site center reshapes to (M*d) x M, so
@@ -809,14 +833,20 @@ int block2_casci_wrap::solve(int, int, bool) {
     //
     // Zero noise is a correctness condition, not a tuning choice: block2's perturbative noise
     // deliberately raises the density-matrix rank, which is exactly what would break rank <= M.
+    //
+    // Tolerance zero, not sweep_tol: block2 measures convergence against the previous entry in the
+    // same history, so the first one-site sweep would be compared with the last two-site one. Those
+    // are different quantities -- the two-site value is the Davidson eigenvalue of the untruncated
+    // center, the one-site value is the energy of the stored MPS -- and their difference is the
+    // truncation error, which sits below any usable sweep_tol. The tail would stop after a single
+    // sweep, and for n_s > 1 it is a period-two cycle, so which sweep it stops on picks the endpoint.
     if (DMRG_ONEDOT_TAIL > 0) {
-        const int n2 = (int)dmrg->energies.size(); // two-site sweeps actually run (may early-stop)
         const int total = n2 + DMRG_ONEDOT_TAIL;
         dmrg->me->dot = 1;
         dmrg->bond_dims.assign(total, (ubond_t)e.cfg.m);
         dmrg->noises.assign(total, 0.0);
         dmrg->davidson_conv_thrds.assign(total, sch.dav_thrds.back());
-        dmrg->solve(total, dmrg->forward, e.cfg.sweep_tol, n2);
+        dmrg->solve(total, dmrg->forward, /*tol=*/0.0, n2);
         e.mps->dot = 1; // the sweep switched me->dot; the MPS must say so too, or every consumer
         e.mps->save_data(); // that reads canonical_form/center/dot builds a two-site layout on it
         adjust_mps_two_dot(e); // ... and back to a two-site center for those consumers
@@ -843,27 +873,7 @@ int block2_casci_wrap::solve(int, int, bool) {
         e.E_states[s] = (double)eng[s];
     }
 
-    // sweeps actually run (block2 early-stops at sweep_tol). Residual = max over roots of the last
-    // two sweeps' |dE|: a mean can cancel opposite-moving roots and hide a still-moving one. A single
-    // sweep leaves the residual unmeasurable (NaN), which flags rather than fakes convergence.
-    e.last_n_sweeps = (int)dmrg->energies.size();
-    if (dmrg->energies.size() >= 2) {
-        const auto &e1 = dmrg->energies[dmrg->energies.size() - 1];
-        const auto &e0 = dmrg->energies[dmrg->energies.size() - 2];
-        const int nr = (int)e1.size() < (int)e0.size() ? (int)e1.size() : (int)e0.size();
-        double dmax = 0.0;
-        for (int r = 0; r < nr; r++) {
-            double d = std::fabs((double)e1[r] - (double)e0[r]);
-            if (d > dmax) dmax = d;
-        }
-        e.last_sweep_dE = dmax;
-    } else {
-        e.last_sweep_dE = std::numeric_limits<double>::quiet_NaN();
-    }
-    // Exhausted the sweep budget without block2's sweep_tol early-stop -> possibly under-converged
-    // (flagged in the CAS-SCF table). An unmeasurable one-sweep residual (NaN) also flags.
-    e.last_hit_max = (e.last_n_sweeps >= sch.n_sweeps) &&
-                     (std::isnan(e.last_sweep_dE) || e.last_sweep_dE > e.cfg.sweep_tol);
+    e.last_n_sweeps = (int)dmrg->energies.size(); // two-site + tail: what this solve actually cost
 
     me->remove_partition_files(); // keep mps/mps_info alive for the RDM read-out
     return e.last_n_sweeps;
