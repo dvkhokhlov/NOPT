@@ -6,7 +6,7 @@ $MOL
  _CHARGE=2;
  _BASIS =Ce_contracted_6s_7p_7d_6f_5g_4h_3i.exp
  _ECP =Ce_grpp.grp 
- _SO=Ce/Ce_grpp.grp lib
+ _SO=Ce_grpp.grp
  _RI_BASIS=def2-universal-jkfit;
  _UNITS= ang;
  _xyz INP=Ce.xyz 
