@@ -16,6 +16,6 @@ H 0  0.928925576685832  1.23207734844099
 $END
 $act_space n_alp=3 n_bet=3 n_val=6 mult=1 p_n=10 reorder=1 orbitals=7,6,8,9,12,11; $end
 $RHF maxit=50 dE=1e-9 grad=1e-12 $END
-$CAS n_s=5 w_state=1 1; track maxit=150 dE=1e-9 grad=1e-12 p_cutoff =0.03 $END
+$CAS n_s=5 w_state=1 1; track maxit=1000 dE=1e-16 grad=1e-12 step=1e-11 p_cutoff =0.03 $END
 $CDAS IPEA $END
 $SYMM group=D2h $END

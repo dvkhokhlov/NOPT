@@ -43,49 +43,41 @@ int res_fit_calc_arrays(double E, double * E_fit, int N_fit, int dim, int * s, i
 //     printf("%e %e %e %d\n", E_fit[i-1], E, E_fit[i],i);
 //     printf("%e %e\n",R_fit[i-1],R_fit[i]);
     
-    if(fabs(E_fit[i-1]-E)<fabs(E_fit[i-1]-E)){
+    if(i>0 && i<N_fit && fabs(E_fit[i-1]-E)<fabs(E_fit[i]-E)){
         i--;
     }
     s[0] = max(0      ,i-dim);
     int e = min(N_fit-1,i+dim);
     l[0] = e+1-s[0];
 //     l[0]=2;
-    double * A;
-    A = new double[l[0]*l[0]];
-    
-    for(int i=0; i<l[0];i++){
-        A[i*l[0]]=1;
-        for(int j=1; j<l[0]; j++)A[i*l[0]+j]=A[i*l[0]+j-1]*E_fit[s[0]+i];
+    // Barycentric Lagrange interpolation weights -- stable at any stencil order, unlike
+    // the inverse monomial Vandermonde it replaces (exponentially ill-conditioned).
+    int L = l[0];
+    double * x  = new double[L];
+    double * bw = new double[L];
+
+    double cen = 0.5*(E_fit[s[0]] + E_fit[s[0]+L-1]);
+    double hlf = 0.5*(E_fit[s[0]+L-1] - E_fit[s[0]]); if(hlf==0.0) hlf=1.0;
+    for(int k=0;k<L;k++) x[k]=(E_fit[s[0]+k]-cen)/hlf;
+    double Es=(E-cen)/hlf;
+
+    for(int k=0;k<L;k++){
+        double p=1.0;
+        for(int j=0;j<L;j++) if(j!=k) p*=(x[k]-x[j]);
+        bw[k]=1.0/p;
     }
-//     printf("A:\n");
-//     PrintMatr(A,l[0],l[0],1);
-    inv_matr_constr(A,l[0]);
-//     printf("A^(-1):\n");
-//     PrintMatr(A,l[0],l[0],1);
-    
-    
-//     double * T;
-//     T = new double[l[0]];
-//     double * C;
-//     C = new double[l[0]];
-    
-    double * En;
-    En = new double[l[0]];
-    En[0]=1;
-    for(int j=1; j<l[0]; j++)En[j]=En[j-1]*E;
-    
-    
-    
-//     PrintMatr(C,l[0],1,1);
-//     memcpy(C,R_fit+s[0], l[0]*sizeof(double));
-//     PrintMatr(C,l[0],1,1);
-    cblas_dgemv(CblasRowMajor, CblasTrans, l[0], l[0], 1.0, A, l[0], En, 1, 0.0, appr_coef, 1);
-    
-//     double res = cblas_ddot(l, C, 1, T, 1);
-    delete[] A;
-//     delete[] T;
-//     delete[] C;
-    delete[] En;
+
+    int hit=-1; double denom=0.0;
+    for(int k=0;k<L;k++){
+        double d=Es-x[k];
+        if(d==0.0){ hit=k; }
+        else { appr_coef[k]=bw[k]/d; denom+=appr_coef[k]; }
+    }
+    if(hit>=0){ for(int k=0;k<L;k++) appr_coef[k]=0.0; appr_coef[hit]=1.0; }
+    else      { double iv=1.0/denom; for(int k=0;k<L;k++) appr_coef[k]*=iv; }
+
+    delete[] x;
+    delete[] bw;
     return 0;
 }
 
