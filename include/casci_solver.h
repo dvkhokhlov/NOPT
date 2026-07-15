@@ -30,6 +30,24 @@ public:
                                   double e_core) = 0;          // inactive + nuclear scalar
     virtual void import_lambda(double* lambda_act,             // linear-molecule Lambda machinery (optional;
                                double lambda_core) {}          //   no-op unless the backend supports it)
+    // Active-space localizing rotation U (n_act x n_act, [a*n_act+p], C_loc=C*U, U^T U=I). The
+    // backend solves in the rotated basis and reports RDMs back in the original basis; nullptr or
+    // never-called means solve in the supplied basis. aldet ignores it.
+    virtual void set_localization(const double* U) {}
+    // Active-space rotation R (n_act x n_act, [a*n_act+p]) taking the previous macro-iteration's
+    // active basis to the current one. A warm-start backend uses it to rotate its retained
+    // wavefunction across the basis change; aldet and cold solves ignore it. Called only when a
+    // usable previous wavefunction exists (never on the first solve or after a fallback).
+    virtual void set_active_rotation(const double* R) {}
+    // Active-block canonicalization U (n_act x n_act, [a*n_act+p], eigenvectors of the active
+    // Fock block, ascending eigenvalue -- the same rotation the aldet path applies via malmqvist).
+    // A backend that can't rotate its own CI vector uses it to report its leading configurations in
+    // the canonical basis. aldet and rotation-capable backends ignore it (they already canonicalize).
+    virtual void set_report_rotation(const double* U) {}
+    // State-average weights (n_s entries, positive; the backend normalizes by their sum) the
+    // optimizer consumes the RDMs with. Only a backend that averages internally needs them; one that
+    // hands back per-state RDMs ignores it.
+    virtual void set_state_weights(const double* w, int n_s) {}
 
     // --- solve ---
     // Encapsulates the full diagonalisation (aldet: copy_coef -> set_par -> H_diag_calc -> run).
@@ -41,7 +59,10 @@ public:
     // entry (orbital occupation) satisfies 0 <= gamma_tt <= 2.
     virtual void calc_DM_diag(double* gamma, int a) = 0;
     // 2-RDM, NOPT convention: E2 = 1/2 * sum_{tuvw} GAMMA_{tuvw} (tu|vw),
-    // packed GAMMA[((t*n_act+u)*n_act+v)*n_act+w].
+    // packed GAMMA[((t*n_act+u)*n_act+v)*n_act+w]. A backend holding per-state tensors writes n_s
+    // consecutive blocks and the optimizer averages them; one that only ever forms the state average
+    // (DMRG: the per-state tensors never coexist) writes that single block. CAS_engine sizes GAMMA
+    // and skips the averaging accordingly.
     virtual void G_calc(double* GAMMA) = 0;
     // spin-resolved / transition 1-RDM blocks (properties): alpha and beta.
     virtual void calc_DMA(double* g, int a, int b) = 0;
@@ -55,6 +76,13 @@ public:
     virtual double L2_state(int i)   const = 0;                // linear molecules
     virtual double P_state(int i)    const = 0;                // parity (linear molecules)
     virtual double* E_states_ptr() const = 0;                 // contiguous state-energy block (raw view, for PrintEnergy)
+    // Energy convergence actually achieved by the last solve (DMRG: |dE| between the final two
+    // sweeps; iterative CI: final residual). 0 if not tracked. Reported in the CAS-SCF table.
+    virtual double last_solve_resid() const { return 0.0; }
+    // True if the last solve exhausted its sweep/iteration budget without meeting the convergence
+    // threshold (DMRG: reached the schedule's max sweeps with |dE| still above sweep_tol). Flags a
+    // possibly under-converged CI vector in the CAS-SCF table. Backends that don't track it: false.
+    virtual bool last_solve_hit_max() const { return false; }
 
     // --- relating the wavefunction across an active-orbital-basis change (capability-gated) ---
     // All three operations need the same thing: representing/comparing the wavefunction

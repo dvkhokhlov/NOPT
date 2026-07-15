@@ -9,6 +9,7 @@
 # include <memory>
 
 class CAS_engine;
+class orbital_localizer;   // active-space localizer
 
 class CAS_engine{
     public:
@@ -29,10 +30,24 @@ class CAS_engine{
         
         //for CI
         int n_CI;
+        int ci_solver;                            // CISOLVER_ALDET / CISOLVER_DMRG (cas is not kept)
         casci_solver * CI;                        // drives any CI backend (aldet, DMRG, …)
         std::unique_ptr<casci_solver> CI_owner;   // owns the concrete backend instance
         dav_par dav;
-        
+
+        // active-space localization (DMRG, localize=pm)
+        std::unique_ptr<orbital_localizer> localizer_;
+        std::vector<double> U_loc;                // n_act^2, [a*n_act+p]; C_loc = ACT_CVEC * U_loc
+
+        // warm-start (localization-rotation MPS reuse) state
+        int  warm_start_cfg = 0;                  // cached cas->dmrg.warm_start (off|on)
+        int  warm_after_cfg = 0;                  // cached cas->dmrg.warm_start_after (freeze gate)
+        int  warm_ci_calls  = 0;                  // solve invocations so far (freeze/warm gate)
+        bool warm_frozen    = false;              // has the localized frame been pinned?
+        std::vector<double> U_loc_frozen;         // frozen localization (n_act^2)
+        std::vector<double> C_loc_prev;           // previous frame's active orbitals, localized or
+                                                  // canonical (n_ao x n_act)
+
         molecule * M;
         
         //H_calc data

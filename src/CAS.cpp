@@ -9,7 +9,12 @@
 # include "libint_link.h"
 # include "converger_2_1.h"
 # include "CAS.h"
+# include "localizer.h"
+# include "localized_dmrg.h"   // build_loc_orbitals (warm-start rotation)
 # include "aldet_casci_wrap.h"
+#ifdef NOPT_HAS_BLOCK2
+# include "block2_casci_wrap.h"
+#endif
 # include "defaults.h"
 # include "RI.h"
 # include "inp_out.h"
@@ -152,8 +157,109 @@ int CAS_engine::init(cas_par * cas, molecule * ext_M){
         fprintf(out_stream,"ERROR: n_CI=%d is not supported by the casci_solver\n",n_CI);
         exit(0);
     }
-    CI_owner = std::make_unique<aldet_casci_wrap>(M->CI+0, &dav, n_s);
+    ci_solver=cas->ci_solver;
+    if      (cas->ci_solver==CISOLVER_ALDET){
+        CI_owner = std::make_unique<aldet_casci_wrap>(M->CI+0, &dav, n_s);
+    }
+    else if (cas->ci_solver==CISOLVER_DMRG){
+#ifdef NOPT_HAS_BLOCK2
+        // --- validate the DMRG request before constructing any block2 object ---
+        {
+            const int na = M->CI[0].na, nb = M->CI[0].nb, mult = M->CI[0].mult;
+            const int N = na + nb, twoS = mult - 1;
+            int dsz = na - nb; if(dsz < 0) dsz = -dsz;
+
+            // spin sector: block2 targets 2S=mult-1 in the (na-nb)/2 projection
+            if(mult < 1){
+                fprintf(out_stream,"ERROR: DMRG needs mult>=1 (got %d); mult=0 (all multiplicities) is unsupported\n", mult);
+                exit(EXIT_FAILURE);
+            }
+            if(N < 2){
+                fprintf(out_stream,"ERROR: DMRG-CASSCF wants >=2 active electrons to correlate -- CAS(%d,%d)"
+                                   " gives it nothing to chew on (one electron is Hartree-Fock's job, zero is nobody's)\n", N, n_act);
+                exit(EXIT_FAILURE);
+            }
+            if((N - twoS) % 2 != 0){
+                fprintf(out_stream,"ERROR: DMRG spin sector inconsistent: N=%d and 2S=%d differ in parity\n", N, twoS);
+                exit(EXIT_FAILURE);
+            }
+            if(dsz > twoS){
+                fprintf(out_stream,"ERROR: DMRG spin sector inconsistent: |na-nb|=%d exceeds 2S=%d\n", dsz, twoS);
+                exit(EXIT_FAILURE);
+            }
+            if(twoS > N || twoS > 2*n_act - N){
+                fprintf(out_stream,"ERROR: DMRG spin 2S=%d exceeds what %d electrons in %d orbitals allow\n", twoS, N, n_act);
+                exit(EXIT_FAILURE);
+            }
+            if(n_s < 1){
+                fprintf(out_stream,"ERROR: DMRG needs n_s>=1 (got %d)\n", n_s);
+                exit(EXIT_FAILURE);
+            }
+
+            // Separate minimization builds one orbital gradient per state, so it reads the per-state
+            // 2-RDMs. The DMRG backend only ever forms their state average -- the per-state tensors
+            // never coexist -- which is what block2's shared renormalized basis solves for anyway.
+            if(cas->method != 1){
+                fprintf(out_stream,"ERROR: DMRG supports state-averaged CAS-SCF only (method=1);"
+                                   " separate minimization needs the per-state 2-RDMs\n");
+                exit(EXIT_FAILURE);
+            }
+
+            // symmetry: the block2 backend runs in C1 -- no linear (Lambda/parity) or spatial-irrep targeting
+            if(LINEAR){
+                fprintf(out_stream,"ERROR: DMRG backend does not support linear-molecule symmetry (Lambda/parity); use cisolver=aldet\n");
+                exit(EXIT_FAILURE);
+            }
+            if(cas->w_state_type == 2){
+                fprintf(out_stream,"ERROR: DMRG does not support by-irrep state selection (wstate rep)\n");
+                exit(EXIT_FAILURE);
+            }
+
+            // state weights: block2 shares one renormalized basis with EQUAL root weights (each 1/nroots).
+            // Accept only equal weights -- `wstate all_1` (w_state_type==1, materialized to n_s ones), or an
+            // explicit wstate vector of exactly n_s positive, all-equal entries.
+            if(cas->w_state_type != 1){
+                if((int)cas->w_state.size() != n_s){
+                    fprintf(out_stream,"ERROR: DMRG requires exactly n_s state weights (got %d for n_s=%d);"
+                                       " use `wstate all_1` or give n_s equal positive weights\n",
+                                       (int)cas->w_state.size(), n_s);
+                    exit(EXIT_FAILURE);
+                }
+                for(int i=0;i<n_s;i++)
+                    if(cas->w_state[i] <= 0.0){
+                        fprintf(out_stream,"ERROR: DMRG state weights must be positive\n");
+                        exit(EXIT_FAILURE);
+                    }
+                for(int i=1;i<n_s;i++)
+                    if(fabs(cas->w_state[i]-cas->w_state[0]) > 1e-10){
+                        fprintf(out_stream,"ERROR: DMRG state averaging requires equal weights\n");
+                        exit(EXIT_FAILURE);
+                    }
+            }
+        }
+        CI_owner = std::make_unique<block2_casci_wrap>(
+            n_act, M->CI[0].na, M->CI[0].nb, M->CI[0].mult, n_s, M->CI[0].print_number, cas->dmrg);
+#else
+        fprintf(out_stream,"ERROR: CISOLVER=dmrg selected, but this build was compiled without block2 (set USE_BLOCK2=yes)\n");
+        exit(EXIT_FAILURE);
+#endif
+    }
+    else{
+        fprintf(out_stream,"ERROR: unknown CISOLVER (%d); accepted: aldet, dmrg\n",cas->ci_solver);
+        exit(0);
+    }
     CI = CI_owner.get();
+
+    // Active-space localizer (PM): atomic overlap blocks are orbital-independent, so build once;
+    // U is recomputed from the current orbitals each iteration in tensors_recalc.
+    if(cas->ci_solver==CISOLVER_DMRG && cas->dmrg.localize==DMRG_LOC_PM){
+        localizer_ = std::make_unique<pm_localizer>(*M);
+        U_loc.resize((size_t)n_act*n_act);
+    }
+    if(cas->ci_solver==CISOLVER_DMRG){ // cache warm-start config (cas is not kept on the engine)
+        warm_start_cfg = cas->dmrg.warm_start;
+        warm_after_cfg = cas->dmrg.warm_start_after;
+    }
 
     /*if(n_CI==1)*/ //if not previous CI data - alloc and set zero
     if(!CI->has_coef(0))CI->init_state_storage(n_s,0);
@@ -207,6 +313,11 @@ int CAS_engine::init(cas_par * cas, molecule * ext_M){
     
     
     rotate_orbs=cas->rotate_orbs;
+    if(rotate_orbs && !CI->supports_civec_rotation()){
+        fprintf(out_stream,"WARNING: orbital canonicalization (rotate) disabled - the CI "
+                           "backend does not support CI-vector rotation\n");
+        rotate_orbs=0;
+    }
     
     for(int i=0;i<n_s;i++)if(fabs(wstate[i])>1e-8)
         w_num.push_back(i);
@@ -258,7 +369,16 @@ int CAS_engine::SCF_alloc(){
     aaag_ints = new double[n_act*n_act*n_act*n_ao];
     F_tot     = new double[n_ao*n_ao*n_s_opt];
     G_ga      = new double[n_act*n_ao*n_s_opt];
-    GAMMA     = new double[n_act*n_act*n_act*n_act*n_s];
+    // GAMMA takes the CI backend's 2-RDM: n_s per-state tensors, averaged here (aldet), or the
+    // single state-averaged one the backend already accumulated (DMRG).
+    int n_s_GAMMA;
+    if      (ci_solver==CISOLVER_ALDET) n_s_GAMMA = n_s;
+    else if (ci_solver==CISOLVER_DMRG ) n_s_GAMMA = 1;
+    else{
+        fprintf(out_stream,"ERROR: unknown CISOLVER (%d); accepted: aldet, dmrg\n",ci_solver);
+        exit(0);
+    }
+    GAMMA     = new double[n_act*n_act*n_act*n_act*n_s_GAMMA];
     G         = new double[(n_core*n_act+n_core*n_vac+n_act*n_vac)*n_s_opt];
     B         = new double[(n_core*n_act+n_core*n_vac+n_act*n_vac)*n_s_opt];
     MO_BUF    = new double[n_ao*n_ao];
@@ -273,7 +393,7 @@ int CAS_engine::SCF_alloc(){
 }
 
 int CAS_engine::tensors_recalc(int n){
-    
+
     //transposition of VEC to CVEC
     for(int i=0; i<n_ao ;i++)
     for(int j=0; j<n_act;j++)
@@ -302,8 +422,54 @@ int CAS_engine::tensors_recalc(int n){
              -E_1el_calc(    K   , DM_C, n_ao, n_ao)  
              +M->V_nuc ;
              
+    const bool warm_on = (warm_start_cfg==DMRG_WARM_ON);
+    const int  F       = warm_after_cfg;                   // freeze/warm gate (solve index)
+
+    // Active-space localization: block2 solves in the localized basis. Only when a localizer exists.
+    if(localizer_){
+        if(warm_on && warm_frozen && warm_ci_calls>F){
+            // frozen frame: reuse the pinned localization instead of re-localizing, so the DMRG
+            // lattice order (a function of the localized orbitals) stays valid for the retained MPS.
+            std::copy(U_loc_frozen.begin(), U_loc_frozen.end(), U_loc.data());
+        } else {
+            loc_result lr = localizer_->localize(ACT_CVEC, n_ao, n_act, nullptr, U_loc.data());
+            if(!lr.converged)
+                fprintf(out_stream,"WARNING: active-space localization did not converge; running delocalized\n");
+        }
+        CI->set_localization(U_loc.data());
+    }
+
+    // Warm-start frame + rotation. Independent of localization: the frame orbitals are the localized
+    // active orbitals when localizing, else the canonical active orbitals (ACT_CVEC) directly.
+    if(warm_on){
+        std::vector<double> C_loc_cur;
+        const double* C_cur;
+        if(localizer_){
+            C_loc_cur.resize((size_t)n_ao*n_act);
+            build_loc_orbitals(ACT_CVEC, U_loc.data(), n_ao, n_act, C_loc_cur.data());
+            C_cur = C_loc_cur.data();
+        } else {
+            C_cur = ACT_CVEC;                              // canonical active orbitals [ao*n_act+p]
+        }
+        if(warm_ci_calls==F){
+            // freeze point: pin the frame; this solve stays cold (no prior frozen-frame MPS yet).
+            if(localizer_) U_loc_frozen.assign(U_loc.begin(), U_loc.end());
+            C_loc_prev.assign(C_cur, C_cur + (size_t)n_ao*n_act);
+            warm_frozen = true;
+        } else if(warm_ci_calls>F){
+            // warm: R = C_loc_prev^T S_AO C_cur (n_act x n_act, [a*n_act+p]); prev -> current
+            std::vector<double> tmp((size_t)n_ao*n_act), R((size_t)n_act*n_act);
+            cblas_dgemm(CblasRowMajor,CblasNoTrans,CblasNoTrans, n_ao,n_act,n_ao, 1.0,
+                        M->S_AO,n_ao, C_cur,n_act, 0.0, tmp.data(),n_act);
+            cblas_dgemm(CblasRowMajor,CblasTrans,CblasNoTrans, n_act,n_act,n_ao, 1.0,
+                        C_loc_prev.data(),n_act, tmp.data(),n_act, 0.0, R.data(),n_act);
+            CI->set_active_rotation(R.data());
+            C_loc_prev.assign(C_cur, C_cur + (size_t)n_ao*n_act);
+        }
+    }
     CI->import_integrals(aaaa_ints, F_act, E_core);
-   
+    warm_ci_calls++;
+
     return 0;
 }
 
@@ -398,6 +564,9 @@ int CAS_engine::CI_calc(int primary, int create_track_data,int read){
 //     for(int i=0;i<n_s_opt;i++)
 //         printf("%d\n",i_s_opt[i]);
 //     getchar();
+
+    //the weights this iteration's RDMs are averaged with (a backend that averages internally)
+    CI->set_state_weights(wstate_actual.data(),n_s);
     
     
     
@@ -617,13 +786,14 @@ double CAS_engine::av_DM_and_F_calc(int perform_diag){
     if(perform_diag){
         double * U =new double[n_act*n_act];
         M->diag_X_MO_block(F_tot, 0           , n_core, nullptr);
-        M->diag_X_MO_block(F_tot, n_core      , n_act , U);
         M->diag_X_MO_block(F_tot, n_core+n_act, n_vac , nullptr);
-        if(!CI->supports_civec_rotation()){
-            fprintf(out_stream,"ERROR: orbital canonicalization needs CI-vector rotation, unsupported by the CI backend\n");
-            exit(0);
+        // Active-block canonicalization rotates the active orbitals, so the CI vector must
+        // follow via malmqvist. A backend that can't rotate its CI vector (e.g. DMRG) skips
+        // it and keeps the current active basis (cold-start re-solves the next macro-iter);
+        if(CI->supports_civec_rotation()){
+            M->diag_X_MO_block(F_tot, n_core   , n_act , U);
+            CI->malmqvist(0, U);
         }
-        CI->malmqvist(0, U);
     }
     
     
@@ -649,9 +819,18 @@ double CAS_engine::SA_grad_hess_calc(int no_rot_v){
     
     //calc 2DM
     CI->G_calc(GAMMA);
-    average_DM(GAMMA,wstate_actual,n_act*n_act*n_act*n_act,n_s);
-    
-    
+    if      (ci_solver==CISOLVER_ALDET){
+        average_DM(GAMMA,wstate_actual,n_act*n_act*n_act*n_act,n_s);
+    }
+    else if (ci_solver==CISOLVER_DMRG ){
+        // already state-averaged in the backend, with the same weights
+    }
+    else{
+        fprintf(out_stream,"ERROR: unknown CISOLVER (%d); accepted: aldet, dmrg\n",ci_solver);
+        exit(0);
+    }
+
+
     calc_G(G_ga,gamma,GAMMA);
     
     //calc orb grad
@@ -1071,6 +1250,7 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
     
     int converged=0;
     double rot_step=1.0;
+    bool any_maxed=false;   // a macro-iter whose CI solve hit its max sweeps while under-converged
     
     if(IS_SYM){
         int n_ao  = M->n_ao;
@@ -1103,17 +1283,26 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
     
     n_dav_conv = CAS.CI_calc(1,0,0);
     CAS.av_DM_and_F_calc(1);
-    n_dav_conv = CAS.CI_calc(0,1,1);
+    // The canonicalization above rotates the active orbitals only for a backend that can carry its
+    // CI vector along; for one that cannot, the active Hamiltonian is unchanged and the solve just
+    // done still holds, so re-solving would only discard it.
+    if(CAS.CI->supports_civec_rotation())
+        n_dav_conv = CAS.CI_calc(0,1,1);
 //     CAS.F_vac();
+
+    if(cas->dmrg.dump_loc_orbs && CAS.localizer_){
+        fprintf(out_stream,"\nDumping localized active orbitals:\n");
+        M->LOC_print(job_name, CAS.U_loc.data());
+    }
     
     
     
     CAS.print_av_table("CAS_SCF density averaging:");
     fprintf(out_stream,"\n");
     fprintf(out_stream,"Start CAS_SCF iterations\n");
-    fprintf(out_stream,"_____________________________________________________________________\n");
-    fprintf(out_stream,"  N | E                 | dE         | LAG.ASYM. | ROT.STEP  | N_dav |\n");
-    fprintf(out_stream,"____|___________________|____________|___________|___________|_______|\n");
+    fprintf(out_stream,"_________________________________________________________________________________\n");
+    fprintf(out_stream,"  N | E                 | dE         | LAG.ASYM. | ROT.STEP  | N_dav | sweep_dE  |\n");
+    fprintf(out_stream,"____|___________________|____________|___________|___________|_______|___________|\n");
     disable_print_timers();
     
    while(true){
@@ -1127,7 +1316,9 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
         if(cas->method==2)max_grad_el = j_sd.find_max_el();
         
         
-        fprintf(out_stream,"%3d |% 18.10f | % .3e | %.3e | %.3e | %3d   |\n",n_iter,E,E-E_old,max_grad_el, rot_step,n_dav_conv);
+        bool hit_max = CAS.CI->last_solve_hit_max();
+        if(hit_max) any_maxed=true;
+        fprintf(out_stream,"%3d |% 18.10f | % .3e | %.3e | %.3e | %3d   | %.3e |%s\n",n_iter,E,E-E_old,max_grad_el, rot_step,n_dav_conv,CAS.CI->last_solve_resid(), hit_max?" *":"");
         fflush(out_stream);
 //         getchar();
 //         exit(0);
@@ -1157,12 +1348,40 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
     if(converged==2)fprintf(out_stream,"\nLagrangian converged");
     if(converged==3)fprintf(out_stream,"\nRotation matrix converged");
     fprintf(out_stream," after %d iterations\n\n", n_iter);
+    if(any_maxed)
+        fprintf(out_stream," * CI solve reached the maximum DMRG sweep count without meeting sweep_tol;\n"
+                           "   that iteration's CI vector may be under-converged -- raise $DMRG sweeps or m.\n\n");
     printf_timer("CAS_SCF iterations");
     
     
     //canonical_orbitals
     CAS.av_DM_and_F_calc(1);
-    n_dav_conv =CAS.CI_calc(0,0,1);
+    // A backend that can't rotate its own CI vector (DMRG) does not follow the active-block
+    // canonicalization above, so its leading-configuration read-out would sit in the SA-converged
+    // frame. Hand it the canonicalization -- eigenvectors of the active Fock block, ascending
+    // eigenvalue, the same convention as diag_X_MO_block but without rotating the orbitals -- so it
+    // can report its determinants in the canonical basis.
+    // Kept alive to the orbital write: the file has to carry the very same rotation the read-out
+    // reports its determinants in, or the coefficients and the orbitals they refer to are
+    // different bases (nullptr for a backend that canonicalizes its own CI vector).
+    double * U_canon  = nullptr;
+    double * ev_canon = nullptr;
+    if(!CAS.CI->supports_civec_rotation() && CAS.n_act>0){
+        U_canon  = new double[CAS.n_act*CAS.n_act];
+        ev_canon = new double[CAS.n_act];
+        for(int i=0;i<CAS.n_act;i++)
+            for(int j=0;j<CAS.n_act;j++)
+                U_canon[i*CAS.n_act+j]=CAS.F_tot[(i+CAS.n_core)*CAS.n_ao+(j+CAS.n_core)];
+        lapack_diag(U_canon, ev_canon, CAS.n_act);
+        normalize_rotation_rows(U_canon, CAS.n_act);
+        CAS.CI->set_report_rotation(U_canon);
+    }
+    // Only the core and virtual blocks were canonicalized for such a backend, which leaves the active
+    // Hamiltonian -- and its solution -- untouched. Re-solving would report determinants, properties
+    // and energies from a different wavefunction than the RDMs, Fock matrix, canonical rotation and
+    // natural orbitals prepared above.
+    if(CAS.CI->supports_civec_rotation())
+        n_dav_conv =CAS.CI_calc(0,0,1);
     if(LINEAR)CAS.rotate();
     
     printf_timer("Preparation of canonical orbitals");
@@ -1170,7 +1389,7 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
     fprintf(out_stream,"CAS_SCF WaveFunctions:\n\n");
     CAS.CI->gen_ext_ind();
     CAS.CI->print_states(0,CAS.n_s,1);
-    
+
     CAS.print_av_table("CAS_SCF density averaging:");
     
     cas->w_state=CAS.wstate_actual;
@@ -1184,7 +1403,31 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
     fprintf(out_stream,"\n\n");
     if(write_orbs){
         fprintf(out_stream,"Writing CAS_SCF canonical orbitals:\n");
-        
+
+        // A backend that cannot rotate its CI vector left the active orbitals in the SA-converged
+        // frame while reporting its determinants in the canonical one. Rotate the active orbitals
+        // with that same U_canon (and install its eigenvalues as the active orbital energies) for
+        // the write, then put the solve basis back: the RDMs behind the properties and the natural
+        // orbitals below live in it, and both are basis-invariant anyway.
+        double * MO_act_save = nullptr;
+        double * ev_act_save = nullptr;
+        if(U_canon!=nullptr){
+            const int n_a = CAS.n_act, n_o = M->n_ao, n_0 = CAS.n_core;
+            MO_act_save = new double[n_a*n_o];
+            ev_act_save = new double[n_a];
+            double * B  = new double[n_a*n_o];
+            memcpy(MO_act_save, M->MO_VEC+n_0*n_o    , n_a*n_o*sizeof(double));
+            memcpy(ev_act_save, M->orb_energy+n_0    , n_a    *sizeof(double));
+            cblas_dgemm(CblasRowMajor,CblasNoTrans,CblasNoTrans,
+                        n_a,n_o,n_a,1.0,
+                        U_canon,n_a,
+                        M->MO_VEC+n_0*n_o,n_o,0.0,
+                        B,n_o);
+            memcpy(M->MO_VEC+n_0*n_o , B       , n_a*n_o*sizeof(double));
+            memcpy(M->orb_energy+n_0 , ev_canon, n_a    *sizeof(double));
+            delete[] B;
+        }
+
         M->MO_gamess_format();
         sprintf(name,"%s_CAS.out\0",job_name);
         M->GAMESS_type_out_print(name,-1);
@@ -1194,7 +1437,14 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
         M->MO_print(name);
         fprintf(out_stream,"data file         : %s\n",name);
         fprintf(out_stream,"\n");
-        
+
+        if(MO_act_save!=nullptr){
+            memcpy(M->MO_VEC+CAS.n_core*M->n_ao, MO_act_save, CAS.n_act*M->n_ao*sizeof(double));
+            memcpy(M->orb_energy+CAS.n_core    , ev_act_save, CAS.n_act        *sizeof(double));
+            delete[] MO_act_save;
+            delete[] ev_act_save;
+        }
+
         fprintf(out_stream,"Writing CAS_SCF natural orbitals:\n");
         
         sprintf(name,"%s_CAS\0",job_name);
@@ -1203,10 +1453,14 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
         fprintf(out_stream,"\n");
     }
     if(write_ci){
-        fprintf(out_stream,"Writing CAS_SCF WaveFunctions:\n");
-        sprintf(name,"%s_CAS.ci\0",job_name);
-        CAS.CI->write_civec(0, name);
-        fprintf(out_stream,"data file         : %s\n",name);
+        if(cas->ci_solver == CISOLVER_DMRG){
+            fprintf(out_stream,"CI/MPS wavefunction output not supported by the DMRG backend -- skipped\n");
+        } else {
+            fprintf(out_stream,"Writing CAS_SCF WaveFunctions:\n");
+            sprintf(name,"%s_CAS.ci\0",job_name);
+            CAS.CI->write_civec(0, name);
+            fprintf(out_stream,"data file         : %s\n",name);
+        }
     }
     
     
@@ -1215,13 +1469,14 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
     fprintf(out_stream,"\n");
     fprintf(out_stream,"\n");
     printf_timer("CAS_SCF");
-    
+
     delete[] name;
+    delete[] U_canon;
+    delete[] ev_canon;
 //     delete[] S_track;
     
 //     libint2::finalize();
     
     return 0;
 }
-
 

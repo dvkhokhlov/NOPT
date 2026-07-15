@@ -19,6 +19,14 @@ extern coord_list C;
 
 int single_point_calc( inp_par * P, molecule * Qm){ 
         
+    // DMRG exposes no determinant CI object, so the determinant-only PT methods (XMCQDPT, CDAS-PT)
+    // cannot consume it -- reject the combination up front instead of crashing later in as_aldet().
+    if(P->cas.y && P->cas.ci_solver==CISOLVER_DMRG && (P->xmc.y || P->cdas.y)){
+        fprintf(out_stream,"ERROR: CISOLVER=dmrg cannot be combined with XMCQDPT/CDAS-PT "
+                           "(they need the determinant CI object, which the DMRG backend does not provide)\n");
+        exit(EXIT_FAILURE);
+    }
+
     Qm->gen_1el_data();
     fprintf(out_stream,"\n\n");
     printf_timer("Calculation of 1-el matrices");

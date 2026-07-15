@@ -233,6 +233,10 @@ int CDAS_PT2(molecule * M, cdas_par * cdas, char * job_name){
     T.set_par(&R, eps, n_cor, n_act, n_virt, H_AV, H_CA, H_CV, cdas->edshift);
     
     //calculation of IP/EA Fockian matrix
+    if(CAS.CI->as_aldet() == nullptr){
+        fprintf(out_stream,"ERROR: CDAS-PT requires the determinant CI backend (cisolver=aldet)\n");
+        exit(EXIT_FAILURE);
+    }
     CAS.CI->as_aldet()->simple_import_data(act_INTS, act_INTS, H_AA, 0);
     
     if(cdas->IPEA){

@@ -31,3 +31,20 @@
 
 #define XMC_N_FIT 300
 #define XMC_N_FIT_POL 3
+
+#define DMRG_M_DEFAULT 0            // bond dimension: 0 = unset (required when CISOLVER=dmrg)
+#define DMRG_SWEEPS_DEFAULT 40
+#define DMRG_SWEEP_TOL_DEFAULT 1e-8
+#define DMRG_SAVE_DIR_DEFAULT "/dev/shm"   // block2 scratch root (RAM-backed by default)
+#define DMRG_MEMORY_DEFAULT 1.0            // block2 double-stack size, GB
+#define DMRG_WARM_START_DEFAULT 1          // MPS warm-start across macro-iterations: on by default
+#define DMRG_WARM_SWEEPS_DEFAULT 0         // max sweeps for the warm re-solve; 0 = auto (sweeps/2)
+#define DMRG_ROT_M_DEFAULT 0               // MPS-rotation time-evolution bond dim (0 = use m)
+#define DMRG_ROT_STEPS_DEFAULT 1           // MPS-rotation TE steps (dt = 1/rot_steps; total time 1)
+#define DMRG_WARM_START_AFTER_DEFAULT 0    // CI solves run cold before the localized frame is frozen
+#define DMRG_WARM_ROTATE_DEFAULT 1         // rotate the reused MPS into the new basis: on by default (off = reuse-only)
+#define DMRG_PRINT_DETS_DEFAULT 1          // report leading determinants after convergence: on by default
+#define DMRG_DET_ROT_M_DEFAULT 0           // bond dim for the localized->canonical read-out rotation (0 = auto: min(2m,1500))
+#define DMRG_DET_ROT_STEPS_DEFAULT 10      // TE steps for the read-out rotation (larger than warm-start's: this rotation is big)
+#define DMRG_EXTRACT_M_DEFAULT 0           // bond dim the canonical MPS is compressed to before determinant extraction (0 = none)
+#define DMRG_EXTRACT_CUTOFF_DEFAULT 1e-3   // determinant magnitude cutoff for the TRIE extraction search

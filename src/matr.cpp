@@ -249,6 +249,24 @@ int lapack_diag(double * M, double * eval, int n){
     return 0;
 }
 
+int normalize_rotation_rows(double * U, int n) {
+    for (int i = 0; i < n; i++) {
+        int imax = 0;
+        double vmax = fabs(U[i * n]);
+        for (int j = 1; j < n; j++) {
+            const double v = fabs(U[i * n + j]);
+            if (v > vmax) {
+                vmax = v;
+                imax = j;
+            }
+        }
+        if (U[i * n + imax] < 0.0)
+            for (int j = 0; j < n; j++)
+                U[i * n + j] = -U[i * n + j];
+    }
+    return 0;
+}
+
 
 double * comp_values;
 

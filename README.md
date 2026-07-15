@@ -23,7 +23,11 @@ add for LIBINT configuration
 
 ## Compilation
 
-Edit Makefile.vars
+Copy the build-config template and set the paths for your machine:
+```
+cp Makefile_example.vars Makefile.vars
+```
+`Makefile.vars` is per-machine and is not tracked by git.
 
 Instal standard QM module
 ```
