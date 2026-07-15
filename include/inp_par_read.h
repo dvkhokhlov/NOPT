@@ -180,11 +180,26 @@ class cis_par
         dav_par dav;
         
         cis_par();
-        int read_group(char * inp); 
-        int read_line(char * inp); 
+        int read_group(char * inp);
+        int read_line(char * inp);
         int write_info();
         ~cis_par();
-    
+
+};
+
+class mp2_par
+{
+    public:
+        int y;
+        int n_f;
+        int nat_orb;
+
+        mp2_par();
+        int read_group(char * inp);
+        int read_line(char * inp);
+        int write_info();
+        ~mp2_par();
+
 };
 
 class xmc_par
@@ -266,6 +281,7 @@ class inp_par
         rhf_par rhf;
         cas_par cas;
         cis_par cis;
+        mp2_par mp2;
         xmc_par xmc;
         cdas_par cdas;
         

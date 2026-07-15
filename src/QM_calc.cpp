@@ -14,6 +14,7 @@
 # include "defaults.h"
 #include "timer.h"
 # include "grabbers.h"
+# include "mp2.h"
 
 extern coord_list C;
 
@@ -39,7 +40,20 @@ int single_point_calc( inp_par * P, molecule * Qm){
     
     if(P->cis.y)CIS      (Qm, &(P->cis), P->job_name);
 
-    
+    // MP2 natural-orbital generation permanently overwrites MO_VEC/orb_energy; the
+    // two-step workflow goes through the written .orb file, so forbid one-shot mixing.
+    if(P->mp2.y && (P->cas.y || P->xmc.y || P->cdas.y || P->cis.y)){
+        fprintf(out_stream,"ERROR: MP2 cannot be combined with CAS/XMCQDPT/CDAS/CIS in one run "
+                           "(natural-orbital generation overwrites the reference orbitals)\n");
+        exit(EXIT_FAILURE);
+    }
+    if(P->mp2.y && !P->rhf.y){
+        fprintf(out_stream,"ERROR: MP2 requires a converged RHF reference (set RHF=1)\n");
+        exit(EXIT_FAILURE);
+    }
+    if(P->mp2.y)MP2      (Qm, &(P->mp2), P->job_name);
+
+
     if(P->cas.y)CAS_SCF  (Qm,&(P->cas), P->job_name);
 //     Qm->MO_backup();
     

@@ -619,7 +619,75 @@ int cis_par::write_info(){
 }
 
 cis_par::~cis_par(){
-    
+
+}
+
+//-----------------------------------------------------------------------------------------------------
+
+//MP2
+mp2_par::mp2_par(){
+    y=0;
+
+    n_f = 0;
+    nat_orb = 0;
+
+}
+
+int mp2_par::read_group(char * inp){
+
+    recursive_file P;
+    char line[BUF_LINE_LENGTH];
+
+    P.r_open(inp);
+
+    P.r_gets(line,BUF_LINE_LENGTH);;
+    while((key_word_comp(line, mp2_group_start)==0)&&(!P.r_eof()))P.r_gets(line,BUF_LINE_LENGTH);;
+    if(key_word_comp(line, mp2_group_start)==0){
+        fprintf(out_stream,"ERROR: could not find $MP2 group in file %s\n",inp);
+        exit(1);
+    }
+
+    while(!P.r_eof()){
+        read_line(line);
+        if(key_word_comp(line, mp2_group_end))break;
+        P.r_gets(line,BUF_LINE_LENGTH);;
+    }
+
+    return 0;
+}
+
+int mp2_par::read_line(char * inp){
+
+    if(key_word_comp(inp, num_frozen_orb_kw)){
+        n_f = kw_to_i(inp, num_frozen_orb_kw, 0);
+    }
+
+    if(key_word_comp(inp, nat_orb_kw)){
+        nat_orb = kw_to_i(inp, nat_orb_kw, 0);
+    }
+
+    return 0;
+}
+
+int mp2_par::write_info(){
+
+    fprintf(out_stream,"\n\n\n");
+    fprintf(out_stream,"______________________Starting_MP2_calculations________________________\n\n");
+
+    fprintf(out_stream,"Number of frozen orbitals         %d\n",n_f );
+    if (nat_orb){fprintf(out_stream,"Make Natural Orbitals             yes");}
+    else{fprintf(out_stream,"Make Natural Orbitals             no");}
+
+    fprintf(out_stream,"\n");
+    fprintf(out_stream,"_______________________________________________________________________\n\n\n");
+
+
+    return 0;
+
+}
+
+mp2_par::~mp2_par(){
+
 }
 
 
@@ -1457,6 +1525,7 @@ int inp_par::write_info(){
     fprintf(out_stream,"Complete Active Space SCF                        -     %c%c%c\n",ny[3*cas.y],ny[3*cas.y+1],ny[3*cas.y+2]);
     fprintf(out_stream,"eXtended MultiConfiguration QuasiDegenerate PT   -     %c%c%c\n",ny[3*xmc.y],ny[3*xmc.y+1],ny[3*xmc.y+2]);
     fprintf(out_stream,"Complete Degenerate Active Space PT              -     %c%c%c\n",ny[3*cdas.y],ny[3*cdas.y+1],ny[3*cdas.y+2]);
+    fprintf(out_stream,"Second order Moller-Plesset PT                   -     %c%c%c\n",ny[3*mp2.y],ny[3*mp2.y+1],ny[3*mp2.y+2]);
     fprintf(out_stream,"Settings:\n");
     fprintf(out_stream,"D5                                               -     %c%c%c\n",ny[3*D5],ny[3*D5+1],ny[3*D5+2]);
     fprintf(out_stream,"Resolution of Identity                           -     %c%c%c\n",ny[3*RI],ny[3*RI+1],ny[3*RI+2]);
@@ -1644,6 +1713,7 @@ int inp_par::read(char * ext_inp){
     if(xmc.y)  xmc.read_group(inp_name,&cas);
     if(cdas.y)cdas.read_group(inp_name,&cas);
     if(cis.y)  cis.read_group(inp_name);
+    if(mp2.y)  mp2.read_group(inp_name);
 
     
     
@@ -1700,6 +1770,9 @@ int inp_par::read_p_line(char * inp){
 
     if(key_word_comp(inp, cis_kw))
         cis.y=kw_to_i(inp, cis_kw,0);
+
+    if(key_word_comp(inp, mp2_kw))
+        mp2.y=kw_to_i(inp, mp2_kw,0);
 
     if(key_word_comp(inp, name_kw)){
 //         out_folder_defined=1;

@@ -94,7 +94,15 @@ vector<const char *>cis_group_start{{"$cis"}};
 vector<const char *>cis_group_end{{"cis_end"},
                                   {"cisend"},
                                   {"$end"}};
-                           
+
+vector<const char *>mp2_kw{{"mp2"}};
+
+vector<const char *>mp2_group_start{{"$mp2"}};
+
+vector<const char *>mp2_group_end{{"mp2_end"},
+                                  {"mp2end"},
+                                  {"$end"}};
+
 vector<const char *>w_state_kw{{"wstate"},
                                {"w_state"}};
                                
