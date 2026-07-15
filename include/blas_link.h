@@ -61,9 +61,9 @@ inline void nopt_par_dgemm(const CBLAS_ORDER Layout, const CBLAS_TRANSPOSE Trans
         }
         cblas_dgemm(Layout, TransA, TransB, 
                     nopt_parallel_index[i+1]-nopt_parallel_index[i], N, K, alpha,
-                    A+nopt_parallel_index[i]*incr_a, lda, 
+                    A+(long)nopt_parallel_index[i]*incr_a, lda, 
                     B, ldb, beta,
-                    C+nopt_parallel_index[i]*ldc,ldc);
+                    C+(long)nopt_parallel_index[i]*ldc,ldc);
     }
 #ifdef _OPENBLAS
     openblas_set_num_threads(ntb);
