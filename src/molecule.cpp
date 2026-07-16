@@ -1815,43 +1815,43 @@ int molecule::NO_print(const char * name, char S){
 }
 
 int molecule::LOC_print(const char * name, const double * U){
-    const int na    = n_act_orb[0];
-    const int ncore = n_cor_orb;
-    double * MO_backup = new double[n_ao*(ncore+na)];
-    double *  e_backup = new double[      ncore+na ];
-    int    * rn_backup = new int   [      ncore+na ];
-    memcpy(MO_backup, MO_VEC    , sizeof(double)*n_ao*(ncore+na));
-    memcpy( e_backup, orb_energy, sizeof(double)*     (ncore+na));
-    memcpy(rn_backup, rep_num   , sizeof(int   )*     (ncore+na));
+    const int n_act = n_act_orb[0];
+    const int n_cor = n_cor_orb;
+    double * MO_backup = new double[n_ao*n_act];
+    double *  e_backup = new double[     n_act];
+    int    * rn_backup = new int   [     n_act];
+    memcpy(MO_backup, MO_VEC     + n_cor*n_ao, sizeof(double)*n_ao*n_act);
+    memcpy( e_backup, orb_energy + n_cor     , sizeof(double)*     n_act);
+    memcpy(rn_backup, rep_num    + n_cor     , sizeof(int   )*     n_act);
 
-    // localized active orbitals (rows ncore..ncore+na): C_loc[p][ao] = sum_a C_act[a][ao] U[a,p],
+    // localized active orbitals (rows n_cor..n_cor+n_act): C_loc[p][ao] = sum_a C_act[a][ao] U[a,p],
     // read from the backed-up active block so the in-place overwrite below is safe. They carry no
     // canonical energy/irrep, so flag them (energy 0, rep -1).
-    for(int p=0;p<na;p++){
-        orb_energy[ncore+p]=0.0;
-        rep_num   [ncore+p]=-1;
-        for(int j=0;j<n_ao;j++){
-            double s=0.0;
-            for(int a=0;a<na;a++) s += MO_backup[(a+ncore)*n_ao+j]*U[a*na+p];
-            MO_VEC[(ncore+p)*n_ao+j]=s;
-        }
+    for(int p=0;p<n_act;p++){
+        orb_energy[n_cor+p]=0.0;
+        rep_num   [n_cor+p]=-1;
     }
+    nopt_par_dgemm(CblasRowMajor,CblasTrans,CblasNoTrans,
+                   n_act, n_ao, n_act, 1.0,
+                   U, n_act,
+                   MO_backup, n_ao,0.0,
+                   MO_VEC+n_cor*n_ao,n_ao);
 
     check_orb_symmetry();
     MO_gamess_format();
 
     char * file_name = new char[BUF_LINE_LENGTH];
     sprintf(file_name,"%s_LocOrb.out",name);
-    GAMESS_type_out_print(file_name, ncore+na);
+    GAMESS_type_out_print(file_name, n_cor+n_act);
     fprintf(out_stream,"visualization file: %s\n",file_name);
     sprintf(file_name,"%s_LocOrb.orb",name);
     MO_print(file_name);
     fprintf(out_stream,"data file         : %s\n",file_name);
     delete[] file_name;
 
-    memcpy(MO_VEC    , MO_backup, sizeof(double)*n_ao*(ncore+na));
-    memcpy(orb_energy,  e_backup, sizeof(double)*     (ncore+na));
-    memcpy(rep_num   , rn_backup, sizeof(int   )*     (ncore+na));
+    memcpy(MO_VEC     + n_cor*n_ao, MO_backup, sizeof(double)*n_ao*n_act);
+    memcpy(orb_energy + n_cor     ,  e_backup, sizeof(double)*     n_act);
+    memcpy(rep_num    + n_cor     , rn_backup, sizeof(int   )*     n_act);
     delete[] MO_backup;
     delete[]  e_backup;
     delete[] rn_backup;

@@ -685,7 +685,7 @@ double soscf_engine_MCSCF::step(double * VEC, double * BUF){
     int scaling=0;
     
     if(zoom > -1.0){
-        fprintf(out_stream,"SOSCF is scaling rotation angle matrix Xmax=%f     |\n",-x_max_soscf/zoom);
+        fprintf(out_stream," SOSCF is scaling rotation angle matrix Xmax=%.5e                         |\n",-x_max_soscf/zoom);
         scaling=1;
     }
     

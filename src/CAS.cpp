@@ -1342,7 +1342,7 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
     
     char * name = new char[BUF_LINE_LENGTH];
     
-    fprintf(out_stream,"____|___________________|____________|___________|___________|_______|\n");
+    fprintf(out_stream,"____|___________________|____________|___________|___________|_______|___________|\n");
     if(converged==0)fprintf(out_stream,"\nCASSCF did not converge");
     if(converged==1)fprintf(out_stream,"\nEnergy converged");
     if(converged==2)fprintf(out_stream,"\nLagrangian converged");
