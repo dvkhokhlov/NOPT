@@ -568,7 +568,7 @@ static bool rotate_retained_mps(dmrgci_engine &e) {
     }
     if (wmin < 1e-6 || leak > 0.2) { // active space moved too much to carry the MPS
         w.deallocate(heap);
-        fprintf(out_stream, "  warm-start: rotation leakage %.2e too large -> cold fallback\n", leak);
+        fprintf(out_stream, " warm-start: rotation leakage %.2e too large -> cold fallback                |\n", leak);
         return false;
     }
     std::vector<double> tmp(nn), Sinvh(nn), U(nn);

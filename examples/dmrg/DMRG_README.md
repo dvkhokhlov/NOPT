@@ -20,9 +20,14 @@ block2 must be built as a C++ shared library (`libblock2.so`) whose ABI matches 
 flags NOPT compiles its block2 sources with. A mismatch either fails to link or
 silently corrupts numerics.
 
+### Download block2
+
+https://github.com/block-hczhai/block2-preview
+
+
 ### Build `libblock2.so`
 
-From the block2-preview root:
+From the block2-preview root (only OpenBLAS is yet supported):
 
 ```
 mkdir build_clib && cd build_clib
