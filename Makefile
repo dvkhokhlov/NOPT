@@ -53,7 +53,19 @@ endif
 # libblock2 was built (mirror tests/block/Makefile + the by-hand _USE_GLOBAL_VARIABLE);
 # these go ONLY to the one block2 TU. -DNOPT_HAS_BLOCK2 is global (gates the CAS.cpp seam).
 ifeq ($(USE_BLOCK2),yes)
-BLOCK2_DEF:=-D_EXPLICIT_TEMPLATE -D_LARGE_BOND -D_USE_CORE -D_USE_DMRG -D_USE_BIG_SITE -D_USE_SP_DMRG -D_USE_IC -D_USE_SU2SZ -D_F77UNDERSCORE -D_HAS_OPENBLAS -D_USE_GLOBAL_VARIABLE
+# block2's BLAS macros must match how libblock2 itself was built -- check its exported
+# INTERFACE_COMPILE_OPTIONS in $(BLOCK2_DIR)/share/cmake/block2/block2Targets.cmake.
+# _F77UNDERSCORE is backend-dependent, not universal: block2 calls FNAME(dgemm), which it spells
+# dgemm_ with the macro and dgemm without. OpenBLAS exports only dgemm_, while mkl_blas.h declares
+# dgemm/DGEMM but no dgemm_ (unlike mkl_lapack.h, which does declare dgesv_) -- so the macro is
+# required for OpenBLAS and must be off for MKL. _HAS_INTEL_MKL=2 matches a library configured
+# with -DOMP_LIB=INTEL; block2's cmake default (OMP_LIB=GNU) would be 1.
+ifeq ($(BLAS_DEF),-D_MKL)
+BLOCK2_BLAS_DEF:=-D_HAS_INTEL_MKL=2
+else
+BLOCK2_BLAS_DEF:=-D_F77UNDERSCORE -D_HAS_OPENBLAS
+endif
+BLOCK2_DEF:=-D_EXPLICIT_TEMPLATE -D_LARGE_BOND -D_USE_CORE -D_USE_DMRG -D_USE_BIG_SITE -D_USE_SP_DMRG -D_USE_IC -D_USE_SU2SZ $(BLOCK2_BLAS_DEF) -D_USE_GLOBAL_VARIABLE
 BLOCK2_INC:=-I$(BLOCK2_DIR)/include
 BLOCK2_LIB:=-L$(BLOCK2_DIR)/lib -Wl,-rpath,$(BLOCK2_DIR)/lib -lblock2
 BLOCK2_OBJ:=src/block2_dmrg.o src/dmrg_wrap.o src/block2_mps_to_det.o src/mps_rotation.o

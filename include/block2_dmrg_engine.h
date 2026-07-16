@@ -4,6 +4,16 @@
 // here, so include this ONLY from the block2 backend TUs (block2_casci_wrap / block2_dmrg /
 // block2_mps_to_det). The block2-free public interface stays in block2_casci_wrap.h.
 
+// block2 spells MKL's complex types as std::complex and then includes mkl.h. MKL's headers must
+// agree, so claim the typedefs before anything pulls them in: otherwise blas_link.h's mkl_lapack.h
+// declares crot/zrot with MKL's native struct and block2's mkl_blas.h re-declares the same
+// extern "C" functions with std::complex. MKL guards both with #ifndef for exactly this.
+#ifdef _MKL
+#include <complex>
+#define MKL_Complex8  std::complex<float>
+#define MKL_Complex16 std::complex<double>
+#endif
+
 #include <cstdint>
 #include <cstdio>
 #include <memory>
@@ -13,7 +23,7 @@
 
 #include "block2_casci_wrap.h"   // block2_casci_wrap class + dmrg_par (via inp_par_read.h)
 #include "common_vars.h"         // out_stream
-#include "blas_link.h"           // openblas_set_num_threads
+#include "blas_link.h"           // BLAS thread-count API (OpenBLAS or MKL)
 
 #include "block2_core.hpp"
 #include "block2_dmrg.hpp"
@@ -74,14 +84,34 @@ struct dmrgci_engine {
 // -------------------------- shared block2-backend helpers ----------------------------------
 namespace nopt_block2 {
 
+// BLAS thread count, spelled per backend. Mirrors the pairing blas_link.h uses: OpenBLAS reports
+// the current count, MKL the current maximum.
+inline int blas_get_num_threads() {
+#if defined(_OPENBLAS)
+    return openblas_get_num_threads();
+#elif defined(_MKL)
+    return mkl_get_max_threads();
+#else
+#error "no BLAS backend selected: define _OPENBLAS or _MKL"
+#endif
+}
+
+inline void blas_set_num_threads(int n) {
+#if defined(_OPENBLAS)
+    openblas_set_num_threads(n);
+#elif defined(_MKL)
+    mkl_set_num_threads(n);
+#endif
+}
+
 // Pin block2 to the host OpenMP/BLAS thread count on entering a block2 region; restore on exit.
 struct host_threads_guard {
     int omp_saved;
     int blas_saved;
-    host_threads_guard() : omp_saved(omp_get_max_threads()), blas_saved(openblas_get_num_threads()) {}
+    host_threads_guard() : omp_saved(omp_get_max_threads()), blas_saved(blas_get_num_threads()) {}
     ~host_threads_guard() {
         omp_set_num_threads(omp_saved);
-        openblas_set_num_threads(blas_saved); // restore the host's OpenBLAS count independently of OMP
+        blas_set_num_threads(blas_saved); // restore the host's BLAS count independently of OMP
     }
     host_threads_guard(const host_threads_guard &) = delete;
     host_threads_guard &operator=(const host_threads_guard &) = delete;
