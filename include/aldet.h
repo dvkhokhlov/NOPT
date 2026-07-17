@@ -144,6 +144,9 @@ class aldet_data
         double* b_spin_sign;
         
         aldet_data(); 
+        // Active-space dimensions and the per-set state tables. Allocates nothing sized by
+        // Na/Nb -- the determinant space itself is built by get_dim.
+        int get_dim_meta(int ext_n_act, int ext_na, int ext_nb, int ext_n_sets, int ext_mult, int ext_print_number);
         int get_dim(int ext_n_act, int ext_na, int ext_nb, int ext_n_sets, int ext_mult, int ext_print_number);
         
         int simple_import_data(double * ext_act_INTS,
