@@ -28,19 +28,13 @@
 using namespace block2;
 
 // ---- process-global block2 runtime ---------------------------------------------------
-// Shared block2-backend helpers. A named namespace (not anonymous) so the split TUs can link
-// against the cross-TU ones; per-TU `using` keeps call sites unqualified.
+// Shared block2-backend helpers. Named, not anonymous: the split TUs link against the cross-TU ones.
 namespace nopt_block2 {
 
 
-// Reclaim scratch dirs left by runs that died before their destructor could remove them: once the
-// owning process is gone nothing else will ever reclaim it, and the default root is /dev/shm, i.e.
-// RAM. Each dir is named <pid>_<unique> (see below), so the pid says whose it is: one whose pid is
-// still alive is left alone, as is one we cannot signal (someone else's). The unique half is what
-// makes the removal safe -- a pid recycled between the liveness check and remove_all belongs to a run
-// under a different dir name, so this can never delete a live run's scratch.
-// Not covered: a scratch root shared across pid namespaces (containers), where a pid dead here may be
-// alive there. Only an ownership lock settles that; /dev/shm on a single node does not need one.
+// Remove scratch dirs of runs that died before their destructor ran. Dirs are named <pid>_<unique>;
+// one whose pid is alive or unsignalable is left alone. The unique suffix keeps a recycled pid from
+// matching a live run's dir. Not covered: a scratch root shared across pid namespaces.
 static void reap_orphan_scratch(const std::string &root) {
     std::error_code ec;
     const std::string tag = "nopt_dmrg_";
@@ -66,18 +60,15 @@ static void reap_orphan_scratch(const std::string &root) {
     }
 }
 
-// Process-global block2 runtime: owns the frame_/threading_ globals and the per-process scratch
-// dir, and tears all of it down (RAII) at program exit.
+// Process-global block2 runtime: owns the frame_/threading_ globals and the per-process scratch dir,
+// and tears them down at program exit.
 struct Block2Runtime {
     std::string scratch;
 
     Block2Runtime(const std::string &save_dir_root, double memory_gb, int n_threads) {
-        // Per-run scratch subdir under the configured root (default /dev/shm), so concurrent/repeated
-        // runs never share block2's renormalized-operator files. Identity is <pid>_<unique>: the pid
-        // is what lets a later run tell whether this one is gone (reap_orphan_scratch), the unique
-        // suffix is what makes the dir this run's alone. A pid alone is not an identity -- it is
-        // recycled, so a fresh run could inherit a dead run's dir and read back its tag files.
-        // mkdtemp creates the dir atomically, so the suffix is unique by construction, not by luck.
+        // Per-run scratch under the configured root (default /dev/shm), so concurrent runs never
+        // share block2's renormalized-operator files. Identity is <pid>_<unique>: the pid for
+        // reap_orphan_scratch, the mkdtemp suffix so a recycled pid cannot inherit a dead run's dir.
         reap_orphan_scratch(save_dir_root);
         std::string tmpl = save_dir_root + "/nopt_dmrg_" + std::to_string((long)getpid()) + "_XXXXXX";
         std::vector<char> tbuf(tmpl.begin(), tmpl.end());
@@ -91,8 +82,7 @@ struct Block2Runtime {
 
         Random::rand_seed(0);
         // isize/dsize are BYTE sizes of the integer/double stacks. The double stack holds the
-        // renormalized operators and is what a large active space / bond dimension exhausts, so it
-        // is sized by $DMRG memory (GB); the integer stack is bookkeeping only and stays fixed.
+        // renormalized operators and is sized by $DMRG memory (GB); the integer stack is bookkeeping.
         frame_<double>() = std::make_shared<DataFrame<double>>(
             (size_t)1 << 24, (size_t)(memory_gb * (double)((size_t)1 << 30)), scratch);
         frame_<double>()->use_main_stack = false;
@@ -126,16 +116,10 @@ void ensure_block2_runtime(const std::string &save_dir_root, double memory_gb, i
     (void)runtime;
 }
 
-// Best-effort removal of all scratch files belonging to one MPS tag. Correctness does not depend
-// on this — each solve writes a fresh unique tag, so a stale file can never be read back — but it
-// keeps the per-process scratch dir from growing across macro-iterations. block2 embeds the tag,
-// always trailing-'.'-delimited, in every per-tag filename:
-//   <prefix>.MPS.<tag>.<i>        single-MPS site tensors       (mps.hpp)
-//   <prefix>.MMPS.<tag>.<i>       MultiMPS site tensors + data  (state_averaged.hpp; SA solve/extract)
-//   <prefix>.MMPS-WFN.<tag>.<i>   MultiMPS per-root wavefunctions
-//   <prefix>.MPS.INFO.<tag>.*     (Multi)MPSInfo bond dims      (MultiMPSInfo inherits MPSInfo)
-//   <tag>-mps_info.bin            serialized (Multi)MPSInfo
-// The trailing '.' keeps tag "work_1" from matching "work_10"; ".MMPS." never prefix-matches ".MPS.".
+// Best-effort removal of every scratch file of one MPS tag; keeps the scratch dir from growing
+// across macro-iterations. block2 embeds the tag, trailing-'.'-delimited, in
+// <prefix>.{MPS,MMPS,MMPS-WFN,MPS.INFO}.<tag>.* and <tag>-mps_info.bin. The trailing '.' keeps tag
+// "work_1" from matching "work_10".
 void remove_tag_files(const std::string &tag) {
     auto fr = frame_<double>();
     if (fr == nullptr)
@@ -266,12 +250,10 @@ using namespace nopt_block2;
 
 // struct dmrgci_engine (all block2 state) + host_threads_guard live in block2_dmrg_engine.h.
 
-// Exact energy of the stored MPS for one root: contract that root's 2-RDM (and the 1-RDM partial
-// trace of it) with the integrals the solver actually used. block2's sweep energy is the Davidson
-// eigenvalue of the *untruncated* center, so it is not the energy of the bond-M MPS that is kept --
-// this is, and it is the same functional the CAS-SCF orbital gradient is built from. `d2` must
-// still be in the solver's (lattice-ordered, localized) basis, i.e. before ensure_2rdm un-permutes
-// and delocalizes it.
+// Exact energy of the stored MPS for one root: that root's 2-RDM (and its 1-RDM partial trace)
+// contracted with the integrals the solver used. block2's sweep energy is the Davidson eigenvalue of
+// the untruncated center, not the energy of the stored bond-M MPS. `d2` must still be in the
+// solver's lattice-ordered, localized basis, i.e. before ensure_2rdm un-permutes and delocalizes it.
 static double rdm_energy(const dmrgci_engine &e, const double *d2) {
     const int n = e.n_act;
     const double inv = 1.0 / (e.n_elec - 1);
@@ -292,14 +274,10 @@ static double rdm_energy(const dmrgci_engine &e, const double *d2) {
     return (double)e.fcidump->e() + e1 + 0.5 * e2;
 }
 
-// Extract one root of the state-averaged MultiMPS as a plain single-root MPS, ready for an Expect
-// sweep. extract yields a one-root MultiMPS, which is not what Expect wants: it dispatches on the
-// canonical form, and its MultiMPS branch resolves Automatic to Normal -- a serial loop over
-// operators, with no Fast algorithm to fall back to. Only a plain MPS reaches the OpenMP-parallel
-// path. The center is then put in the one-site form the solve's tail already leaves the
-// wavefunction in, the two-site expectation being the slowest of block2's three. The conversion is
-// block2's own (the site_type=1 branch of DMRGDriver::get_npdm) and holds only with the center at an
-// end, which is where a finished sweep leaves it.
+// One root of the state-averaged MultiMPS as a plain single-root MPS, ready for an Expect sweep.
+// Expect dispatches on the canonical form, and its MultiMPS branch resolves Automatic to Normal, a
+// serial loop over operators; only a plain MPS reaches the OpenMP-parallel path. The center is then
+// put in the one-site form (block2's site_type=1 conversion), which needs it at an end.
 static std::shared_ptr<MPS<SU2, double>> extract_root_single(dmrgci_engine &e, int st,
                                                              const std::string &xtag,
                                                              const std::string &stag) {
@@ -322,16 +300,11 @@ static std::shared_ptr<MPS<SU2, double>> extract_root_single(dmrgci_engine &e, i
     return imps;
 }
 
-// Read the spatial 2-RDMs once per solve, one root at a time. Each root is extracted from the
-// state-averaged MultiMPS to its own single-root MPS, then one Expect sweep reads that root's 2-RDM;
-// that tensor gives the root's energy and its 1-RDM (a partial trace, so CASSCF needs only this one
-// sweep per root), is folded into the running state average, and is dropped. What survives is the
-// average -- the only 2-RDM the SA orbital gradient consumes -- so the peak is two n_act^4 tensors
-// instead of n_s, and the un-permutation and back-transform run once instead of n_s times.
-// A single sweep per root means the stale-`forward` landmine (consecutive sweeps flipping the
-// center) never arises. Extracting first also keeps the sweep exact: a PDM sweep straight on the
-// MultiMPS would truncate the shared basis when it moves the center, while a single-root MPS moves
-// its center losslessly.
+// Spatial 2-RDMs, once per solve, one root at a time: one Expect sweep per extracted root yields
+// that root's 2-RDM, which gives its energy and its 1-RDM (a partial trace), is folded into the
+// running state average, and is dropped. Only the average survives, so the peak is two n_act^4
+// tensors and the un-permutation and back-transform run once. A PDM sweep straight on the MultiMPS
+// would truncate the shared basis when it moves the center; a single-root MPS moves losslessly.
 static void ensure_2rdm(dmrgci_engine &e) {
     if (e.d2_valid)
         return;
@@ -342,8 +315,7 @@ static void ensure_2rdm(dmrgci_engine &e) {
     e.d2_av.assign(blk, 0.0);
     e.d1_states.assign(blk1 * e.n_s, 0.0);
 
-    // Average with the weights the host optimizes under; absent a weight vector the roots are equally
-    // weighted (what block2's shared renormalized basis assumes anyway).
+    // Weights the host optimizes under; absent a weight vector the roots are equally weighted.
     std::vector<double> w(e.n_s, 1.0);
     if ((int)e.w_state.size() == e.n_s)
         w = e.w_state;
@@ -351,8 +323,7 @@ static void ensure_2rdm(dmrgci_engine &e) {
     for (int st = 0; st < e.n_s; st++)
         wsum += w[st];
 
-    // The PDM2 MPO is a function of e.hamil alone -- state-independent -- so build it once and only
-    // rebind the environment per root.
+    // State-independent (a function of e.hamil alone): built once, the environment rebound per root.
     std::shared_ptr<MPO<SU2, double>> p2mpo = std::make_shared<PDM2MPOQC<SU2, double>>(e.hamil);
     p2mpo = std::make_shared<SimplifiedMPO<SU2, double>>(
         p2mpo, std::make_shared<RuleQC<SU2, double>>(), true, true,
@@ -374,18 +345,16 @@ static void ensure_2rdm(dmrgci_engine &e) {
         ex2->solve(true, imps->center == 0);
         std::shared_ptr<GTensor<double>> d2 = ex2->get_2pdm_spatial(); // shape {n,n,n,n}
 
-        // GTensor data is contiguous row-major [p,q,r,s] = the block2 D2 layout. It is this root's
-        // own buffer and dies with the iteration, so read it in place -- no copy, no index leak.
+        // Contiguous row-major [p,q,r,s] = the block2 D2 layout. This root's own buffer, read in place.
         const double *d2p = d2->data->data();
 
-        // This root's true energy, not the solver's pre-truncation sweep value. Taken here, while the
-        // 2-RDM is still in the solver's basis and lattice order, i.e. the one e.fcidump is in.
+        // This root's true energy, not the solver's pre-truncation sweep value. Taken while the
+        // 2-RDM is still in the solver's basis and lattice order, the one e.fcidump is in.
         if (e.n_elec >= 2)
             e.E_states[st] = rdm_energy(e, d2p);
 
-        // ... and this root's 1-RDM, D1[p,s] = 1/(N-1) sum_k D2[p,k,k,s]. Contracting it from the
-        // root's own tensor here is what lets the tensor go: the trace commutes with the orthogonal
-        // un-permutation and back-transform, which the n_act^2 matrix carries below instead.
+        // This root's 1-RDM, D1[p,s] = 1/(N-1) sum_k D2[p,k,k,s]. The trace commutes with the
+        // orthogonal un-permutation and back-transform below, which the n_act^2 matrix carries.
         double *d1 = e.d1_states.data() + (size_t)st * blk1;
         for (int p = 0; p < n; p++)
             for (int s = 0; s < n; s++) {
@@ -457,12 +426,10 @@ static void ensure_2rdm(dmrgci_engine &e) {
     assert_stack_clean("2-RDM read"); // the Expect sweeps must leave the LIFO stacks as they found them
 }
 
-// Build the full n_s x n_s spin-summed 1-RDM once per solve for the property read-out: the
-// state-diagonal blocks and the transition (off-diagonal) blocks, in the delocalized basis. Each
-// block is a direct 1-PDM Expect sweep over the extracted root(s) -- one-electron properties read
-// one-electron RDMs, never a 2-RDM (that sweep is far heavier and the direct 1-PDM is more accurate
-// at finite M). Diagonal i==j is a plain per-state 1-RDM (bra==ket); i<j is the bra!=ket transition
-// 1-RDM, with (j,i) recovered as its transpose (exact against the symmetric property integrals).
+// Full n_s x n_s spin-summed 1-RDM for the property read-out, once per solve, in the delocalized
+// basis: one direct 1-PDM Expect sweep per block, never a 2-RDM partial trace. Diagonal i==j is a
+// per-state 1-RDM (bra==ket); i<j is the bra!=ket transition 1-RDM, with (j,i) its transpose (exact
+// against the symmetric property integrals).
 static void ensure_dm_full(dmrgci_engine &e) {
     if (e.dmfull_valid)
         return;
@@ -481,9 +448,8 @@ static void ensure_dm_full(dmrgci_engine &e) {
         for (int i = 0; i < n; i++) iperm[e.reorder_perm[i]] = i;
     }
 
-    // The PDM1 MPO is a function of e.hamil alone -- state-pair-independent -- so build it once and
-    // only rebind the environment per pair. NoTransposeRule: the transpose-symmetry simplification is
-    // invalid when bra != ket (correct-and-uniform for the diagonal too).
+    // State-pair-independent: built once, the environment rebound per pair. NoTransposeRule because
+    // the transpose-symmetry simplification is invalid when bra != ket.
     std::shared_ptr<MPO<SU2, double>> p1mpo = std::make_shared<PDM1MPOQC<SU2, double>>(e.hamil);
     p1mpo = std::make_shared<SimplifiedMPO<SU2, double>>(
         p1mpo,
@@ -492,10 +458,8 @@ static void ensure_dm_full(dmrgci_engine &e) {
 
     for (int i = 0; i < e.n_s; i++)
         for (int j = i; j < e.n_s; j++) {
-            // Fresh extract of both roots so bra/ket share a canonical center (as in ensure_2rdm).
-            // Both go through extract_root_single: the single-MPS form is all-or-nothing here, since
-            // blocking dispatches on the ket alone but the effective Hamiltonian asserts bra and ket
-            // agree. Extracting both from the same MultiMPS center, they convert alike.
+            // Fresh extract of both roots so bra/ket share a canonical center. The single-MPS form is
+            // all-or-nothing: the effective Hamiltonian asserts bra and ket agree.
             const std::string itag = e.mps_info->tag + "-t" + std::to_string(i);
             const std::string istag = itag + "-s";
             std::shared_ptr<MPS<SU2, double>> imps = extract_root_single(e, i, itag, istag);
@@ -557,11 +521,10 @@ static void ensure_dm_full(dmrgci_engine &e) {
     assert_stack_clean("full 1-RDM read");
 }
 
-// Reload the retained MultiMPS fresh from disk for a warm restart. After a solve, block2's LIFO
-// memory stack is empty and the in-memory MultiMPS is a partially-deallocated shell whose StateInfos
-// dangle into freed stack memory -- the on-disk copy is authoritative. load_data/load_mutable
-// reallocate every StateInfo/SparseMatrixInfo on the heap (surviving any number of stack resets);
-// the info is rebuilt against the CURRENT MPO basis. Mirrors MultiMPS::extract's reload, all roots.
+// Reload the retained MultiMPS fresh from disk for a warm restart. Post-solve the in-memory MultiMPS
+// is a partially-deallocated shell whose StateInfos dangle into freed stack memory; the on-disk copy
+// is authoritative. load_data/load_mutable reallocate every StateInfo/SparseMatrixInfo on the heap,
+// rebuilt against the current MPO basis.
 static void reload_retained_mps(dmrgci_engine &e) {
     const std::string tag = e.mps_info->tag;
     auto info = std::make_shared<MultiMPSInfo<SU2>>(e.mpo->n_sites, e.hamil->vacuum,
@@ -575,23 +538,18 @@ static void reload_retained_mps(dmrgci_engine &e) {
     e.mps = mps;
 }
 
-// Rotate the retained MultiMPS from the previous macro-iteration's active basis into the current one
-// (localization-rotation warm start). R (e.R_active, orbital order [a*n+p]) is the overlap of the two
-// localized active-MO sets; regularize it to the nearest proper rotation U~, take kappa = log(U~), and
-// apply exp(kappa) to the MPS by RK4 time evolution -- block2's orbital-rotation recipe (two-site, so
-// noise-free; the bond space rides along the SVD). NOPT already imports the new-basis integrals, so
-// only the MPS is rotated (the integrals are not). e.mps is mutated in place on success. Returns false
-// (=> caller cold-starts) if the rotation is untrustworthy: too much active-external leakage, an
-// improper/complex generator, or a propagated norm that drifts too far from 1.
+// Rotate the retained MultiMPS from the previous macro-iteration's active basis into the current one.
+// R (e.R_active, order [a*n+p]) is the overlap of the two localized active-MO sets: regularize to the
+// nearest proper rotation U~, take kappa = log(U~), apply exp(kappa) by RK4 time evolution. Only the
+// MPS is rotated; the new-basis integrals are already imported. e.mps is mutated in place on success.
+// Returns false (=> caller cold-starts) on excess leakage, an improper generator, or norm drift.
 static bool rotate_retained_mps(dmrgci_engine &e) {
     const int n = e.n_act;
     const size_t nn = (size_t)n * n;
 
-    // The regularization/log temporaries MUST live on the heap, not block2's LIFO stack: at the
-    // rotation the stack is empty, so this math and the subsequent MPS-rotation init_environments
-    // allocate from the same base region -- and block2 has a latent uninitialized read there, so
-    // leftover eigs/log floating-point bytes on the stack cause a data-dependent segfault. (eigs and
-    // logarithm already keep their own workspace on the heap; only these caller matrices need it.)
+    // These temporaries MUST live on the heap, not block2's LIFO stack: the stack is empty here, so
+    // this math and the subsequent init_environments allocate from the same base region, where block2
+    // has a latent uninitialized read -- leftover bytes there cause a data-dependent segfault.
     auto heap = std::make_shared<VectorAllocator<double>>();
 
     // --- regularize R -> nearest orthogonal U~ = R (R^T R)^{-1/2} (Lowdin) ---
@@ -673,21 +631,18 @@ void block2_casci_wrap::import_integrals(double *aaaa, double *f_act, double e_c
                               h2, (size_t)n * n * n * n);
     e.fcidump->set_orb_sym<int>(std::vector<int>(n, 0)); // C1
 
-    // DMRG lattice order. block2's low-level path strings orbitals on the lattice in raw FCIDUMP
-    // order; localized orbitals come out scrambled, so order them with block2's own Fiedler on the
-    // exchange matrix K_ij = |(ij|ji)| and apply it via FCIDUMP::reorder. RDMs come back in this
-    // order and are un-permuted in ensure_2rdm.
-    // Warm-start freezes the order: a warm solve reuses the retained MPS's lattice order so the
-    // rotated MPS stays consistent across the basis change (Fiedler order is a function of the
-    // localized orbitals, so it must be pinned together with the frozen localization). A cold solve
-    // recomputes it.
+    // DMRG lattice order: block2 strings orbitals on the lattice in raw FCIDUMP order, so localized
+    // orbitals come out scrambled and are ordered by Fiedler on the exchange matrix K_ij = |(ij|ji)|.
+    // RDMs come back in this order and are un-permuted in ensure_2rdm. A warm solve reuses the
+    // retained MPS's order -- Fiedler order is a function of the localized orbitals, so it is pinned
+    // together with the frozen localization. A cold solve recomputes it.
     if (e.have_rotation && !e.reorder_perm.empty()) {
         e.fcidump->reorder(e.reorder_perm); // frozen order (warm restart)
     } else {
         e.reorder_perm.clear();
         if (e.cfg.loc_order == DMRG_LOCORDER_FIEDLER) {
-            // block2's metric: the exchange graph, with the one-electron coupling as a tie-break so a
-            // disconnected or tied exchange graph still orders reproducibly (pyblock2 parser.py).
+            // block2's metric (pyblock2 parser.py): the exchange graph, with the one-electron
+            // coupling as a tie-break so a disconnected or tied graph still orders reproducibly.
             std::vector<double> kmat((size_t)n * n, 0.0);
             for (int i = 0; i < n; i++)
                 for (int j = 0; j < n; j++)
@@ -711,11 +666,9 @@ void block2_casci_wrap::import_integrals(double *aaaa, double *f_act, double e_c
 // last_iter + 2 unless the input overrides it).
 static const int DMRG_ONEDOT_TAIL = 2;
 
-// Put the MPS back into a two-site center after a one-site tail. A one-site sweep ends with a fused
-// single-site center ('J'/'T') at a boundary, and `dot` describes the sweep, not the tensors -- every
-// consumer downstream (RDM read-out, MPS rotation, determinant read-out, the next macro-iteration's
-// sweeps) builds its layout from canonical_form/center/dot, so all three must agree again.
-// Port of block2's DMRGDriver::adjust_mps(dot=2) (pyblock2/driver/core.py).
+// Put the MPS back into a two-site center after a one-site tail: a one-site sweep ends with a fused
+// single-site center ('J'/'T') at a boundary, and every downstream consumer builds its layout from
+// canonical_form/center/dot, which must agree. Port of block2's DMRGDriver::adjust_mps(dot=2).
 static void adjust_mps_two_dot(dmrgci_engine &e) {
     auto &mps = e.mps;
     auto cg = e.mpo->tf->opf->cg;
@@ -742,12 +695,10 @@ static void adjust_mps_two_dot(dmrgci_engine &e) {
     mps->save_data();
 }
 
-// Re-order the lattice for a cold fallback. import_integrals commits the order before solve() is
-// allowed to decline the warm rotation, so a declined rotation -- which happens precisely when the
-// basis moved too far for the previous orbitals to still describe it -- leaves the FCIDUMP on those
-// orbitals' Fiedler order. Re-order the already-permuted FCIDUMP in place: Fiedler on a relabelled
-// exchange graph is the same ordering up to that relabelling, so the fresh permutation composes with
-// the frozen one and no un-permuted integrals need to be kept.
+// Re-order the lattice for a cold fallback: import_integrals commits the order before solve() may
+// decline the warm rotation, leaving the FCIDUMP on the previous orbitals' Fiedler order. The
+// already-permuted FCIDUMP is re-ordered in place -- Fiedler on a relabelled exchange graph is the
+// same ordering up to that relabelling, so the fresh permutation composes with the frozen one.
 static void recompute_cold_order(dmrgci_engine &e) {
     if (e.cfg.loc_order != DMRG_LOCORDER_FIEDLER || e.reorder_perm.empty())
         return;
@@ -858,10 +809,9 @@ int block2_casci_wrap::solve(int, int, bool) {
     dmrg->solve(sch.n_sweeps, e.mps->center == 0, e.cfg.sweep_tol);
 
     // Convergence of the variational (two-site) phase, taken before the tail appends to the same
-    // history. block2 early-stops at sweep_tol, so a run that used the whole budget never met it.
-    // Residual = max over roots of the last two sweeps' |dE|: a mean can cancel opposite-moving roots
-    // and hide a still-moving one. A single sweep leaves the residual unmeasurable (NaN), which flags
-    // rather than fakes convergence.
+    // history. Residual = max over roots of the last two sweeps' |dE|; a mean would cancel
+    // opposite-moving roots. A single sweep leaves it unmeasurable (NaN) rather than faking
+    // convergence.
     const int n2 = (int)dmrg->energies.size(); // two-site sweeps actually run (may early-stop)
     if (n2 >= 2) {
         const auto &e1 = dmrg->energies[n2 - 1];
@@ -881,29 +831,11 @@ int block2_casci_wrap::solve(int, int, bool) {
     e.last_hit_max = (n2 >= sch.n_sweeps) &&
                      (std::isnan(e.last_sweep_dE) || e.last_sweep_dE > e.cfg.sweep_tol);
 
-    // Close with one-site sweeps at zero noise. A two-site sweep reports the Davidson eigenvalue of
-    // the untruncated two-site center -- a vector of Schmidt rank up to M*d across the central bond,
-    // so not the bond-M MPS that actually gets stored. The one-site center reshapes to (M*d) x M, so
-    // for a single root its density matrix has rank <= M and the center move is an exact gauge
-    // transformation: the sweep is truncation-free and its energy is the energy of the stored MPS.
-    //
-    // State-averaged roots share one renormalized basis, so the density matrix is
-    // sum_j w_j Theta_j Theta_j^T with rank up to min(M*d, n_s*M) > M and the move does truncate --
-    // the tail is not exact for n_s > 1, and cannot be. That is accepted: the loss is an ordinary
-    // DMRG truncation error (it vanishes with M like any other), the energies the CAS-SCF consumes
-    // come from the RDMs and are exact for the stored MPS either way, and what the tail buys is a
-    // deterministic noise-free endgame, an MPS already in the one-site form the RDM read-out wants,
-    // and parity with block2's own default schedule -- which applies this same tail at every n_roots.
-    //
-    // Zero noise is a correctness condition, not a tuning choice: block2's perturbative noise
-    // deliberately raises the density-matrix rank, which is exactly what would break rank <= M.
-    //
-    // Tolerance zero, not sweep_tol: block2 measures convergence against the previous entry in the
-    // same history, so the first one-site sweep would be compared with the last two-site one. Those
-    // are different quantities -- the two-site value is the Davidson eigenvalue of the untruncated
-    // center, the one-site value is the energy of the stored MPS -- and their difference is the
-    // truncation error, which sits below any usable sweep_tol. The tail would stop after a single
-    // sweep, and for n_s > 1 it is a period-two cycle, so which sweep it stops on picks the endpoint.
+    // Close with one-site sweeps at zero noise, tolerance zero. The center move is an exact gauge
+    // transformation only for a single root (density-matrix rank <= M); SA roots share a renormalized
+    // basis, so for n_s > 1 the tail truncates. Zero noise is a correctness condition, not tuning:
+    // block2's perturbative noise raises the density-matrix rank. Tolerance zero because block2
+    // compares against the previous history entry, a two-site value measuring a different quantity.
     if (DMRG_ONEDOT_TAIL > 0) {
         const int total = n2 + DMRG_ONEDOT_TAIL;
         dmrg->me->dot = 1;
@@ -988,16 +920,14 @@ void block2_casci_wrap::calc_DMA(double *gamma, int a, int b) {
 }
 void block2_casci_wrap::calc_DMB(double *, int, int) {
     // No-op: SU2 is spin-adapted, so calc_DMA carries the full spin-summed 1-RDM and the host sums
-    // DMA+DMB. WARNING: the A/B split is NOT spin-resolved (all density in A, none in B) -- valid
-    // only for consumers that use the sum (CAS-SCF properties). A spin-resolving consumer (e.g.
-    // XMCQDPT2/CDAS PT tensors, which read DMA and DMB separately) needs a real SU2 spin-density
-    // (na-nb sector) 1-RDM here first.
+    // DMA+DMB. WARNING: the A/B split is NOT spin-resolved (all density in A, none in B), so this is
+    // valid only for consumers that use the sum. One reading DMA and DMB separately (XMCQDPT2/CDAS PT
+    // tensors) needs a real SU2 spin-density (na-nb sector) 1-RDM here first.
 }
-// Compress a single MPS to bond dimension target_m by fitting a small-m MPS to it through the identity
-// MPO (block2 Linear "Normal" equation). State-preserving projection used only for the read-out: it
-// makes the DeterminantTRIE search cheaper (cost ~ m^2) on the (higher-m) rotated canonical MPS, while
-// preserving the leading determinants. ctag names the fitted MPS's scratch; the caller removes it. Env
-// scratch is cleaned here.
+// Compress a single MPS to bond dimension target_m by fitting a small-m MPS to it through the
+// identity MPO (block2 Linear "Normal" equation). State-preserving projection, used only for the
+// read-out, where it makes the DeterminantTRIE search cheaper (cost ~ m^2) while preserving the
+// leading determinants. ctag names the fitted MPS's scratch; the caller removes it.
 std::shared_ptr<MPS<SU2, double>>
 nopt_block2::compress_single_mps(dmrgci_engine &e, const std::shared_ptr<MPS<SU2, double>> &ket,
                     int target_m, const std::string &ctag) {
