@@ -493,13 +493,18 @@ static void ensure_dm_full(dmrgci_engine &e) {
     for (int i = 0; i < e.n_s; i++)
         for (int j = i; j < e.n_s; j++) {
             // Fresh extract of both roots so bra/ket share a canonical center (as in ensure_2rdm).
+            // Both go through extract_root_single: the single-MPS form is all-or-nothing here, since
+            // blocking dispatches on the ket alone but the effective Hamiltonian asserts bra and ket
+            // agree. Extracting both from the same MultiMPS center, they convert alike.
             const std::string itag = e.mps_info->tag + "-t" + std::to_string(i);
-            std::shared_ptr<MultiMPS<SU2, double>> imps = e.mps->extract(i, itag);
-            std::string jtag;
-            std::shared_ptr<MultiMPS<SU2, double>> jmps = imps;
+            const std::string istag = itag + "-s";
+            std::shared_ptr<MPS<SU2, double>> imps = extract_root_single(e, i, itag, istag);
+            std::string jtag, jstag;
+            std::shared_ptr<MPS<SU2, double>> jmps = imps;
             if (j != i) {
                 jtag = e.mps_info->tag + "-t" + std::to_string(j);
-                jmps = e.mps->extract(j, jtag);
+                jstag = jtag + "-s";
+                jmps = extract_root_single(e, j, jtag, jstag);
             }
 
             auto p1me = std::make_shared<MovingEnvironment<SU2, double, double>>(p1mpo, imps, jmps,
@@ -540,8 +545,12 @@ static void ensure_dm_full(dmrgci_engine &e) {
             }
 
             p1me->remove_partition_files();
-            remove_tag_files(itag); // the per-root extracts are transient
-            if (j != i) remove_tag_files(jtag);
+            remove_tag_files(itag); // the per-root extracts and their single-MPS copies are transient
+            remove_tag_files(istag);
+            if (j != i) {
+                remove_tag_files(jtag);
+                remove_tag_files(jstag);
+            }
         }
     p1mpo->deallocate();
     e.dmfull_valid = true;
