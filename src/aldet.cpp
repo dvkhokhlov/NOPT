@@ -110,6 +110,8 @@ aldet_data::aldet_data(){
     
     do_PT = 0;
     
+    alloc_mode = ALDET_ALLOC_FULL;
+    
     Na = 0;
     Nb = 0;    
     Nd = 0;
@@ -277,9 +279,16 @@ int aldet_data::get_dim_meta(int ext_n_act, int ext_na, int ext_nb, int ext_n_se
 }
 
 
-int aldet_data::get_dim(int ext_n_act, int ext_na, int ext_nb, int ext_n_sets, int ext_mult, int ext_print_number){
+int aldet_data::get_dim(int ext_n_act, int ext_na, int ext_nb, int ext_n_sets, int ext_mult, int ext_print_number, int ext_alloc){
     
     get_dim_meta(ext_n_act, ext_na, ext_nb, ext_n_sets, ext_mult, ext_print_number);
+    
+    alloc_mode = ext_alloc;
+    if((alloc_mode!=ALDET_ALLOC_FULL)&&(alloc_mode!=ALDET_ALLOC_DIMS)){
+        fprintf(out_stream,"ERROR: aldet_data::get_dim got unknown allocation mode %d\n", alloc_mode);
+        exit(1);
+    }
+    if(alloc_mode==ALDET_ALLOC_DIMS)return 0;
     
 //     if(na==0)if(nb==0)return 0;
     fa = new int [na * n_act];
@@ -4427,7 +4436,7 @@ int ci_from_ci(const int& N, const int& na, const int& nb, aldet_data * CI, int 
 int aldet_copy(aldet_data * O, aldet_data * I){
     
     //check mol_link.cpp:396
-    O->get_dim(I->n_act, I->na, I->nb, I->n_sets, I->mult, I->print_number);
+    O->get_dim(I->n_act, I->na, I->nb, I->n_sets, I->mult, I->print_number, I->alloc_mode);
     O->n_sets=I->n_sets;
     for(int i=0;i<O->n_sets;i++){
         O->n_states[i]=I->n_states[i];

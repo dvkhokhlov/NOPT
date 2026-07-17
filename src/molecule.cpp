@@ -820,7 +820,7 @@ int molecule::PP_print(){
 
 
 
-int molecule::active_space_read(int warning, int read_states){
+int molecule::active_space_read(int warning, int read_states, int ci_alloc){
     
     recursive_file in;
     char line[BUF_LINE_LENGTH];
@@ -860,7 +860,7 @@ int molecule::active_space_read(int warning, int read_states){
         n_act_orb   [0] = 0;
         mult=1;
         read_CI[0]=0;
-        CI[0].get_dim(n_act_orb[0],n_act_el_alp[0], n_act_el_bet[0], 2, mult, print_number);//two sets are needed for CASSCF
+        CI[0].get_dim(n_act_orb[0],n_act_el_alp[0], n_act_el_bet[0], 2, mult, print_number, ci_alloc);//two sets are needed for CASSCF
         CI[0].n_states[0]=0;
         CI[0].n_states[1]=0;
     
@@ -872,7 +872,7 @@ int molecule::active_space_read(int warning, int read_states){
         n_act_orb   [0] = kw_to_i(line, n_act_kw, 0);
         mult = kw_to_i(line, mult_kw, 1);
         print_number = kw_to_i(line, print_number_kw, CAS_PRINT_NUMBER_DEFAULT);
-        CI[0].get_dim(n_act_orb[0],n_act_el_alp[0], n_act_el_bet[0], 2, mult, print_number);//two sets are needed for CASSCF
+        CI[0].get_dim(n_act_orb[0],n_act_el_alp[0], n_act_el_bet[0], 2, mult, print_number, ci_alloc);//two sets are needed for CASSCF
         CI[0].n_states[0]=0;
         CI[0].n_states[1]=0;
     
