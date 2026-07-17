@@ -292,6 +292,36 @@ static double rdm_energy(const dmrgci_engine &e, const double *d2) {
     return (double)e.fcidump->e() + e1 + 0.5 * e2;
 }
 
+// Extract one root of the state-averaged MultiMPS as a plain single-root MPS, ready for an Expect
+// sweep. extract yields a one-root MultiMPS, which is not what Expect wants: it dispatches on the
+// canonical form, and its MultiMPS branch resolves Automatic to Normal -- a serial loop over
+// operators, with no Fast algorithm to fall back to. Only a plain MPS reaches the OpenMP-parallel
+// path. The center is then put in the one-site form the solve's tail already leaves the
+// wavefunction in, the two-site expectation being the slowest of block2's three. The conversion is
+// block2's own (the site_type=1 branch of DMRGDriver::get_npdm) and holds only with the center at an
+// end, which is where a finished sweep leaves it.
+static std::shared_ptr<MPS<SU2, double>> extract_root_single(dmrgci_engine &e, int st,
+                                                             const std::string &xtag,
+                                                             const std::string &stag) {
+    std::shared_ptr<MultiMPS<SU2, double>> xmps = e.mps->extract(st, xtag);
+    std::shared_ptr<MPS<SU2, double>> imps = xmps->make_single(stag);
+    if (imps->dot == 2) {
+        imps->dot = 1;
+        if (imps->center == imps->n_sites - 2) {
+            imps->center = imps->n_sites - 1;
+            imps->canonical_form[imps->n_sites - 1] = 'S';
+        } else if (imps->center == 0)
+            imps->canonical_form[0] = 'K';
+        else {
+            fprintf(out_stream, "ERROR: RDM read-out expects the MPS center at an end "
+                                "(got %d of %d sites)\n", imps->center, imps->n_sites);
+            exit(EXIT_FAILURE);
+        }
+        imps->save_data();
+    }
+    return imps;
+}
+
 // Read the spatial 2-RDMs once per solve, one root at a time. Each root is extracted from the
 // state-averaged MultiMPS to its own single-root MPS, then one Expect sweep reads that root's 2-RDM;
 // that tensor gives the root's energy and its 1-RDM (a partial trace, so CASSCF needs only this one
@@ -332,7 +362,8 @@ static void ensure_2rdm(dmrgci_engine &e) {
 
     for (int st = 0; st < e.n_s; st++) {
         const std::string xtag = e.mps_info->tag + "-" + std::to_string(st);
-        std::shared_ptr<MultiMPS<SU2, double>> imps = e.mps->extract(st, xtag);
+        const std::string stag = xtag + "-s";
+        std::shared_ptr<MPS<SU2, double>> imps = extract_root_single(e, st, xtag, stag);
 
         auto p2me = std::make_shared<MovingEnvironment<SU2, double, double>>(p2mpo, imps, imps,
                                                                              "2PDM");
@@ -370,7 +401,8 @@ static void ensure_2rdm(dmrgci_engine &e) {
             e.d2_av[k] += ws * d2p[k];
 
         p2me->remove_partition_files();
-        remove_tag_files(xtag); // the per-root extract is transient
+        remove_tag_files(xtag); // the per-root extract and its single-MPS copy are transient
+        remove_tag_files(stag);
     }
     p2mpo->deallocate();
 
