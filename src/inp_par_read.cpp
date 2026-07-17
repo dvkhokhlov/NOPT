@@ -1756,6 +1756,13 @@ std::vector<int> molecule_read_by_inp_par(molecule * M, inp_par * P){
     if( P->cas.y||P->xmc.y||P->cdas.y)mc=1;
     if((P->cas.y +P->xmc.y +P->cdas.y+P->rhf.y)==0)mc=1;
     
+    // Linking several molecules rebuilds the active space with mult=0, which the DMRG
+    // backend rejects -- and the rebuild is a full determinant build, so stop before it.
+    if((s>1)&&(P->cas.ci_solver==CISOLVER_DMRG)){
+        fprintf(out_stream,"ERROR: DMRG does not support N_MOL>1 (got %d molecules); use CISOLVER=aldet\n",s);
+        exit(EXIT_FAILURE);
+    }
+    
     // DMRG reads only the active-space dimensions off molecule::CI -- never the
     // determinant space, which is unbuildable at the sizes DMRG is used for.
     int ci_alloc = ALDET_ALLOC_FULL;
