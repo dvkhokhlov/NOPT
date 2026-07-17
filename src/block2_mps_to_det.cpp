@@ -33,11 +33,9 @@ static void report_dmrg_orbital_map(std::FILE *out, int n_act,
 
 // The solve->canonical report basis change. R = <canon|solve> = U_canon*U_loc (localizing) / U_canon
 // (canonicalizing a delocalized solve) / U_loc (localized only) / none (report in the solve basis).
-// Peel the signed permutation Q off Rp = R^T (column p = canonical orbital p in solve coords): a
-// greedy max-magnitude match leaves the proper residual Rt (drives the read-out rotation), and Q gives
-// the per-lattice-site (reported orbital, sign) map. The sigma signs are a theory-fixed per-orbital
-// gauge, not free -- a determinant with orbital p singly occupied carries sigma_p -- so they are
-// reinstated on the read-out (canonicalize_site_det).
+// Peel the signed permutation Q off Rp = R^T: a greedy max-magnitude match leaves the proper residual
+// Rt (drives the read-out rotation), and Q gives the per-site (reported orbital, sign) map. The sigma
+// signs are a theory-fixed per-orbital gauge, reinstated on read-out (canonicalize_site_det).
 struct report_basis_change {
     std::vector<double> residual;      // proper residual Rt in solve coords (empty => no rotation)
     std::vector<int> canon_of_lattice; // lattice site k -> reported orbital index
@@ -169,11 +167,10 @@ struct det_image {
     double phase = 1.0;
 };
 
-// Convert a determinant from the current MPS lattice/site convention into canonical alpha-string /
-// beta-string convention. block2's non-spin-adapted determinant/SCI Fock convention uses interleaved
-// spin orbitals (alpha0,beta0,alpha1,beta1,...) for fermion phases, while aldet prints separate
-// alpha/beta strings. The inversion count below applies that spin-order phase together with the
-// Fiedler/site orbital permutation and the chosen canonical-orbital sign gauge.
+// Convert a determinant from the MPS lattice/site convention into canonical alpha-string/beta-string
+// convention. block2's determinant Fock convention interleaves spin orbitals (a0,b0,a1,b1,...) for
+// fermion phases; aldet prints separate alpha/beta strings. The inversion count applies that
+// spin-order phase together with the Fiedler permutation and the canonical-orbital sign gauge.
 static det_image canonicalize_site_det(const det_occ &site_det,
                                        const std::vector<int> &canon_of_lattice,
                                        const std::vector<double> &lattice_sign) {
@@ -219,13 +216,10 @@ struct su2_readout_expansion {
 };
 
 // Put the MPS in the one-site read-out form: left-canonical throughout with a single right-fused
-// center at the last site. For a non-singlet target the SU2 -> SZ unfused transform can only
-// rebuild LEFT-canonical site tensors -- with the center at the left end every other site is
-// right-canonical and UnfusedMPS::backward_right_fused finds the SZ bond dims disagree (asserts in
-// block2's mps_unfused.hpp). Which end the read-out MPS lands on is otherwise uncontrolled: the
-// compression fit early-stops, so its sweep count -- and with it the final center -- varies with
-// the state. Pinning the end makes the read-out deterministic. Harmless for a singlet, required
-// for anything else; the twosz != 0 path embeds to a singlet first, so it is exempt.
+// center at the last site. For a non-singlet target the SU2 -> SZ unfused transform rebuilds only
+// LEFT-canonical site tensors, and a left-end center makes backward_right_fused assert on
+// disagreeing SZ bond dims. The end is otherwise uncontrolled (the compression fit early-stops, so
+// the sweep count varies with the state), so pinning it makes the read-out deterministic.
 static void pin_right_end(const std::shared_ptr<MPS<SU2, double>> &mps,
                           const std::shared_ptr<CG<SU2>> &cg) {
     mps->load_mutable();
@@ -265,21 +259,10 @@ static void singlet_embed_su2_mps(const std::shared_ptr<MPS<SU2, double>> &mps,
 }
 
 // Enumerate the retained MPS's leading Slater determinants (SZ DeterminantTRIE) in the requested
-// canonical orbital order/sign gauge. block2 cannot enumerate determinants from a spin-adapted (SU2)
-// MPS of a non-singlet state directly, so route through the SZ M_S = twosz/2 sector. The SZ occupation
-// encoding (0/1/2/3 per spatial orbital, lattice order) is byte-identical to what canonicalize_site_det
-// consumes, so the sign/permutation handling carries over unchanged.
-//
-//  * M_S = 0 (twosz == 0; closed shells and M_S = 0 open shells): the +/-M_S components are symmetric,
-//    so the plain SU2->SZ transform lands on a self-consistent M_S = 0 MPS and finalize rebuilds it cleanly.
-//  * M_S != 0 (twosz != 0; na != nb open shells): the plain transform's SZ bond spaces (all M_S mixed
-//    in, unfiltered) disagree with the projected tensors and finalize aborts. Follow block2's supported
-//    path instead -- singlet-embed the SU2 MPS (couples the physical spin S with a fictitious spin S at
-//    the boundary into a singlet), transform to the M_S = 0 (singlet) sector, then
-//    resolve_singlet_embedding(twosz) selects the M_S = na-nb projection and rebuilds a consistent MPS.
-//    The singlet embedding shares the state's norm across the 2S+1 projections, so the resolved sector
-//    carries norm^2 = 1/(2S+1); rescaling the coefficients by sqrt(2S+1) restores the physical (aldet)
-//    normalization, leaving the reported weight to reflect only the extraction truncation.
+// canonical orbital order/sign gauge, routed through the SZ M_S = twosz/2 sector: block2 cannot
+// enumerate from a spin-adapted MPS of a non-singlet state. twosz == 0 takes the plain SU2->SZ
+// transform. twosz != 0 needs singlet-embed -> M_S = 0 -> resolve_singlet_embedding(twosz), whose
+// resolved sector carries norm^2 = 1/(2S+1), so coefficients are rescaled by sqrt(2S+1).
 static su2_readout_expansion canonical_readout_from_su2_mps(
     const std::shared_ptr<MPS<SU2, double>> &su2_mps,
     int n_sites, int n_elec, int twos, int twosz, double cutoff,
@@ -391,11 +374,10 @@ static void report_determinant_weights(std::FILE *out, const std::vector<double>
                           "        extract_m if the extraction MPS is being compressed)\n", lo);
 }
 
-// Report each state's leading determinant expansion in the canonical active-orbital basis. The DMRG
-// solve runs in the localized + Fiedler-ordered basis; each state's MPS is rotated by the proper
-// (continuous) part of the solve->canonical change. The retained block2 SU2 vector is expanded locally
-// into determinants, and the remaining discrete map (lattice orbital -> canonical orbital plus
-// orbital order/sign) is applied to those determinants.
+// Report each state's leading determinant expansion in the canonical active-orbital basis. The solve
+// runs in the localized + Fiedler-ordered basis, so each MPS is rotated by the proper (continuous)
+// part of the solve->canonical change, expanded into determinants, and the remaining discrete map
+// (lattice orbital -> canonical orbital, order and sign) applied to those determinants.
 void block2_casci_wrap::print_states(int, int, int print) {
     if (!print) return;
     dmrgci_engine &e = *impl_;
