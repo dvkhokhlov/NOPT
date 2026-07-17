@@ -228,7 +228,7 @@ int aldet_data::get_dim(int ext_n_act, int ext_na, int ext_nb, int ext_n_sets, i
         
     Na = (int) std::lround(tgammal(n_act+1) / tgammal(na+1) / tgammal(n_act-na+1));
     Nb = (int) std::lround(tgammal(n_act+1) / tgammal(nb+1) / tgammal(n_act-nb+1));    
-    Nd = Na*Nb;
+    Nd = (long)Na*Nb;
     
     
     if(print_number>Nd)
