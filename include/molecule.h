@@ -181,7 +181,7 @@ class molecule
         int basis_print(int t);
         int PP_print();
         
-        int active_space_read(int warning, int read_states);
+        int active_space_read(int warning, int read_states, int ci_alloc = ALDET_ALLOC_FULL);
         int reorder_orbitals();
         int STATES_set_zero();
         int active_space_print(int f);

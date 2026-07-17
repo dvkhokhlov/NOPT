@@ -1755,6 +1755,16 @@ std::vector<int> molecule_read_by_inp_par(molecule * M, inp_par * P){
     int mc=0;
     if( P->cas.y||P->xmc.y||P->cdas.y)mc=1;
     if((P->cas.y +P->xmc.y +P->cdas.y+P->rhf.y)==0)mc=1;
+    
+    // DMRG reads only the active-space dimensions off molecule::CI -- never the
+    // determinant space, which is unbuildable at the sizes DMRG is used for.
+    int ci_alloc = ALDET_ALLOC_FULL;
+    if      (P->cas.ci_solver==CISOLVER_ALDET) ci_alloc = ALDET_ALLOC_FULL;
+    else if (P->cas.ci_solver==CISOLVER_DMRG ) ci_alloc = ALDET_ALLOC_DIMS;
+    else{
+        fprintf(out_stream,"ERROR: unknown CISOLVER (%d); accepted: aldet, dmrg\n",P->cas.ci_solver);
+        exit(EXIT_FAILURE);
+    }
         
         
     molecule *Mf;
@@ -1845,7 +1855,7 @@ std::vector<int> molecule_read_by_inp_par(molecule * M, inp_par * P){
         
         Mf[i].MO_gen();
         
-        if(mc)Mf[i].active_space_read(P->rhf.y,1-P->cas.y);
+        if(mc)Mf[i].active_space_read(P->rhf.y,1-P->cas.y,ci_alloc);
         else
             Mf[i].STATES_set_zero();
         
