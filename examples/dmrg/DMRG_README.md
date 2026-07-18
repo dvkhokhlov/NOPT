@@ -27,7 +27,10 @@ https://github.com/block-hczhai/block2-preview
 
 ### Build `libblock2.so`
 
-From the block2-preview root (only OpenBLAS is yet supported):
+From the block2-preview root. The library's BLAS backend must match NOPT's `BLAS_LIB`, so
+build the variant you need — or both, into separate prefixes.
+
+OpenBLAS:
 
 ```
 mkdir build_clib && cd build_clib
@@ -37,14 +40,31 @@ cmake .. -DBUILD_LIB=OFF -DBUILD_CLIB=ON -DUSE_MKL=OFF -DLARGE_BOND=ON \
 make -j$(nproc) && make install
 ```
 
+MKL:
+
+```
+mkdir build_clib_mkl && cd build_clib_mkl
+cmake .. -DBUILD_LIB=OFF -DBUILD_CLIB=ON -DUSE_MKL=ON -DLARGE_BOND=ON \
+         -DF77UNDERSCORE=OFF -DOMP_LIB=INTEL \
+         -DCMAKE_INSTALL_PREFIX=/opt/block2_mkl
+make -j$(nproc) && make install
+```
+
 - `BUILD_CLIB=ON` builds the C++ library + headers + CMake config (`BUILD_LIB` is the
   *python* extension — leave OFF). `cmake` configure needs a `python3` on PATH; runtime
   does not.
-- `F77UNDERSCORE=ON` is mandatory with OpenBLAS: without it the library calls `dgemm`,
-  OpenBLAS exports `dgemm_`, and NOPT won't link.
-- `LARGE_BOND=ON` and `USE_OPENBLAS=ON` match NOPT's build flags. The library is
-  real-`double` (`USE_COMPLEX=OFF`), which is all CASSCF needs.
-- Installs to `/opt/block2`.
+- `F77UNDERSCORE` is backend-dependent, not universal: block2 calls `FNAME(dgemm)`, which
+  it spells `dgemm_` with the macro and `dgemm` without. OpenBLAS exports only `dgemm_`,
+  while `mkl_blas.h` declares `dgemm` but no `dgemm_` — so ON for OpenBLAS, OFF for MKL.
+  Either one wrong and NOPT won't link.
+- `OMP_LIB=INTEL` is required for the MKL build: it is what makes block2 export
+  `-D_HAS_INTEL_MKL=2`, which is what NOPT's Makefile compiles its block2 sources with.
+  block2's default (`OMP_LIB=GNU`) exports `=1` instead, and the ABI will not match.
+- `LARGE_BOND=ON` matches NOPT's build flags. The library is real-`double`
+  (`USE_COMPLEX=OFF`), which is all CASSCF needs.
+- The macros a build exports are recorded in its own
+  `share/cmake/block2/block2Targets.cmake` (`INTERFACE_COMPILE_OPTIONS`) — the
+  authority to check NOPT's flags against if a build misbehaves.
 
 ### Enable in NOPT
 
@@ -55,9 +75,14 @@ USE_BLOCK2:=yes
 BLOCK2_DIR:=/opt/block2
 ```
 
+`BLOCK2_DIR` must point at the build matching `BLAS_LIB` (`/opt/block2_mkl` for
+`BLAS_LIB:=mkl` above): the two are separate libraries, and pairing the wrong one is the
+mismatch this section opens with.
+
 Off (`no`) by default: a normal build links no block2, and `cisolver=dmrg` then exits.
 The Makefile applies the matching ABI macros (including the by-hand
-`-D_USE_GLOBAL_VARIABLE`) to the block2 sources automatically. 
+`-D_USE_GLOBAL_VARIABLE`) to the block2 sources automatically, tracking `BLAS_LIB` for the
+backend-dependent ones. 
 
 ## 2. `$DMRG` group keywords
 

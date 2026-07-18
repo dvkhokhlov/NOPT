@@ -22,6 +22,10 @@ int CI_ss_mult(double * O, int ld, sparsed_CI_vec * s1, int n_s1, sparsed_CI_vec
 
 class aldet_data;
 
+// get_dim build modes. DIMS stops after the active-space dimensions and the per-set state
+// tables: nothing sized by Na/Nb is allocated, so the CI engine cannot run on the object.
+enum aldet_alloc_kind { ALDET_ALLOC_FULL = 0, ALDET_ALLOC_DIMS = 1 };
+
 class aldet_data 
 {
     public:
@@ -143,8 +147,13 @@ class aldet_data
         double* a_spin_sign;
         double* b_spin_sign;
         
+        int alloc_mode;// aldet_alloc_kind: FULL (default) | DIMS
+        
         aldet_data(); 
-        int get_dim(int ext_n_act, int ext_na, int ext_nb, int ext_n_sets, int ext_mult, int ext_print_number);
+        // Active-space dimensions and the per-set state tables. Allocates nothing sized by
+        // Na/Nb -- the determinant space itself is built by get_dim.
+        int get_dim_meta(int ext_n_act, int ext_na, int ext_nb, int ext_n_sets, int ext_mult, int ext_print_number);
+        int get_dim(int ext_n_act, int ext_na, int ext_nb, int ext_n_sets, int ext_mult, int ext_print_number, int ext_alloc = ALDET_ALLOC_FULL);
         
         int simple_import_data(double * ext_act_INTS,
                                double * ext_act_INTS_AB,

@@ -110,6 +110,8 @@ aldet_data::aldet_data(){
     
     do_PT = 0;
     
+    alloc_mode = ALDET_ALLOC_FULL;
+    
     Na = 0;
     Nb = 0;    
     Nd = 0;
@@ -196,7 +198,7 @@ aldet_data::aldet_data(){
 }
 
 
-int aldet_data::get_dim(int ext_n_act, int ext_na, int ext_nb, int ext_n_sets, int ext_mult, int ext_print_number){
+int aldet_data::get_dim_meta(int ext_n_act, int ext_na, int ext_nb, int ext_n_sets, int ext_mult, int ext_print_number){
     
     int status =0;
     // 0 - normal
@@ -228,12 +230,67 @@ int aldet_data::get_dim(int ext_n_act, int ext_na, int ext_nb, int ext_n_sets, i
         
     Na = (int) std::lround(tgammal(n_act+1) / tgammal(na+1) / tgammal(n_act-na+1));
     Nb = (int) std::lround(tgammal(n_act+1) / tgammal(nb+1) / tgammal(n_act-nb+1));    
-    Nd = Na*Nb;
+    Nd = (long)Na*Nb;
     
     
     if(print_number>Nd)
         print_number=Nd;
     
+    n_states = new int     [n_sets];
+    coef     = new double *[n_sets];for(int i=0;i<n_sets;i++)coef    [i]=NULL;
+    coef_bas = new double *[n_sets];for(int i=0;i<n_sets;i++)coef_bas[i]=NULL;
+    coef_asb = new double *[n_sets];for(int i=0;i<n_sets;i++)coef_asb[i]=NULL;
+    coef_bsa = new double *[n_sets];for(int i=0;i<n_sets;i++)coef_bsa[i]=NULL;
+    E_states = new double *[n_sets];for(int i=0;i<n_sets;i++)E_states[i]=NULL;
+    S2       = new double *[n_sets];for(int i=0;i<n_sets;i++)S2      [i]=NULL;
+    L2       = new double *[n_sets];for(int i=0;i<n_sets;i++)L2      [i]=NULL;
+    P        = new double *[n_sets];for(int i=0;i<n_sets;i++)P       [i]=NULL;
+    E_act    = new double *[n_sets];for(int i=0;i<n_sets;i++)E_act   [i]=NULL;
+    
+    sym_ab = 0;
+    if(mult!=0){
+        sym_ab=1;
+        for(int i=mult;i>1;i-=2)sym_ab=-sym_ab;
+    }
+    
+#ifdef TEST_ALDET
+    n_e1_a = na*(n_act-na+1);
+    n_e1_b = nb*(n_act-nb+1);
+#endif
+#ifndef TEST_ALDET    
+    n_e1_a = na*(n_act-na);
+    n_e1_b = nb*(n_act-nb);
+#endif
+    
+    if(n_e1_a%NUM_AVX)n_e1_a = n_e1_a+NUM_AVX-n_e1_a%NUM_AVX;
+    if(n_e1_b%NUM_AVX)n_e1_b = n_e1_b+NUM_AVX-n_e1_b%NUM_AVX;
+    
+#ifdef TEST_ALDET
+    n_e2_a = na*(na-1)*(n_act-na+2)*(n_act-na+1)/4;
+    n_e2_b = nb*(nb-1)*(n_act-nb+2)*(n_act-nb+1)/4;
+#endif
+#ifndef TEST_ALDET
+    n_e2_a = na*(na-1)*(n_act-na)*(n_act-na-1)/4;
+    n_e2_b = nb*(nb-1)*(n_act-nb)*(n_act-nb-1)/4;
+#endif
+    
+    
+    return 0;
+}
+
+
+int aldet_data::get_dim(int ext_n_act, int ext_na, int ext_nb, int ext_n_sets, int ext_mult, int ext_print_number, int ext_alloc){
+    
+    get_dim_meta(ext_n_act, ext_na, ext_nb, ext_n_sets, ext_mult, ext_print_number);
+    
+    alloc_mode = ext_alloc;
+    if((alloc_mode!=ALDET_ALLOC_FULL)&&(alloc_mode!=ALDET_ALLOC_DIMS)){
+        fprintf(out_stream,"ERROR: aldet_data::get_dim got unknown allocation mode %d\n", alloc_mode);
+        exit(1);
+    }
+    if(alloc_mode==ALDET_ALLOC_DIMS)return 0;
+    
+//     if(na==0)if(nb==0)return 0;
     fa = new int [na * n_act];
     fb = new int [nb * n_act];
     vec_a = new int [Na*(na+1)];
@@ -248,24 +305,6 @@ int aldet_data::get_dim(int ext_n_act, int ext_na, int ext_nb, int ext_n_sets, i
     bit_b = new int [n_act];
     buf = new int [max(na+1,nb+1) + 1];//more space for +a-b and -a+b ????
     buf[0]=0;
-    
-    n_states = new int     [n_sets];
-    coef     = new double *[n_sets];for(int i=0;i<n_sets;i++)coef    [i]=NULL;
-    coef_bas = new double *[n_sets];for(int i=0;i<n_sets;i++)coef_bas[i]=NULL;
-    coef_asb = new double *[n_sets];for(int i=0;i<n_sets;i++)coef_asb[i]=NULL;
-    coef_bsa = new double *[n_sets];for(int i=0;i<n_sets;i++)coef_bsa[i]=NULL;
-    E_states = new double *[n_sets];for(int i=0;i<n_sets;i++)E_states[i]=NULL;
-    S2       = new double *[n_sets];for(int i=0;i<n_sets;i++)S2      [i]=NULL;
-    L2       = new double *[n_sets];for(int i=0;i<n_sets;i++)L2      [i]=NULL;
-    P        = new double *[n_sets];for(int i=0;i<n_sets;i++)P       [i]=NULL;
-    E_act    = new double *[n_sets];for(int i=0;i<n_sets;i++)E_act   [i]=NULL;
-    
-//     if(na==0)if(nb==0)return 0;
-    sym_ab = 0;
-    if(mult!=0){
-        sym_ab=1;
-        for(int i=mult;i>1;i-=2)sym_ab=-sym_ab;
-    }
     
     const int Na_zv = (int) std::lround(tgammal(n_act) / tgammal(na) / tgammal(n_act-na+1));
     const int Nb_zv = (int) std::lround(tgammal(n_act) / tgammal(nb) / tgammal(n_act-nb+1));
@@ -282,16 +321,7 @@ int aldet_data::get_dim(int ext_n_act, int ext_na, int ext_nb, int ext_n_sets, i
 #ifdef DEBUG_WARN
     fprintf(out_stream,"\n\nWARNING current version (%s) has non-optimal ALDet CI engine - diagonal elements are not skiped!\n\n\n", VERSION);
 #endif
-    n_e1_a = na*(n_act-na+1);
-    n_e1_b = nb*(n_act-nb+1);
 #endif
-#ifndef TEST_ALDET    
-    n_e1_a = na*(n_act-na);
-    n_e1_b = nb*(n_act-nb);
-#endif
-    
-    if(n_e1_a%NUM_AVX)n_e1_a = n_e1_a+NUM_AVX-n_e1_a%NUM_AVX;
-    if(n_e1_b%NUM_AVX)n_e1_b = n_e1_b+NUM_AVX-n_e1_b%NUM_AVX;
     
     act_INTS_AA = new double[n_act*n_act*n_act*n_act];
     act_INTS_AB = new double[n_act*n_act*n_act*n_act];
@@ -306,16 +336,6 @@ int aldet_data::get_dim(int ext_n_act, int ext_na, int ext_nb, int ext_n_sets, i
     e1_sign_a = new double[Na*n_e1_a];
     e1_sign_b = new double[Nb*n_e1_b];
 //     e1_asm_ints_b = new int[2*Nb*n_e1_b];
-#ifdef TEST_ALDET
-    n_e2_a = na*(na-1)*(n_act-na+2)*(n_act-na+1)/4;
-    n_e2_b = nb*(nb-1)*(n_act-nb+2)*(n_act-nb+1)/4;
-#endif
-#ifndef TEST_ALDET
-    n_e2_a = na*(na-1)*(n_act-na)*(n_act-na-1)/4;
-    n_e2_b = nb*(nb-1)*(n_act-nb)*(n_act-nb-1)/4;
-#endif
-    
-    
     e2_ind_a  = new int   [Na*n_e2_a];
     e2_ind_b  = new int   [Nb*n_e2_b];
     e2_V_a    = new double[Na*n_e2_a];
@@ -4416,7 +4436,7 @@ int ci_from_ci(const int& N, const int& na, const int& nb, aldet_data * CI, int 
 int aldet_copy(aldet_data * O, aldet_data * I){
     
     //check mol_link.cpp:396
-    O->get_dim(I->n_act, I->na, I->nb, I->n_sets, I->mult, I->print_number);
+    O->get_dim(I->n_act, I->na, I->nb, I->n_sets, I->mult, I->print_number, I->alloc_mode);
     O->n_sets=I->n_sets;
     for(int i=0;i<O->n_sets;i++){
         O->n_states[i]=I->n_states[i];
