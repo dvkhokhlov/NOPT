@@ -20,12 +20,20 @@ extern coord_list C;
 
 int single_point_calc( inp_par * P, molecule * Qm){ 
         
-    // DMRG exposes no determinant CI object, so the determinant-only PT methods (XMCQDPT, CDAS-PT)
-    // cannot consume it -- reject the combination up front instead of crashing later in as_aldet().
-    if(P->cas.y && P->cas.ci_solver==CISOLVER_DMRG && (P->xmc.y || P->cdas.y)){
-        fprintf(out_stream,"ERROR: CISOLVER=dmrg cannot be combined with XMCQDPT/CDAS-PT "
-                           "(they need the determinant CI object, which the DMRG backend does not provide)\n");
-        exit(EXIT_FAILURE);
+    // XMCQDPT needs the determinant CI object the DMRG backend does not provide; the relativistic
+    // (SO) CDAS path is likewise determinant-only. Non-relativistic CDAS routes to CDAS_PT_dmrg
+    // below (SO is a global fixed at parse time, so it is already valid here).
+    if(P->cas.y && P->cas.ci_solver==CISOLVER_DMRG){
+        if(P->xmc.y){
+            fprintf(out_stream,"ERROR: CISOLVER=dmrg cannot be combined with XMCQDPT "
+                               "(it needs the determinant CI object, which the DMRG backend does not provide)\n");
+            exit(EXIT_FAILURE);
+        }
+        if(P->cdas.y && SO==1){
+            fprintf(out_stream,"ERROR: CISOLVER=dmrg cannot be combined with relativistic CDAS-PT "
+                               "(the SO/GRPP path is determinant-only)\n");
+            exit(EXIT_FAILURE);
+        }
     }
 
     Qm->gen_1el_data();
@@ -59,7 +67,10 @@ int single_point_calc( inp_par * P, molecule * Qm){
     
     if(P->xmc.y)QDPT2    (Qm,&(P->xmc), P->job_name);
     
-    if(SO==0)if(P->cdas.y)CDAS_PT2    (Qm,&(P->cdas), P->job_name);
+    if(SO==0)if(P->cdas.y){
+        if(P->cas.ci_solver==CISOLVER_DMRG) CDAS_PT_dmrg(Qm,&(P->cdas), P->job_name);
+        else                                CDAS_PT2    (Qm,&(P->cdas), P->job_name);
+    }
     if(SO==1)if(P->cdas.y)CDAS_PT2_rel(Qm,&(P->cdas), P->job_name);
     
     
