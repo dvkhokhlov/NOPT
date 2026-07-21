@@ -750,6 +750,80 @@ static void sf_assert_rank12(const cdas_sf_tensors& out){
 }
 #endif
 
+// §6.3 g3 gauge projection (S1 §6.3 / cert_a2_g3_gauge.md §9.1). Maps ONE raw
+// both-double table T (n_a^6; creators t,v,x on even slots, annihilators u,w,y
+// on odd) to the certified pair-S3-symmetric Hermitian representative and
+// ACCUMULATES it into G_accum. One code path for AV and CA — T_AV is already
+// pair-symmetric and passes through unchanged (no branch). T read-only.
+namespace cdas_sf_detail {
+void sf_gauge_project_g3(const std::vector<double>& T, int n_a,
+                         std::vector<double>& G_accum){
+    const int n = n_a;
+    const size_t na6 = (size_t)n*n*n*n*n*n;
+    auto ix = [n](int t,int u,int v,int w,int x,int y)->size_t {
+        return (((((size_t)t*n+u)*n+v)*n+w)*n+x)*n+y; };
+    // Step 1  D = T − P12·T,  (P12·T)[t,u,v,w,x,y] = T[t,w,v,u,x,y] (swap u,w).
+    std::vector<double> D(na6);
+#pragma omp parallel for collapse(2) schedule(static)
+    for(int t=0;t<n;t++) for(int u=0;u<n;u++)
+    for(int v=0;v<n;v++) for(int w=0;w<n;w++)
+    for(int x=0;x<n;x++) for(int y=0;y<n;y++)
+        D[ix(t,u,v,w,x,y)] = T[ix(t,u,v,w,x,y)] - T[ix(t,w,v,u,x,y)];
+    // Steps 2-4  G = sym(D) − ½ asymC(D). sym: 6 whole-pair orderings; asymC: 6
+    // signed creator-slot permutations, annihilators fixed (id/3-cycles +, swaps −).
+    std::vector<double> G(na6);
+#pragma omp parallel for collapse(2) schedule(static)
+    for(int t=0;t<n;t++) for(int u=0;u<n;u++)
+    for(int v=0;v<n;v++) for(int w=0;w<n;w++)
+    for(int x=0;x<n;x++) for(int y=0;y<n;y++){
+        const double s = ( D[ix(t,u,v,w,x,y)] + D[ix(t,u,x,y,v,w)]
+                         + D[ix(v,w,t,u,x,y)] + D[ix(v,w,x,y,t,u)]
+                         + D[ix(x,y,t,u,v,w)] + D[ix(x,y,v,w,t,u)] ) / 6.0;
+        const double c = ( D[ix(t,u,v,w,x,y)] - D[ix(v,u,t,w,x,y)]
+                         - D[ix(x,u,v,w,t,y)] - D[ix(t,u,x,w,v,y)]
+                         + D[ix(v,u,x,w,t,y)] + D[ix(x,u,t,w,v,y)] ) / 6.0;
+        G[ix(t,u,v,w,x,y)] = s - 0.5*c;
+    }
+    // Step 5  Hermitize once, G ← ½(G + G†), G†[t,u,v,w,x,y]=G[u,t,w,v,y,x];
+    // accumulate the Hermitized representative into the shared g3.
+#pragma omp parallel for collapse(2) schedule(static)
+    for(int t=0;t<n;t++) for(int u=0;u<n;u++)
+    for(int v=0;v<n;v++) for(int w=0;w<n;w++)
+    for(int x=0;x<n;x++) for(int y=0;y<n;y++)
+        G_accum[ix(t,u,v,w,x,y)] += 0.5*(G[ix(t,u,v,w,x,y)] + G[ix(u,t,w,v,y,x)]);
+}
+}
+
+// Fill g3 from the raw both-double tables: ONE gauge-projection path per class,
+// results SUMMED into out.g3 (zero from alloc). raw_av/raw_ca are read only.
+static void sf_finalize_g3(cdas_sf_tensors& out){
+    if(!out.raw_av.empty())
+        cdas_sf_detail::sf_gauge_project_g3(out.raw_av, out.n_a, out.g3);
+    if(!out.raw_ca.empty())
+        cdas_sf_detail::sf_gauge_project_g3(out.raw_ca, out.n_a, out.g3);
+}
+
+#ifndef NDEBUG
+// §6.4 assertion (rank 3): finalized g3 is pair-S3 symmetric (invariant under the
+// two generating pair swaps) and Hermitian under g3_{tu,vw,xy}=g3_{ut,wv,yx}.
+static void sf_assert_g3(const cdas_sf_tensors& out){
+    const int n = out.n_a;
+    auto ix = [n](int t,int u,int v,int w,int x,int y)->size_t {
+        return (((((size_t)t*n+u)*n+v)*n+w)*n+x)*n+y; };
+    double sc = 1.0;
+    for(double z : out.g3) sc = std::max(sc, std::fabs(z));
+    const double tol = 1e-10*sc;
+    for(int t=0;t<n;t++) for(int u=0;u<n;u++)
+    for(int v=0;v<n;v++) for(int w=0;w<n;w++)
+    for(int x=0;x<n;x++) for(int y=0;y<n;y++){
+        const double g = out.g3[ix(t,u,v,w,x,y)];
+        assert(std::fabs(g - out.g3[ix(v,w,t,u,x,y)]) <= tol); // pair0<->pair1
+        assert(std::fabs(g - out.g3[ix(t,u,x,y,v,w)]) <= tol); // pair1<->pair2
+        assert(std::fabs(g - out.g3[ix(u,t,w,v,y,x)]) <= tol); // Hermitian
+    }
+}
+#endif
+
 int cdas_sf_build(const RI_data& R, const double* eps,
                   int n_c, int n_a, int n_v,
                   const double* H_AV, const double* H_CA, const double* H_CV,
@@ -774,8 +848,10 @@ int cdas_sf_build(const RI_data& R, const double* eps,
     cdas_sf_detail::build_av  (R, eps, n_c, n_a, n_v, H_AV, H_CA, H_CV, K, out);
     cdas_sf_detail::build_ca  (R, eps, n_c, n_a, n_v, H_AV, H_CA, H_CV, K, out);
     sf_finalize_rank12(out);
+    sf_finalize_g3(out);
 #ifndef NDEBUG
     sf_assert_rank12(out);
+    sf_assert_g3(out);
 #endif
     return 0;
 }
