@@ -46,6 +46,12 @@ int cdas_sf_build(const RI_data& R, const double* eps,
                   const double* H_AV, const double* H_CA, const double* H_CV,
                   const cdas_sf_kernel& K, cdas_sf_tensors& out);
 
+// Active-basis rotation. Q is n_a×n_a row-major; the new active orbital p is
+// phi'_p = Σ_q Q[p*n_a+q] phi_q. Rotates every open active index of g1,g2,g3,
+// raw_av,raw_ca by one GEMM per index (2,4,6,6,6 GEMMs; empty raw tables
+// skipped). E0 is scalar-invariant. conventions.md §6.
+int cdas_sf_rotate(const double* Q, cdas_sf_tensors& t);
+
 // Per-class builders (uniform signature). Each ACCUMULATES into out and never
 // zeroes it; individually callable for the per-class gates.
 namespace cdas_sf_detail {

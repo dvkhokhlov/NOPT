@@ -855,3 +855,39 @@ int cdas_sf_build(const RI_data& R, const double* eps,
 #endif
     return 0;
 }
+
+// Rotate one open active index of a rank-r tensor by Q: view it as
+// (n_a)×(n_a^{r-1}) row-major; ONE GEMM computes out[j,p]=Σ_q Q[p,q] in[q,j],
+// rotating the leading index AND cyclically shifting it to the back, so r passes
+// rotate every index once and restore the original axis order. cur/scratch swap.
+static void sf_rotate_indices(const double* Q, int n_a, int rank,
+                              std::vector<double>& T){
+    if(T.empty()) return;
+    size_t total = 1; for(int k=0; k<rank; k++) total *= (size_t)n_a;
+    const int R = (int)(total / (size_t)n_a);   // n_a^{rank-1}
+    std::vector<double> scratch(total);
+    double* cur = T.data();
+    double* nxt = scratch.data();
+    for(int pass=0; pass<rank; ++pass){
+        cblas_dgemm(CblasRowMajor, CblasTrans, CblasTrans,
+                    R, n_a, n_a, 1.0,
+                    cur, R, Q, n_a, 0.0, nxt, n_a);
+        std::swap(cur, nxt);
+    }
+    if(cur != T.data()) std::copy(cur, cur+total, T.data());
+}
+
+// Rotate every open active index of each tensor by Q (2,4,6,6,6 GEMMs; empty raw
+// tables skipped). E0 is a rotation-invariant scalar contraction, left untouched.
+// Rotation commutes with the §6 Hermitization/gauge (uniform per-index Q), so a
+// rotated build and a build-then-rotate agree elementwise (G1c). conventions.md §6.
+int cdas_sf_rotate(const double* Q, cdas_sf_tensors& t){
+    const int n = t.n_a;
+    if(n <= 0) return 0;
+    sf_rotate_indices(Q, n, 2, t.g1);
+    sf_rotate_indices(Q, n, 4, t.g2);
+    sf_rotate_indices(Q, n, 6, t.g3);
+    if(!t.raw_av.empty()) sf_rotate_indices(Q, n, 6, t.raw_av);
+    if(!t.raw_ca.empty()) sf_rotate_indices(Q, n, 6, t.raw_ca);
+    return 0;
+}
