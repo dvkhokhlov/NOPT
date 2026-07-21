@@ -68,7 +68,7 @@ endif
 BLOCK2_DEF:=-D_EXPLICIT_TEMPLATE -D_LARGE_BOND -D_USE_CORE -D_USE_DMRG -D_USE_BIG_SITE -D_USE_SP_DMRG -D_USE_IC -D_USE_SU2SZ $(BLOCK2_BLAS_DEF) -D_USE_GLOBAL_VARIABLE
 BLOCK2_INC:=-I$(BLOCK2_DIR)/include
 BLOCK2_LIB:=-L$(BLOCK2_DIR)/lib -Wl,-rpath,$(BLOCK2_DIR)/lib -lblock2
-BLOCK2_OBJ:=src/block2_dmrg.o src/dmrg_wrap.o src/block2_mps_to_det.o src/mps_rotation.o
+BLOCK2_OBJ:=src/block2_dmrg.o src/dmrg_wrap.o src/block2_mps_to_det.o src/mps_rotation.o src/block2_import_dressed.o
 NOPT_BLOCK2_DEF:=-DNOPT_HAS_BLOCK2
 endif
 
@@ -113,6 +113,9 @@ src/block2_mps_to_det.o:src/block2_mps_to_det.cpp
 	$(CXX) -o $@ -c $< $(OPT_LEVEL) -fopenmp -MMD -MP $(DEFINITIONS) $(INCLUDE_DIRS) $(BLOCK2_DEF) $(BLOCK2_INC) -fmax-errors=5
 
 src/mps_rotation.o:src/mps_rotation.cpp
+	$(CXX) -o $@ -c $< $(OPT_LEVEL) -fopenmp -MMD -MP $(DEFINITIONS) $(INCLUDE_DIRS) $(BLOCK2_DEF) $(BLOCK2_INC) -fmax-errors=5
+
+src/block2_import_dressed.o:src/block2_import_dressed.cpp
 	$(CXX) -o $@ -c $< $(OPT_LEVEL) -fopenmp -MMD -MP $(DEFINITIONS) $(INCLUDE_DIRS) $(BLOCK2_DEF) $(BLOCK2_INC) -fmax-errors=5
 
 %.o:%.cpp
