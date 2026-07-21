@@ -101,6 +101,15 @@ public:
                                 int pair, int* ind_pi) {}
     virtual void calc_S(double* S_track, int a, int b) {}                    // overlap vs previous iter's CI vectors
 
+    // --- dressed active-space operator import (capability-gated) ---
+    // A backend that can encode a TOTAL dressed operator (F_act+g1, (tu|vw)+g2, g3, E_core+E0) as
+    // its own eigenproblem and re-solve it advertises true; the DMRG/block2 backend does. Default is
+    // a loud out-of-line abort (our contract, not a physics choice) so no backend silently drops the
+    // dressing. h3_total may be null (no 3-body group); tensors are in the frozen lattice basis.
+    virtual bool supports_dressed_import() const { return false; }
+    virtual void import_dressed_operator(const double* h1_total, const double* h2_total,
+                                         const double* h3_total, double const_total);
+
     // --- IO / diagnostics ---
     virtual void gen_ext_ind() = 0;
     virtual void print_states(int a, int n_s, int print) = 0;

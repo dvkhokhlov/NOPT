@@ -30,8 +30,9 @@ public:
     // Encode a TOTAL dressed active-space operator (F_act+g1, (tu|vw)+g2, g3, E_core+E0) as one
     // spin-adapted GeneralFCIDUMP -> GeneralMPO and swap it into the solve. Tensors arrive in the
     // frozen lattice (localized) basis; only the frozen Fiedler reorder is applied. h3 may be null.
+    bool supports_dressed_import() const override { return true; }
     void import_dressed_operator(const double* h1_total, const double* h2_total,
-                                 const double* h3_total, double const_total);
+                                 const double* h3_total, double const_total) override;
 
     // --- solve ---
     int solve(int primary, int read, bool use_prev_guess) override;
