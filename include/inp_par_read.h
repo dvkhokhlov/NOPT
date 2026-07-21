@@ -252,7 +252,9 @@ class cdas_par
         int n_orb;
         int rotate_orbs;
         int pt1_d;
-        
+        int SF_ENGINE;      // route the dressing build through the spin-free EE engine
+        int DUMP_TENSORS;   // write the SF tensor dump (conventions.md §10)
+
         cdas_par();
         int read_group(char * inp, cas_par * ext_cas); 
         int read_line(char * inp); 

@@ -151,6 +151,8 @@ extern vector<const char *>cdas_orb_en_kw       ;
 extern vector<const char *>cdas_fit_en_kw       ;
 extern vector<const char *>cdas_rot_orbs        ;
 extern vector<const char *>pt1_dipole_kw        ;
+extern vector<const char *>cdas_sf_engine_kw    ;
+extern vector<const char *>cdas_dump_tensors_kw ;
 extern vector<const char *>d5_kw                ;
 extern vector<const char *>ri_kw                ;
 extern vector<const char *>n_st_kw              ;

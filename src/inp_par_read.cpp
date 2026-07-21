@@ -1270,6 +1270,8 @@ cdas_par::cdas_par(){
     fit_e=0;
     rotate_orbs=1;//default - perform rotation
     pt1_d=1;
+    SF_ENGINE=0;
+    DUMP_TENSORS=0;
 
 }
 
@@ -1365,9 +1367,14 @@ int cdas_par::read_line(char * inp){
     
     if(key_word_comp(inp, pt1_dipole_kw))
         pt1_d = kw_to_i(inp, pt1_dipole_kw,1);
-    
-    
-    
+
+    // SF_ENGINE/DUMP_TENSORS are orthogonal engine flags — NOT energy schemes,
+    // so they stay out of the mutually-exclusive scheme sum in read_group.
+    if(key_word_comp(inp, cdas_sf_engine_kw))
+        SF_ENGINE = kw_to_i(inp, cdas_sf_engine_kw,0);
+    if(key_word_comp(inp, cdas_dump_tensors_kw))
+        DUMP_TENSORS = kw_to_i(inp, cdas_dump_tensors_kw,0);
+
     return 0;
 }
 

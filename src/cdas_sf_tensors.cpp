@@ -13,6 +13,7 @@
 #include <cstdlib>
 #include <cmath>
 #include <cassert>
+#include <algorithm>
 
 extern int num_threads;
 
@@ -710,6 +711,45 @@ int cdas_sf_detail::build_ca(const RI_data& R, const double* eps,
     return 0;
 }
 
+// §6 finalization, ranks <= 2 (S1 §6 steps 1-2 / conventions.md §3). g1
+// Hermitized ½(g1+g1ᵀ); g2 Hermitized ½(g2_{tu,vw}+g2_{ut,wv}) then pair-
+// symmetrized ½(g2_{tu,vw}+g2_{vw,tu}). g3 stays zero and raw_av/raw_ca stay
+// raw — the §6.3 g3 gauge projection is a later increment.
+static void sf_finalize_rank12(cdas_sf_tensors& out){
+    const int n = out.n_a;
+    auto id2 = [n](int t,int u,int v,int w){ return (((size_t)t*n+u)*n+v)*n+w; };
+    {   std::vector<double> s(out.g1);
+        for(int t=0;t<n;t++) for(int u=0;u<n;u++)
+            out.g1[(size_t)t*n+u] = 0.5*(s[(size_t)t*n+u] + s[(size_t)u*n+t]); }
+    {   std::vector<double> s(out.g2);              // Hermitize
+        for(int t=0;t<n;t++) for(int u=0;u<n;u++)
+        for(int v=0;v<n;v++) for(int w=0;w<n;w++)
+            out.g2[id2(t,u,v,w)] = 0.5*(s[id2(t,u,v,w)] + s[id2(u,t,w,v)]); }
+    {   std::vector<double> s(out.g2);              // pair-symmetrize
+        for(int t=0;t<n;t++) for(int u=0;u<n;u++)
+        for(int v=0;v<n;v++) for(int w=0;w<n;w++)
+            out.g2[id2(t,u,v,w)] = 0.5*(s[id2(t,u,v,w)] + s[id2(v,w,t,u)]); }
+}
+
+#ifndef NDEBUG
+// §6.4 assertions (ranks <= 2): the finalized g1/g2 are Hermitian and g2 is
+// pair-symmetric. The per-class EE-collapse asserts are live in the builders;
+// the CCAA spill is closed against its own Hermitized class tensor in build_ccaa.
+static void sf_assert_rank12(const cdas_sf_tensors& out){
+    const int n = out.n_a;
+    auto id2 = [n](int t,int u,int v,int w){ return (((size_t)t*n+u)*n+v)*n+w; };
+    double sc = 1.0;
+    for(double x : out.g2) sc = std::max(sc, std::fabs(x));
+    for(int t=0;t<n;t++) for(int u=0;u<n;u++){
+        assert(std::fabs(out.g1[(size_t)t*n+u]-out.g1[(size_t)u*n+t]) <= 1e-10*sc);
+        for(int v=0;v<n;v++) for(int w=0;w<n;w++){
+            assert(std::fabs(out.g2[id2(t,u,v,w)]-out.g2[id2(u,t,w,v)]) <= 1e-10*sc);
+            assert(std::fabs(out.g2[id2(t,u,v,w)]-out.g2[id2(v,w,t,u)]) <= 1e-10*sc);
+        }
+    }
+}
+#endif
+
 int cdas_sf_build(const RI_data& R, const double* eps,
                   int n_c, int n_a, int n_v,
                   const double* H_AV, const double* H_CA, const double* H_CV,
@@ -733,5 +773,9 @@ int cdas_sf_build(const RI_data& R, const double* eps,
     cdas_sf_detail::build_cv  (R, eps, n_c, n_a, n_v, H_AV, H_CA, H_CV, K, out);
     cdas_sf_detail::build_av  (R, eps, n_c, n_a, n_v, H_AV, H_CA, H_CV, K, out);
     cdas_sf_detail::build_ca  (R, eps, n_c, n_a, n_v, H_AV, H_CA, H_CV, K, out);
+    sf_finalize_rank12(out);
+#ifndef NDEBUG
+    sf_assert_rank12(out);
+#endif
     return 0;
 }

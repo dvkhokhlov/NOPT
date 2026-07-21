@@ -9,9 +9,15 @@
 # include "inp_out.h"
 # include "XMCQDPT.h"
 # include "CAS.h"
+# include "cdas_sf_tensors.h"
 
 
 extern int num_threads;
+
+// SF tensor dump writer (src/cdas_sf_spincase.cpp); the frozen header is untouched.
+void cdas_sf_write_dump(const char* path_prefix, const char* scheme,
+                        const char* basis, double eps_A,
+                        const cdas_sf_tensors& t);
 
 // extern int testing;
 
@@ -228,41 +234,77 @@ int CDAS_PT2(molecule * M, cdas_par * cdas, char * job_name){
     fflush(out_stream);
     
     
-    //PT
+    //PT — declaration only (ctor nulls pointers); set_par (allocation) is
+    //deferred into the stock branch so the SF path never builds the n_a^6 tables.
     PT_tensors T;
-    T.set_par(&R, eps, n_cor, n_act, n_virt, H_AV, H_CA, H_CV, cdas->edshift);
-    
+
     //calculation of IP/EA Fockian matrix
     if(CAS.CI->as_aldet() == nullptr){
         fprintf(out_stream,"ERROR: CDAS-PT requires the determinant CI backend (cisolver=aldet)\n");
         exit(EXIT_FAILURE);
     }
     CAS.CI->as_aldet()->simple_import_data(act_INTS, act_INTS, H_AA, 0);
-    
-    if(cdas->IPEA){
-        T.IPEA(CAS.CI->as_aldet(), 0,cdas->cas->w_state);
-        T.E2_calc_IPEA();
-    }
-    else if(cdas->MPPT){
-        T.MPPT(CAS.CI->as_aldet(), 0,cdas->cas->w_state);
-        T.E2_calc_EE();
+
+    if(cdas->SF_ENGINE){
+        // Spin-free EE engine (S1 §7): build g's -> map to the aldet RF arrays ->
+        // unchanged PT2_import_data + Davidson. EE-family schemes only.
+        if(cdas->IPEA||cdas->MPPT||cdas->actual||cdas->orb_e||cdas->mult_e||cdas->fit_e){
+            fprintf(out_stream,"ERROR: SF_ENGINE supports the EE family only (HOMO or ENERGY)\n");
+            exit(EXIT_FAILURE);
+        }
+        if(fabs(cdas->edshift)>1E-8){
+            fprintf(out_stream,"ERROR: SF_ENGINE requires edshift=0 (bare resolvent)\n");
+            exit(EXIT_FAILURE);
+        }
+        cdas_sf_kernel Ksf;
+        Ksf.e_IP.assign(n_act, 0.0);
+        Ksf.e_EA.assign(n_act, 0.0);
+        for(int i=0;i<n_act;i++){ Ksf.e_IP[i]=eps_a[i]; Ksf.e_EA[i]=eps_a[i]; }
+        Ksf.deriv=0;
+        cdas_sf_tensors out;
+        cdas_sf_build(R, eps, n_cor, n_act, n_virt, H_AV, H_CA, H_CV, Ksf, out);
+        std::vector<double> RF_PH   ((size_t)n_act*n_act);
+        std::vector<double> RF_PV_JK((size_t)n_act*n_act*n_act*n_act);
+        std::vector<double> RF_PV_AB((size_t)n_act*n_act*n_act*n_act);
+        std::vector<double> RF_P3_JK((size_t)n_act*n_act*n_act*n_act*n_act*n_act);
+        std::vector<double> RF_P3_AB((size_t)n_act*n_act*n_act*n_act*n_act*n_act);
+        double RF_PS=0.0;
+        cdas_sf_to_rf(out, &RF_PS, RF_PH.data(), RF_PV_JK.data(), RF_PV_AB.data(),
+                      RF_P3_JK.data(), RF_P3_AB.data());
+        printf_timer("SF PT tensors calculation");
+        fprintf(out_stream,"_______________________________________________________________________\n\n\n");
+        CAS.CI->as_aldet()->PT2_import_data(RF_P3_JK.data(), RF_P3_AB.data(),
+                                RF_PV_JK.data(), RF_PV_AB.data(), RF_PH.data(), RF_PS);
+        if(cdas->DUMP_TENSORS)
+            cdas_sf_write_dump(job_name, "EE", "semicanonical", eps_a[0], out);
     }
     else{
-        T.E2_calc_EE();
+        T.set_par(&R, eps, n_cor, n_act, n_virt, H_AV, H_CA, H_CV, cdas->edshift);
+        if(cdas->IPEA){
+            T.IPEA(CAS.CI->as_aldet(), 0,cdas->cas->w_state);
+            T.E2_calc_IPEA();
+        }
+        else if(cdas->MPPT){
+            T.MPPT(CAS.CI->as_aldet(), 0,cdas->cas->w_state);
+            T.E2_calc_EE();
+        }
+        else{
+            T.E2_calc_EE();
+        }
+
+        printf_timer("PT tensors calculation");
+        fprintf(out_stream,"_______________________________________________________________________\n\n\n");
+
+
+        CAS.CI->as_aldet()->PT2_import_data(T.RF_P3_JK,
+                                T.RF_P3_AB,
+                                T.RF_PV_JK,
+                                T.RF_PV_AB,
+                                T.RF_PH,
+                                T.RF_PS);
     }
-    
-    printf_timer("PT tensors calculation");
-    fprintf(out_stream,"_______________________________________________________________________\n\n\n");
-    
-    
-    CAS.CI->as_aldet()->PT2_import_data(T.RF_P3_JK,
-                            T.RF_P3_AB,
-                            T.RF_PV_JK,
-                            T.RF_PV_AB,
-                            T.RF_PH,
-                            T.RF_PS);
-    
-    
+
+
     CAS.CI_calc(1,0,1);
     if(LINEAR)CAS.rotate();
 
@@ -305,6 +347,10 @@ int CDAS_PT2(molecule * M, cdas_par * cdas, char * job_name){
     set_zero_matr(d_y1,n_s*n_s);
     set_zero_matr(d_z1,n_s*n_s);
     
+    if(cdas->SF_ENGINE && print_dipole && cdas->pt1_d)
+        fprintf(out_stream,"PT1 dipole (d(1)) skipped under SF_ENGINE"
+                           " (the SF engine builds no property tensors)\n");
+    if(!cdas->SF_ENGINE)
     if(print_dipole)if(cdas->pt1_d){
         fprintf(out_stream,"PT1 dipole moment - d(1):\n\n");
         if(cdas->IPEA){
