@@ -17,11 +17,11 @@
 
 extern int num_threads;
 
-#ifndef NDEBUG
 namespace {
 // True in the EE regime: every e_IP/e_EA entry equals one shared scalar, the
-// precondition under which each class denominator must collapse to the
-// conventions.md §5 table. Debug guard only; never gates production numerics.
+// precondition under which each class denominator collapses to the
+// conventions.md §5 table AND under which the rank-3 gauge projection is
+// certified. cdas_sf_build gates the aggregate on it; the debug asserts reuse it.
 bool sf_ee_flat(const cdas_sf_kernel& K){
     if(K.e_IP.empty()) return false;
     const double c = K.e_IP[0];
@@ -30,14 +30,13 @@ bool sf_ee_flat(const cdas_sf_kernel& K){
     return true;
 }
 }
-#endif
 
 void cdas_sf_tensors::alloc(int na){
     n_a = na;
     const size_t n2 = (size_t)na*na;
     g1.assign(n2, 0.0);
     g2.assign(n2*n2, 0.0);
-    g3.assign(n2*n2*n2, 0.0);
+    g3.clear();          // sized in sf_finalize_g3 (keeps the build peak at 3·n_a^6)
     raw_av.clear();
     raw_ca.clear();
     E0 = 0.0;
@@ -54,6 +53,7 @@ int cdas_sf_detail::build_ccvv(const RI_data& R, const double* eps,
                                const double* H_CV, const cdas_sf_kernel& K,
                                cdas_sf_tensors& out){
     (void)H_AV; (void)H_CA; (void)H_CV; (void)K;
+    if(K.deriv!=0){ fprintf(stderr,"build_ccvv: only deriv==0 is implemented\n"); abort(); }
     if(n_c==0 || n_v==0) return 0;
     const long aux = R.aux_n_ao;
     const double* e_c = eps;
@@ -61,6 +61,14 @@ int cdas_sf_detail::build_ccvv(const RI_data& R, const double* eps,
 
     std::vector<double> E0_th(num_threads, 0.0);
 
+    // In-region per-(ij) slab GEMMs: pin the BLAS pool to one thread for the
+    // whole region so outer OpenMP owns the parallelism (blas_link.h fence).
+#ifdef _OPENBLAS
+    int ntb = openblas_get_num_threads(); openblas_set_num_threads(1);
+#endif
+#ifdef _MKL
+    int ntb = mkl_get_max_threads(); mkl_set_num_threads(1);
+#endif
 #pragma omp parallel
     {
         const int nt = omp_get_thread_num();
@@ -83,6 +91,12 @@ int cdas_sf_detail::build_ccvv(const RI_data& R, const double* eps,
         }
         E0_th[nt] = e0;
     }
+#ifdef _OPENBLAS
+    openblas_set_num_threads(ntb);
+#endif
+#ifdef _MKL
+    mkl_set_num_threads(ntb);
+#endif
     for(int th=0; th<num_threads; th++) out.E0 += E0_th[th];
     return 0;
 }
@@ -98,6 +112,7 @@ int cdas_sf_detail::build_cavv(const RI_data& R, const double* eps,
                                const double* H_CV, const cdas_sf_kernel& K,
                                cdas_sf_tensors& out){
     (void)H_AV; (void)H_CA; (void)H_CV;
+    if(K.deriv!=0){ fprintf(stderr,"build_cavv: only deriv==0 is implemented\n"); abort(); }
     if(n_c==0 || n_v==0 || n_a==0) return 0;
     const long aux = R.aux_n_ao;
     const double* e_c = eps;
@@ -109,6 +124,12 @@ int cdas_sf_detail::build_cavv(const RI_data& R, const double* eps,
     std::vector<std::vector<double>> PH_th(
         num_threads, std::vector<double>((size_t)n_a*n_a, 0.0));
 
+#ifdef _OPENBLAS
+    int ntb = openblas_get_num_threads(); openblas_set_num_threads(1);
+#endif
+#ifdef _MKL
+    int ntb = mkl_get_max_threads(); mkl_set_num_threads(1);
+#endif
 #pragma omp parallel
     {
         const int nt = omp_get_thread_num();
@@ -136,6 +157,12 @@ int cdas_sf_detail::build_cavv(const RI_data& R, const double* eps,
             }
         }
     }
+#ifdef _OPENBLAS
+    openblas_set_num_threads(ntb);
+#endif
+#ifdef _MKL
+    mkl_set_num_threads(ntb);
+#endif
     for(int th=0; th<num_threads; th++){
         const double* ph = PH_th[th].data();
         for(int k=0; k<n_a*n_a; k++) out.g1[k] += ph[k];
@@ -154,6 +181,7 @@ int cdas_sf_detail::build_ccav(const RI_data& R, const double* eps,
                                const double* H_CV, const cdas_sf_kernel& K,
                                cdas_sf_tensors& out){
     (void)H_AV; (void)H_CA; (void)H_CV;
+    if(K.deriv!=0){ fprintf(stderr,"build_ccav: only deriv==0 is implemented\n"); abort(); }
     if(n_c==0 || n_v==0 || n_a==0) return 0;
     const long aux = R.aux_n_ao;
     const double* e_c = eps;
@@ -166,6 +194,12 @@ int cdas_sf_detail::build_ccav(const RI_data& R, const double* eps,
         num_threads, std::vector<double>((size_t)n_a*n_a, 0.0));
     std::vector<double> E0_th(num_threads, 0.0);
 
+#ifdef _OPENBLAS
+    int ntb = openblas_get_num_threads(); openblas_set_num_threads(1);
+#endif
+#ifdef _MKL
+    int ntb = mkl_get_max_threads(); mkl_set_num_threads(1);
+#endif
 #pragma omp parallel
     {
         const int nt = omp_get_thread_num();
@@ -206,6 +240,12 @@ int cdas_sf_detail::build_ccav(const RI_data& R, const double* eps,
         }
         E0_th[nt] = e0;
     }
+#ifdef _OPENBLAS
+    openblas_set_num_threads(ntb);
+#endif
+#ifdef _MKL
+    mkl_set_num_threads(ntb);
+#endif
     for(int th=0; th<num_threads; th++){
         const double* ph = PH_th[th].data();
         for(int k=0; k<n_a*n_a; k++) out.g1[k] += ph[k];
@@ -225,6 +265,7 @@ int cdas_sf_detail::build_aavv(const RI_data& R, const double* eps,
                                const double* H_CV, const cdas_sf_kernel& K,
                                cdas_sf_tensors& out){
     (void)H_AV; (void)H_CA; (void)H_CV;
+    if(K.deriv!=0){ fprintf(stderr,"build_aavv: only deriv==0 is implemented\n"); abort(); }
     if(n_a==0 || n_v==0) return 0;
     const long aux = R.aux_n_ao;
     const double* e_v = eps + n_c + n_a;
@@ -236,6 +277,12 @@ int cdas_sf_detail::build_aavv(const RI_data& R, const double* eps,
     std::vector<std::vector<double>> W_th(
         num_threads, std::vector<double>(na2*na2, 0.0));
 
+#ifdef _OPENBLAS
+    int ntb = openblas_get_num_threads(); openblas_set_num_threads(1);
+#endif
+#ifdef _MKL
+    int ntb = mkl_get_max_threads(); mkl_set_num_threads(1);
+#endif
 #pragma omp parallel
     {
         const int nt = omp_get_thread_num();
@@ -269,6 +316,12 @@ int cdas_sf_detail::build_aavv(const RI_data& R, const double* eps,
                         W, (int)na2);
         }
     }
+#ifdef _OPENBLAS
+    openblas_set_num_threads(ntb);
+#endif
+#ifdef _MKL
+    mkl_set_num_threads(ntb);
+#endif
     // Repack working->storage (middle labels u,v swap; creators (t,v) grouped in
     // the working tensor, pairs (t,u),(v,w) in storage):
     //   g2[((t·u)v)w] += W[(t·n_a+v)·n_a² + (u·n_a+w)].
@@ -295,6 +348,7 @@ int cdas_sf_detail::build_ccaa(const RI_data& R, const double* eps,
                                const double* H_CV, const cdas_sf_kernel& K,
                                cdas_sf_tensors& out){
     (void)H_AV; (void)H_CA; (void)H_CV; (void)n_v;
+    if(K.deriv!=0){ fprintf(stderr,"build_ccaa: only deriv==0 is implemented\n"); abort(); }
     if(n_c==0 || n_a==0) return 0;
     const long aux = R.aux_n_ao;
     const double* e_c = eps;
@@ -306,6 +360,12 @@ int cdas_sf_detail::build_ccaa(const RI_data& R, const double* eps,
     std::vector<std::vector<double>> W_th(
         num_threads, std::vector<double>(na2*na2, 0.0));
 
+#ifdef _OPENBLAS
+    int ntb = openblas_get_num_threads(); openblas_set_num_threads(1);
+#endif
+#ifdef _MKL
+    int ntb = mkl_get_max_threads(); mkl_set_num_threads(1);
+#endif
 #pragma omp parallel
     {
         const int nt = omp_get_thread_num();
@@ -339,6 +399,12 @@ int cdas_sf_detail::build_ccaa(const RI_data& R, const double* eps,
                         W, (int)na2);
         }
     }
+#ifdef _OPENBLAS
+    openblas_set_num_threads(ntb);
+#endif
+#ifdef _MKL
+    mkl_set_num_threads(ntb);
+#endif
     // Reduce + repack into a LOCAL class buffer (storage g2[((t·u)v)w]; middle
     // labels u,v swap, as in AAVV).
     std::vector<double> g2C(na2*na2, 0.0);
@@ -381,150 +447,149 @@ int cdas_sf_detail::build_ccaa(const RI_data& R, const double* eps,
     return 0;
 }
 
-// CV (S1 §5.3 both-double g2 + F^c-coupled g1 + constant; §5.4 (2e)² δ-image
-// g1). Per core i: slabs J[a][t][u]=(ia|tu) (VC_i·AAᵀ) and P[x][a][y]=(ix|ay)
-// (CA_i·VAᵀ). Each g2 assignment carries its OWN denominator D(p,q)=e_i+e_IP[p]
-// −e_EA[q]−e_a with the p==q collapse → e_i−e_a; g2 is written straight to the
-// storage layout (no BLAS outer product, so no repack). External i is striped.
+// Both-double resolvent g2 (cert CV.2 and its CA (2e)²-δ mirror — identical
+// 8-product form). J,P,invD are n_a²×ne (row = ordered active pair, col =
+// external index e); each term is (kernel-scaled slab)·(bare slab) over e.
+// Six products pack straight to (t,u)(v,w), two are crossed reads.
+// Accumulates into g2[((t·u)v)w] (already g2's storage layout).
+static void sf_bothdouble_g2(int n_a, int ne,
+                             const std::vector<double>& J,
+                             const std::vector<double>& P,
+                             const std::vector<double>& invD, double* g2){
+    const size_t na2=(size_t)n_a*n_a, NE=(size_t)ne, na4=na2*na2;
+    // SJd[(a,b)]=J·invD; M1[(a,b)]=−P[(b,a)]·invD[(a,b)]; M2[(a,b)]=−P·invD[(b,a)].
+    std::vector<double> SJd(na2*NE), M1(na2*NE), M2(na2*NE);
+#pragma omp parallel for collapse(2) schedule(static)
+    for(int p=0;p<n_a;p++) for(int q=0;q<n_a;q++)
+        for(size_t e=0;e<NE;e++){
+            const size_t pq=((size_t)p*n_a+q)*NE+e, qp=((size_t)q*n_a+p)*NE+e;
+            SJd[pq]=J[pq]*invD[pq];
+            M1[pq]=-P[qp]*invD[pq];
+            M2[pq]=-P[pq]*invD[qp];
+        }
+    std::vector<double> W(na4);
+    // six (t,u)(v,w) products, accumulated into W by successive GEMMs.
+    nopt_par_dgemm(CblasRowMajor,CblasNoTrans,CblasTrans,(int)na2,(int)na2,ne, 2.0,SJd.data(),ne,J.data(),ne,   0.0,W.data(),(int)na2);
+    nopt_par_dgemm(CblasRowMajor,CblasNoTrans,CblasTrans,(int)na2,(int)na2,ne, 1.0,M1.data(), ne,J.data(),ne,   1.0,W.data(),(int)na2);
+    nopt_par_dgemm(CblasRowMajor,CblasNoTrans,CblasTrans,(int)na2,(int)na2,ne,-1.0,SJd.data(),ne,P.data(),ne,   1.0,W.data(),(int)na2);
+    nopt_par_dgemm(CblasRowMajor,CblasNoTrans,CblasTrans,(int)na2,(int)na2,ne, 2.0,J.data(),  ne,SJd.data(),ne, 1.0,W.data(),(int)na2);
+    nopt_par_dgemm(CblasRowMajor,CblasNoTrans,CblasTrans,(int)na2,(int)na2,ne,-1.0,P.data(),  ne,SJd.data(),ne, 1.0,W.data(),(int)na2);
+    nopt_par_dgemm(CblasRowMajor,CblasNoTrans,CblasTrans,(int)na2,(int)na2,ne, 1.0,J.data(),  ne,M1.data(),ne,  1.0,W.data(),(int)na2);
+    // two crossed products, then scatter into W (P7→(t,w)(u,v); P8→(w,t)(v,u)).
+    std::vector<double> C7(na4), C8(na4);
+    nopt_par_dgemm(CblasRowMajor,CblasNoTrans,CblasTrans,(int)na2,(int)na2,ne, 1.0,P.data(), ne,M2.data(),ne, 0.0,C7.data(),(int)na2);
+    nopt_par_dgemm(CblasRowMajor,CblasNoTrans,CblasTrans,(int)na2,(int)na2,ne, 1.0,M2.data(),ne,P.data(), ne, 0.0,C8.data(),(int)na2);
+#pragma omp parallel for collapse(2) schedule(static)
+    for(int t=0;t<n_a;t++) for(int u=0;u<n_a;u++)
+    for(int v=0;v<n_a;v++) for(int w=0;w<n_a;w++)
+        g2[(((size_t)t*n_a+u)*n_a+v)*n_a+w] +=
+              W[((size_t)t*n_a+u)*na2 + (size_t)v*n_a+w]
+            + C7[((size_t)t*n_a+w)*na2 + (size_t)u*n_a+v]
+            + C8[((size_t)w*n_a+t)*na2 + (size_t)v*n_a+u];
+}
+
+// CV (S1 §5.3 both-double g2 + F^c-coupled g1 + constant; §5.4 (2e)² δ-image g1).
+// Assembled slabs J[(t,u)][(a,i)]=(ia|tu) and P[(x,y)][(a,i)]=(ix|ay) over the
+// combined external index e=(a,i). The both-double g2 is realized as §4 GEMMs via
+// sf_bothdouble_g2; the rank-1 g1 and the E0 scalar keep the certified scalar form
+// (their denominators couple the OUTPUT active label with e — no dense GEMM).
 int cdas_sf_detail::build_cv(const RI_data& R, const double* eps,
                              int n_c, int n_a, int n_v,
                              const double* H_AV, const double* H_CA,
                              const double* H_CV, const cdas_sf_kernel& K,
                              cdas_sf_tensors& out){
     (void)H_AV; (void)H_CA;
+    if(K.deriv!=0){ fprintf(stderr,"build_cv: only deriv==0 is implemented\n"); abort(); }
     if(n_c==0 || n_v==0 || n_a==0) return 0;
     const long aux = R.aux_n_ao;
     const double* e_c = eps;
     const double* e_v = eps + n_c + n_a;
-    const size_t na2 = (size_t)n_a*n_a;
+    const size_t na2=(size_t)n_a*n_a;
+    const int ne = n_v*n_c;                 // e = a*n_c + i
 #ifndef NDEBUG
     const bool ee = sf_ee_flat(K);
 #endif
-    std::vector<std::vector<double>> G2_th(
-        num_threads, std::vector<double>(na2*na2, 0.0));
-    std::vector<std::vector<double>> PH_th(
-        num_threads, std::vector<double>(na2, 0.0));
-    std::vector<double> E0_th(num_threads, 0.0);
+    // J[(t,u)][(a,i)] = (ia|tu) = AA·VCᵀ.
+    std::vector<double> J(na2*(size_t)ne);
+    nopt_par_dgemm(CblasRowMajor, CblasNoTrans, CblasTrans, (int)na2, ne, (int)aux,
+                   1.0, R.AA_RI_M, (int)aux, R.VC_RI_M, (int)aux, 0.0, J.data(), ne);
+    // Pbig[(i,x)][(a,y)] = (ix|ay) = CA·VAᵀ, gathered to P[(x,y)][(a,i)].
+    std::vector<double> Pbig((size_t)n_c*n_a*n_v*n_a);
+    nopt_par_dgemm(CblasRowMajor, CblasNoTrans, CblasTrans, n_c*n_a, n_v*n_a, (int)aux,
+                   1.0, R.CA_RI_M, (int)aux, R.VA_RI_M, (int)aux, 0.0, Pbig.data(), n_v*n_a);
+    std::vector<double> P(na2*(size_t)ne);
+#pragma omp parallel for collapse(2) schedule(static)
+    for(int x=0;x<n_a;x++) for(int y=0;y<n_a;y++)
+    for(int a=0;a<n_v;a++) for(int i=0;i<n_c;i++)
+        P[((size_t)x*n_a+y)*ne + (size_t)a*n_c+i] =
+            Pbig[((size_t)(i*n_a+x)*n_v+a)*n_a+y];
+    // invD[(p,q)][(a,i)] = 1/D(p,q); D = e_i+e_IP[p]−e_EA[q]−e_a, p==q → e_i−e_a.
+    std::vector<double> invD(na2*(size_t)ne);
+#pragma omp parallel for collapse(2) schedule(static)
+    for(int p=0;p<n_a;p++) for(int q=0;q<n_a;q++)
+    for(int a=0;a<n_v;a++) for(int i=0;i<n_c;i++){
+        double D = e_c[i]+K.e_IP[p]-K.e_EA[q]-e_v[a];
+        if(p==q) D = e_c[i]-e_v[a];
+#ifndef NDEBUG
+        if(ee) assert(std::fabs(D-(e_c[i]-e_v[a])) < 1e-8);
+#endif
+        invD[((size_t)p*n_a+q)*ne + (size_t)a*n_c+i] = 1.0/D;
+    }
+    sf_bothdouble_g2(n_a, ne, J, P, invD, out.g2.data());
 
+    // rank-1 g1 (F^c-coupled + F^c² constant + (2e)² δ-image) and the E0 scalar.
+    std::vector<std::vector<double>> PH_th(num_threads, std::vector<double>(na2,0.0));
+    std::vector<double> E0_th(num_threads,0.0);
 #pragma omp parallel
     {
-        const int nt = omp_get_thread_num();
-        std::vector<double> J((size_t)n_v*na2);      // J[(a·n_a+t)n_a+u]=(ia|tu)
-        std::vector<double> P((size_t)n_a*n_v*n_a);  // P[(x·n_v+a)n_a+y]=(ix|ay)
-        std::vector<double> Pa(na2);                 // Pa[x·n_a+y]=(ix|ay), fixed a
-        std::vector<double> invD(na2);               // 1/D(p,q), fixed (i,a)
-        double* g2 = G2_th[nt].data();
-        double* ph = PH_th[nt].data();
-        double e0 = 0.0;
-        for(int i = nt; i < n_c; i += num_threads){
-            cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasTrans,
-                        n_v, (int)na2, (int)aux, 1.0,
-                        R.VC_RI_M + i*aux, (int)(n_c*aux),
-                        R.AA_RI_M, (int)aux, 0.0,
-                        J.data(), (int)na2);
-            cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasTrans,
-                        n_a, n_v*n_a, (int)aux, 1.0,
-                        R.CA_RI_M + (long)i*n_a*aux, (int)aux,
-                        R.VA_RI_M, (int)aux, 0.0,
-                        P.data(), n_v*n_a);
-            const double eci = e_c[i];
-            for(int a=0; a<n_v; a++){
-                const double Dc = eci - e_v[a];          // EE-collapsed denom
-                const double* Ja = &J[(size_t)a*na2];    // Ja[t·n_a+u]=(ia|tu)
-                for(int x=0; x<n_a; x++)
-                for(int y=0; y<n_a; y++)
-                    Pa[x*n_a+y] = P[((size_t)x*n_v+a)*n_a+y];
-                for(int p=0; p<n_a; p++)
-                for(int q=0; q<n_a; q++){
-                    double D = eci + K.e_IP[p] - e_v[a] - K.e_EA[q];
-                    if(p==q) D = Dc;                     // removed==added collapse
-#ifndef NDEBUG
-                    if(ee) assert(std::fabs(D-Dc) < 1e-8);
-#endif
-                    invD[p*n_a+q] = 1.0/D;
-                }
-                // g2, 7 assignments — each keeps its OWN D(p,q); the (ia|tu)(ia|vw)
-                // diagonal carries factor 2 split over D(t,u) and D(v,w).
-                for(int t=0; t<n_a; t++)
-                for(int u=0; u<n_a; u++){
-                    const double Jtu = Ja[t*n_a+u];
-                    const double id_tu = invD[t*n_a+u];
-                    for(int v=0; v<n_a; v++)
-                    for(int w=0; w<n_a; w++){
-                        const double Jvw = Ja[v*n_a+w];
-                        const double g =
-                            (2.0*Jtu*Jvw - Pa[u*n_a+t]*Jvw - Jtu*Pa[v*n_a+w])*id_tu
-                          + (2.0*Jtu*Jvw - Pa[t*n_a+u]*Jvw - Jtu*Pa[w*n_a+v])*invD[v*n_a+w]
-                          - Pa[t*n_a+w]*Pa[u*n_a+v]*invD[v*n_a+u]
-                          - Pa[w*n_a+t]*Pa[v*n_a+u]*invD[t*n_a+w];
-                        g2[((size_t)(t*n_a+u)*n_a+v)*n_a+w] += g;
-                    }
-                }
-                // g1 F^c-coupled (§5.3) + the F^c² constant.
-                const double Fia = H_CV[i*n_v+a];
-                for(int t=0; t<n_a; t++)
-                for(int u=0; u<n_a; u++){
-                    const double Jtu = Ja[t*n_a+u];
-                    ph[t*n_a+u] += Fia*( (2.0*Jtu - Pa[t*n_a+u])/Dc
-                                       + (2.0*Jtu - Pa[u*n_a+t])*invD[t*n_a+u] );
-                }
-                e0 += 2.0*Fia*Fia/Dc;
-                // g1 (2e)² δ-image (§5.4); denominator D(t,v)=invD[t·n_a+v].
-                for(int t=0; t<n_a; t++)
-                for(int u=0; u<n_a; u++)
-                for(int v=0; v<n_a; v++)
-                    ph[t*n_a+u] += ( 2.0*Ja[t*n_a+v]*Ja[u*n_a+v]
-                                   + 2.0*Pa[v*n_a+t]*Pa[v*n_a+u]
-                                   - Ja[t*n_a+v]*Pa[v*n_a+u]
-                                   - Pa[v*n_a+t]*Ja[u*n_a+v] )*invD[t*n_a+v];
-            }
+        const int nt=omp_get_thread_num();
+        double* ph=PH_th[nt].data();
+        double e0=0.0;
+        for(int e=nt;e<ne;e+=num_threads){
+            const int a=e/n_c, i=e%n_c;
+            const double Dc=e_c[i]-e_v[a], Fia=H_CV[i*n_v+a];
+            auto Je=[&](int p,int q){ return J[((size_t)p*n_a+q)*ne+e]; };
+            auto Pe=[&](int p,int q){ return P[((size_t)p*n_a+q)*ne+e]; };
+            auto iDe=[&](int p,int q){ return invD[((size_t)p*n_a+q)*ne+e]; };
+            for(int t=0;t<n_a;t++) for(int u=0;u<n_a;u++)
+                ph[t*n_a+u] += Fia*( (2.0*Je(t,u)-Pe(t,u))/Dc
+                                   + (2.0*Je(t,u)-Pe(u,t))*iDe(t,u) );
+            e0 += 2.0*Fia*Fia/Dc;
+            for(int t=0;t<n_a;t++) for(int u=0;u<n_a;u++) for(int v=0;v<n_a;v++)
+                ph[t*n_a+u] += ( 2.0*Je(t,v)*Je(u,v) + 2.0*Pe(v,t)*Pe(v,u)
+                               - Je(t,v)*Pe(v,u) - Pe(v,t)*Je(u,v) )*iDe(t,v);
         }
-        E0_th[nt] = e0;
+        E0_th[nt]=e0;
     }
-    for(int th=0; th<num_threads; th++){
-        const double* g2 = G2_th[th].data();
-        const double* ph = PH_th[th].data();
-        for(size_t k=0; k<na2*na2; k++) out.g2[k] += g2[k];
-        for(size_t k=0; k<na2;     k++) out.g1[k] += ph[k];
-        out.E0 += E0_th[th];
+    for(int th=0;th<num_threads;th++){
+        const double* ph=PH_th[th].data();
+        for(size_t k=0;k<na2;k++) out.g1[k]+=ph[k];
+        out.E0+=E0_th[th];
     }
     return 0;
 }
 
-// AV (S1 §5.3 both-double M table -> raw_av; collapsed g2/g1; §5.4 (2e)² δ-image
-// g2). External virtual a. Shared slabs Va[a][p][q][r]=(ap|qr) (VA·AA over aux)
-// and S[p][q][a][r]=(pq|ra) (AA·VA over aux). The OUTPUT pair (t,u) is striped
-// over threads — each owns disjoint raw_av/g2/g1 rows (as the stock 3-body
-// builder stripes its active pair), so no n_a^6 per-thread copy is needed. The
-// M table is a straight loop nest with hoisted slab pointers: literal
-// transcription over GEMM-shaping at this stage. Every D collapses to e_A−e_a.
+// AV (S1 §5.3 both-double M table -> raw_av; collapsed g2 + F^c² g1; §5.4 (2e)²
+// δ-image g2). External virtual a; slabs Va[a][p][q][r]=(ap|qr), S[p][q][a][r]=
+// (pq|ra). GEMM realization: each term's D depends only on ONE factor's own
+// labels (D_av symmetric in its +active args), so ONE scaled copy P=Va/D_av
+// serves the collapsed g2 and the whole M table. Every D collapses to e_A−e_a.
 int cdas_sf_detail::build_av(const RI_data& R, const double* eps,
                              int n_c, int n_a, int n_v,
                              const double* H_AV, const double* H_CA,
                              const double* H_CV, const cdas_sf_kernel& K,
                              cdas_sf_tensors& out){
     (void)H_CA; (void)H_CV;
+    if(K.deriv!=0){ fprintf(stderr,"build_av: only deriv==0 is implemented\n"); abort(); }
     if(n_a==0 || n_v==0) return 0;
     const long aux = R.aux_n_ao;
     const double* e_v = eps + n_c + n_a;
     const size_t na2=(size_t)n_a*n_a, na3=na2*n_a, na6=na3*na3;
-    out.raw_av.assign(na6, 0.0);
+    if(out.raw_av.empty()) out.raw_av.assign(na6, 0.0);   // accumulate on reuse
 #ifndef NDEBUG
     const bool ee = sf_ee_flat(K);
     const double epsA = K.e_IP.empty() ? 0.0 : K.e_IP[0];
 #endif
-    // Va[((a·n_a+p)·n_a+q)·n_a+r]=(ap|qr); S[((p·n_a+q)·n_v+a)·n_a+r]=(pq|ra).
-    std::vector<double> Va((size_t)n_v*na3);
-    cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasTrans,
-                n_v*n_a, n_a*n_a, (int)aux, 1.0,
-                R.VA_RI_M, (int)aux, R.AA_RI_M, (int)aux, 0.0,
-                Va.data(), n_a*n_a);
-    std::vector<double> S(na2*(size_t)n_v*n_a);
-    cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasTrans,
-                n_a*n_a, n_v*n_a, (int)aux, 1.0,
-                R.AA_RI_M, (int)aux, R.VA_RI_M, (int)aux, 0.0,
-                S.data(), n_v*n_a);
-    auto Sidx=[&](int p,int q,int a,int r){ return ((size_t)(p*n_a+q)*n_v+a)*n_a+r; };
     // D(p,q;r)=e_IP[p]+e_IP[q]−e_EA[r]−e_a; a removed==added coincidence drops one
     // pair (multiplicity: r matching both p and q still drops only one).
     auto Dav=[&](int p,int q,int r,double ea)->double{
@@ -536,92 +601,143 @@ int cdas_sf_detail::build_av(const RI_data& R, const double* eps,
 #endif
         return d;
     };
-    auto D1=[&](int p,double ea)->double{             // single removed active
-        double d = K.e_IP[p]-ea;
-#ifndef NDEBUG
-        if(ee) assert(std::fabs(d-(epsA-ea)) < 1e-8);
-#endif
-        return d;
-    };
+    // Va[((a·n_a+p)·n_a+q)·n_a+r]=(ap|qr); S[((p·n_a+q)·n_v+a)·n_a+r]=(pq|ra).
+    std::vector<double> Va((size_t)n_v*na3);
+    nopt_par_dgemm(CblasRowMajor, CblasNoTrans, CblasTrans,
+                   n_v*n_a, n_a*n_a, (int)aux, 1.0,
+                   R.VA_RI_M, (int)aux, R.AA_RI_M, (int)aux, 0.0,
+                   Va.data(), n_a*n_a);
+    std::vector<double> S(na2*(size_t)n_v*n_a);
+    nopt_par_dgemm(CblasRowMajor, CblasNoTrans, CblasTrans,
+                   n_a*n_a, n_v*n_a, (int)aux, 1.0,
+                   R.AA_RI_M, (int)aux, R.VA_RI_M, (int)aux, 0.0,
+                   S.data(), n_v*n_a);
+    // P[a][p][q][r] = Va[a][p][q][r] / D_av(p,q;r): the single kernel-scaled slab.
+    std::vector<double> P((size_t)n_v*na3);
+#pragma omp parallel for schedule(static)
+    for(int a=0; a<n_v; a++){
+        const double ea=e_v[a];
+        for(int p=0;p<n_a;p++) for(int q=0;q<n_a;q++) for(int r=0;r<n_a;r++){
+            const size_t k=(size_t)a*na3 + ((size_t)p*n_a+q)*n_a+r;
+            P[k] = Va[k]/Dav(p,q,r,ea);
+        }
+    }
 
-#pragma omp parallel
+    // --- F^c² g1: g1_{tu} += Σ_a F_ta F_ua / (e_IP[t]−e_a). SFav = F/(e_IP−e). ---
+    std::vector<double> SFav((size_t)n_a*n_v);
+#pragma omp parallel for schedule(static)
+    for(int t=0;t<n_a;t++) for(int a=0;a<n_v;a++)
+        SFav[(size_t)t*n_v+a] = H_AV[t*n_v+a]/(K.e_IP[t]-e_v[a]);
+    std::vector<double> Wg1(na2);
+    nopt_par_dgemm(CblasRowMajor, CblasNoTrans, CblasTrans, n_a, n_a, n_v, 1.0,
+                   SFav.data(), n_v, H_AV, n_v, 0.0, Wg1.data(), n_a);
+    for(size_t k=0;k<na2;k++) out.g1[k] += Wg1[k];
+
+    // --- collapsed g2 (4 terms): Cf=SFav·Va, Cp=H_AV·P (both n_a×n_a^3), then
+    // g2_{tu,vw} += Cf[t][(u,v,w)] + Cf[v][(w,t,u)] + Cp[u][(t,v,w)] + Cp[w][(v,t,u)]. ---
     {
-        const int nt = omp_get_thread_num();
-        for(int tu=nt; tu<n_a*n_a; tu+=num_threads){
-            const int t=tu/n_a, u=tu%n_a;
-            for(int a=0; a<n_v; a++){
-                const double ea=e_v[a];
-                const double* Vp = Va.data() + (size_t)a*na3; // Vp[(p·n_a+q)·n_a+r]=(ap|qr)
-                const double Fta=H_AV[t*n_v+a], Fua=H_AV[u*n_v+a];
-                out.g1[t*n_a+u] += Fta*Fua/D1(t,ea);        // collapsed F^c² g1
-                for(int v=0; v<n_a; v++)
-                for(int w=0; w<n_a; w++){
-                    // collapsed g2 (4 terms, all +) + (2e)² δ-image (sum over m)
-                    double g = Fta*Vp[(u*n_a+v)*n_a+w]/D1(t,ea)
-                             + H_AV[v*n_v+a]*Vp[(w*n_a+t)*n_a+u]/D1(v,ea)
-                             + Fua*Vp[(t*n_a+v)*n_a+w]/Dav(t,v,w,ea)
-                             + H_AV[w*n_v+a]*Vp[(v*n_a+t)*n_a+u]/Dav(t,v,u,ea);
-                    for(int m=0; m<n_a; m++){
-                        double Dm=K.e_IP[t]+K.e_IP[v]-K.e_EA[m]-ea;
-                        if(m==t) Dm=K.e_IP[v]-ea;
-                        if(m==v) Dm=K.e_IP[t]-ea;
+        std::vector<double> Cf((size_t)n_a*na3), Cp((size_t)n_a*na3);
+        nopt_par_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, n_a, (int)na3, n_v,
+                       1.0, SFav.data(), n_v, Va.data(), (int)na3, 0.0, Cf.data(), (int)na3);
+        nopt_par_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, n_a, (int)na3, n_v,
+                       1.0, H_AV, n_v, P.data(), (int)na3, 0.0, Cp.data(), (int)na3);
+#pragma omp parallel for collapse(2) schedule(static)
+        for(int t=0;t<n_a;t++) for(int u=0;u<n_a;u++)
+        for(int v=0;v<n_a;v++) for(int w=0;w<n_a;w++)
+            out.g2[(((size_t)t*n_a+u)*n_a+v)*n_a+w] +=
+                  Cf[(size_t)t*na3 + ((size_t)u*n_a+v)*n_a+w]
+                + Cf[(size_t)v*na3 + ((size_t)w*n_a+t)*n_a+u]
+                + Cp[(size_t)u*na3 + ((size_t)t*n_a+v)*n_a+w]
+                + Cp[(size_t)w*na3 + ((size_t)v*n_a+t)*n_a+u];
+    }
+
+    // --- (2e)² δ-image g2 (§5.4): contract the combined (a,m) index. Factor1
+    // scaled by 1/Dm(t,v;m,a) [collapse m==t/m==v]; two products, mirror pack. ---
+    {
+        const int nam = n_v*n_a;                   // e = a*n_a + m
+        std::vector<double> A1(na2*(size_t)nam), B1((size_t)nam*na2);
+        std::vector<double> A2(na2*(size_t)nam), B2((size_t)nam*na2);
+#pragma omp parallel for collapse(2) schedule(static)
+        for(int a=0;a<n_v;a++) for(int m=0;m<n_a;m++){
+            const double ea=e_v[a];
+            for(int t=0;t<n_a;t++) for(int v=0;v<n_a;v++){
+                double Dm=K.e_IP[t]+K.e_IP[v]-K.e_EA[m]-ea;
+                if(m==t) Dm=K.e_IP[v]-ea;
+                if(m==v) Dm=K.e_IP[t]-ea;
 #ifndef NDEBUG
-                        if(ee) assert(std::fabs(Dm-(epsA-ea))<1e-8);
+                if(ee) assert(std::fabs(Dm-(epsA-ea))<1e-8);
 #endif
-                        g += (S[Sidx(t,m,a,v)]*S[Sidx(m,u,a,w)]
-                            + Vp[(t*n_a+v)*n_a+m]*S[Sidx(m,w,a,u)])/Dm;
-                    }
-                    out.g2[(((size_t)t*n_a+u)*n_a+v)*n_a+w] += g;
-                }
-                // both-double M table (6 terms, all +1) -> raw_av (RAW, un-Hermitized)
-                for(int v=0; v<n_a; v++)
-                for(int w=0; w<n_a; w++)
-                for(int x=0; x<n_a; x++)
-                for(int y=0; y<n_a; y++){
-                    double m = Vp[(t*n_a+v)*n_a+w]*Vp[(u*n_a+x)*n_a+y]/Dav(t,v,w,ea)
-                             + Vp[(t*n_a+x)*n_a+y]*Vp[(u*n_a+v)*n_a+w]/Dav(t,x,y,ea)
-                             + Vp[(v*n_a+t)*n_a+u]*Vp[(w*n_a+x)*n_a+y]/Dav(t,v,u,ea)
-                             + Vp[(w*n_a+t)*n_a+u]*Vp[(v*n_a+x)*n_a+y]/Dav(v,x,y,ea)
-                             + Vp[(x*n_a+t)*n_a+u]*Vp[(y*n_a+v)*n_a+w]/Dav(t,x,u,ea)
-                             + Vp[(y*n_a+t)*n_a+u]*Vp[(x*n_a+v)*n_a+w]/Dav(v,x,w,ea);
-                    out.raw_av[(((((size_t)t*n_a+u)*n_a+v)*n_a+w)*n_a+x)*n_a+y] += m;
-                }
+                const size_t e=(size_t)a*n_a+m;
+                A1[((size_t)t*n_a+v)*nam + e] = S[((size_t)(t*n_a+m)*n_v+a)*n_a+v]/Dm; // (tm|va)
+                A2[((size_t)t*n_a+v)*nam + e] = Va[(size_t)a*na3+((size_t)t*n_a+v)*n_a+m]/Dm; // (at|vm)
+            }
+            for(int u=0;u<n_a;u++) for(int w=0;w<n_a;w++){
+                const size_t e=(size_t)a*n_a+m;
+                B1[e*na2 + (size_t)u*n_a+w] = S[((size_t)(m*n_a+u)*n_v+a)*n_a+w]; // (mu|aw)
+                B2[e*na2 + (size_t)w*n_a+u] = S[((size_t)(m*n_a+w)*n_v+a)*n_a+u]; // (mw|ua)
             }
         }
+        std::vector<double> C1(na2*na2), C2(na2*na2);
+        nopt_par_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, (int)na2, (int)na2, nam,
+                       1.0, A1.data(), nam, B1.data(), (int)na2, 0.0, C1.data(), (int)na2);
+        nopt_par_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, (int)na2, (int)na2, nam,
+                       1.0, A2.data(), nam, B2.data(), (int)na2, 0.0, C2.data(), (int)na2);
+#pragma omp parallel for collapse(2) schedule(static)
+        for(int t=0;t<n_a;t++) for(int u=0;u<n_a;u++)
+        for(int v=0;v<n_a;v++) for(int w=0;w<n_a;w++)
+            out.g2[(((size_t)t*n_a+u)*n_a+v)*n_a+w] +=
+                  C1[((size_t)t*n_a+v)*na2 + (size_t)u*n_a+w]
+                + C2[((size_t)t*n_a+v)*na2 + (size_t)w*n_a+u];
+    }
+
+    // --- both-double M table (6 terms, all +1): ONE GEMM C=Pᵀ·Va (n_a^3×n_a^3),
+    // then raw_av[t,u,v,w,x,y] += Σ of the 6 certified reads of C[(α)][(β)]. ---
+    {
+        std::vector<double> C(na6);
+        nopt_par_dgemm(CblasRowMajor, CblasTrans, CblasNoTrans, (int)na3, (int)na3, n_v,
+                       1.0, P.data(), (int)na3, Va.data(), (int)na3, 0.0, C.data(), (int)na3);
+        auto Cx=[&](int a1,int a2,int a3,int b1,int b2,int b3)->double{
+            return C[(((size_t)a1*n_a+a2)*n_a+a3)*na3 + ((size_t)b1*n_a+b2)*n_a+b3]; };
+#pragma omp parallel for collapse(2) schedule(static)
+        for(int t=0;t<n_a;t++) for(int u=0;u<n_a;u++)
+        for(int v=0;v<n_a;v++) for(int w=0;w<n_a;w++)
+        for(int x=0;x<n_a;x++) for(int y=0;y<n_a;y++)
+            out.raw_av[(((((size_t)t*n_a+u)*n_a+v)*n_a+w)*n_a+x)*n_a+y] +=
+                  Cx(t,v,w, u,x,y) + Cx(t,x,y, u,v,w) + Cx(v,t,u, w,x,y)
+                + Cx(v,x,y, w,t,u) + Cx(x,t,u, y,v,w) + Cx(x,v,w, y,t,u);
     }
     return 0;
 }
 
 // CA (S1 §5.3 both-double M table -> raw_ca; collapsed g2 with OVERALL −1; §5.4
 // (2e)² δ-image g2, double-δ g1 with the mandatory ½, F^c-linear δ g1, F^c²
-// g1 with the KET label u, scalar E0). External core i. Shared slab
-// CAAA[i][p][q][r]=(ip|qr) (CA·AA over aux). OUTPUT pair (t,u) striped over
-// threads (disjoint rows); E0 (no integrals) summed serially. Every D collapses
-// to e_i−e_A. M table stored RAW — NOT operator-consistent, so its rank-3 gate
-// is deferred to the read-off/gauge steps (cert_a1 §1).
+// g1 with the KET label u, scalar E0). External core i; slab CAAA[i][p][q][r]=
+// (ip|qr). M table needs TWO scaled copies (Pq, Pr — +active label in slot q or
+// r); Pq also serves the collapsed g2; δ-image via sf_bothdouble_g2 over (i,x).
 int cdas_sf_detail::build_ca(const RI_data& R, const double* eps,
                              int n_c, int n_a, int n_v,
                              const double* H_AV, const double* H_CA,
                              const double* H_CV, const cdas_sf_kernel& K,
                              cdas_sf_tensors& out){
     (void)H_AV; (void)H_CV; (void)n_v;
+    if(K.deriv!=0){ fprintf(stderr,"build_ca: only deriv==0 is implemented\n"); abort(); }
     if(n_a==0 || n_c==0) return 0;
     const long aux = R.aux_n_ao;
     const double* e_c = eps;
     const size_t na2=(size_t)n_a*n_a, na3=na2*n_a, na6=na3*na3;
-    out.raw_ca.assign(na6, 0.0);
+    if(out.raw_ca.empty()) out.raw_ca.assign(na6, 0.0);   // accumulate on reuse
 #ifndef NDEBUG
     const bool ee = sf_ee_flat(K);
     const double epsA = K.e_EA.empty() ? 0.0 : K.e_EA[0];
 #endif
     // CAAA[((i·n_a+p)·n_a+q)·n_a+r]=(ip|qr).
     std::vector<double> CAAA((size_t)n_c*na3);
-    cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasTrans,
-                n_c*n_a, n_a*n_a, (int)aux, 1.0,
-                R.CA_RI_M, (int)aux, R.AA_RI_M, (int)aux, 0.0,
-                CAAA.data(), n_a*n_a);
-    // D(p;q,r)=e_i+e_IP[p]−e_EA[q]−e_EA[r] and the single-removed D1(q)=e_i−e_EA[q]
-    // (kept in a q-only closure over the current core i via the eci argument).
+    nopt_par_dgemm(CblasRowMajor, CblasNoTrans, CblasTrans,
+                   n_c*n_a, n_a*n_a, (int)aux, 1.0,
+                   R.CA_RI_M, (int)aux, R.AA_RI_M, (int)aux, 0.0,
+                   CAAA.data(), n_a*n_a);
+    // D(p;q,r)=e_i+e_IP[p]−e_EA[q]−e_EA[r] (p the +active label) with the single-
+    // removed collapse; D1(q)=e_i−e_EA[q]. eci passed per call.
     auto Dca=[&](double eci,int p,int q,int r)->double{
         double d=eci+K.e_IP[p]-K.e_EA[q]-K.e_EA[r];
         if(p==q) d=eci-K.e_EA[r];
@@ -648,6 +764,8 @@ int cdas_sf_detail::build_ca(const RI_data& R, const double* eps,
         out.E0 += e0;
     }
 
+    // rank-1 g1 (F^c², F^c-linear δ, double-δ): kept scalar — the denominators
+    // couple the OUTPUT label with the contracted ones. (t,u) striped, i inner.
 #pragma omp parallel
     {
         const int nt=omp_get_thread_num();
@@ -655,13 +773,12 @@ int cdas_sf_detail::build_ca(const RI_data& R, const double* eps,
             const int t=tu/n_a, u=tu%n_a;
             for(int i=0;i<n_c;i++){
                 const double eci=e_c[i];
-                const double* Ci=CAAA.data()+(size_t)i*na3; // Ci[(p·n_a+q)·n_a+r]=(ip|qr)
+                const double* Ci=CAAA.data()+(size_t)i*na3;
                 const double Fit=H_CA[i*n_a+t], Fiu=H_CA[i*n_a+u];
                 out.g1[t*n_a+u] += -Fit*Fiu/D1(eci,u);      // F^c² g1 (KET label u)
                 double g1acc=0.0;
                 for(int v=0;v<n_a;v++){
                     const double ivtu=Ci[(v*n_a+t)*n_a+u];  // (iv|tu)
-                    // F^c-linear δ g1: 2/−1 mirror of CV.3
                     g1acc += H_CA[i*n_a+v]*( (2.0*ivtu-Ci[(t*n_a+v)*n_a+u])/D1(eci,v)
                                            + (2.0*ivtu-Ci[(u*n_a+v)*n_a+t])/Dca(eci,t,u,v) );
                     for(int w=0;w<n_a;w++){                  // double-δ g1 (½ mandatory)
@@ -672,41 +789,84 @@ int cdas_sf_detail::build_ca(const RI_data& R, const double* eps,
                     }
                 }
                 out.g1[t*n_a+u] += g1acc;
-                for(int v=0;v<n_a;v++)
-                for(int w=0;w<n_a;w++){
-                    // collapsed g2 (4 terms) — accumulated then subtracted (OVERALL −1)
-                    double gc = H_CA[i*n_a+u]*Ci[(t*n_a+v)*n_a+w]/D1(eci,u)
-                              + H_CA[i*n_a+w]*Ci[(v*n_a+t)*n_a+u]/D1(eci,w)
-                              + Fit*Ci[(u*n_a+v)*n_a+w]/Dca(eci,v,u,w)
-                              + H_CA[i*n_a+v]*Ci[(w*n_a+t)*n_a+u]/Dca(eci,t,u,w);
-                    // (2e)² δ-image g2 (+, sum over active x), mirror of CV g2
-                    double gd=0.0;
-                    for(int x=0;x<n_a;x++){
-                        const double ixtu=Ci[(x*n_a+t)*n_a+u], ixvw=Ci[(x*n_a+v)*n_a+w];
-                        gd += (2.0*ixtu*ixvw - Ci[(u*n_a+x)*n_a+t]*ixvw
-                               - ixtu*Ci[(v*n_a+x)*n_a+w])/Dca(eci,t,u,x)
-                            + (2.0*ixtu*ixvw - Ci[(t*n_a+x)*n_a+u]*ixvw
-                               - ixtu*Ci[(w*n_a+x)*n_a+v])/Dca(eci,v,w,x)
-                            - Ci[(t*n_a+x)*n_a+w]*Ci[(u*n_a+x)*n_a+v]/Dca(eci,v,u,x)
-                            - Ci[(w*n_a+x)*n_a+t]*Ci[(v*n_a+x)*n_a+u]/Dca(eci,t,w,x);
-                    }
-                    out.g2[(((size_t)t*n_a+u)*n_a+v)*n_a+w] += gd - gc;
-                }
-                // both-double M table (6 terms, all +1) -> raw_ca (RAW, un-Hermitized)
-                for(int v=0;v<n_a;v++)
-                for(int w=0;w<n_a;w++)
-                for(int x=0;x<n_a;x++)
-                for(int y=0;y<n_a;y++){
-                    double m = Ci[(t*n_a+u)*n_a+v]*Ci[(w*n_a+x)*n_a+y]/Dca(eci,x,w,y)
-                             + Ci[(t*n_a+x)*n_a+y]*Ci[(w*n_a+u)*n_a+v]/Dca(eci,v,u,w)
-                             + Ci[(u*n_a+t)*n_a+w]*Ci[(v*n_a+x)*n_a+y]/Dca(eci,t,u,w)
-                             + Ci[(v*n_a+t)*n_a+w]*Ci[(u*n_a+x)*n_a+y]/Dca(eci,x,u,y)
-                             + Ci[(x*n_a+t)*n_a+w]*Ci[(y*n_a+u)*n_a+v]/Dca(eci,v,u,y)
-                             + Ci[(y*n_a+t)*n_a+w]*Ci[(x*n_a+u)*n_a+v]/Dca(eci,t,w,y);
-                    out.raw_ca[(((((size_t)t*n_a+u)*n_a+v)*n_a+w)*n_a+x)*n_a+y] += m;
-                }
             }
         }
+    }
+
+    // Pq[i][(p,q,r)] = CAAA / D(q; p,r); Pr[i][(p,q,r)] = CAAA / D(r; p,q).
+    std::vector<double> Pq((size_t)n_c*na3), Pr((size_t)n_c*na3);
+#pragma omp parallel for schedule(static)
+    for(int i=0;i<n_c;i++){
+        const double eci=e_c[i];
+        for(int p=0;p<n_a;p++) for(int q=0;q<n_a;q++) for(int r=0;r<n_a;r++){
+            const size_t k=(size_t)i*na3 + ((size_t)p*n_a+q)*n_a+r;
+            Pq[k]=CAAA[k]/Dca(eci,q,p,r);
+            Pr[k]=CAAA[k]/Dca(eci,r,p,q);
+        }
+    }
+
+    // collapsed g2 (4 terms, OVERALL −1): C1=SFcaᵀ·CAAA, C3=H_CAᵀ·Pq (n_a×n_a^3);
+    // g2 −= C1[u][(t,v,w)] + C1[w][(v,t,u)] + C3[t][(u,v,w)] + C3[v][(w,t,u)].
+    {
+        std::vector<double> SFca((size_t)n_c*n_a);
+#pragma omp parallel for schedule(static)
+        for(int i=0;i<n_c;i++) for(int q=0;q<n_a;q++)
+            SFca[(size_t)i*n_a+q] = H_CA[i*n_a+q]/(e_c[i]-K.e_EA[q]);
+        std::vector<double> C1((size_t)n_a*na3), C3((size_t)n_a*na3);
+        nopt_par_dgemm(CblasRowMajor, CblasTrans, CblasNoTrans, n_a, (int)na3, n_c,
+                       1.0, SFca.data(), n_a, CAAA.data(), (int)na3, 0.0, C1.data(), (int)na3);
+        nopt_par_dgemm(CblasRowMajor, CblasTrans, CblasNoTrans, n_a, (int)na3, n_c,
+                       1.0, H_CA, n_a, Pq.data(), (int)na3, 0.0, C3.data(), (int)na3);
+#pragma omp parallel for collapse(2) schedule(static)
+        for(int t=0;t<n_a;t++) for(int u=0;u<n_a;u++)
+        for(int v=0;v<n_a;v++) for(int w=0;w<n_a;w++)
+            out.g2[(((size_t)t*n_a+u)*n_a+v)*n_a+w] -=
+                  C1[(size_t)u*na3 + ((size_t)t*n_a+v)*n_a+w]
+                + C1[(size_t)w*na3 + ((size_t)v*n_a+t)*n_a+u]
+                + C3[(size_t)t*na3 + ((size_t)u*n_a+v)*n_a+w]
+                + C3[(size_t)v*na3 + ((size_t)w*n_a+t)*n_a+u];
+    }
+
+    // (2e)² δ-image g2: CA (2e)² mirror of CV.2 over e=(i,x). Jix[(t,u)]=(ix|tu),
+    // Qix[(p,q)]=(ip|xq), invDx[(p,q)]=1/D(p,q;x). Reuses sf_bothdouble_g2 (+).
+    {
+        const int ne=n_c*n_a;                   // e = i*n_a + x
+        std::vector<double> Jix(na2*(size_t)ne), Qix(na2*(size_t)ne), invDx(na2*(size_t)ne);
+#pragma omp parallel for collapse(2) schedule(static)
+        for(int i=0;i<n_c;i++) for(int x=0;x<n_a;x++){
+            const double eci=e_c[i];
+            const size_t e=(size_t)i*n_a+x;
+            for(int p=0;p<n_a;p++) for(int q=0;q<n_a;q++){
+                Jix[((size_t)p*n_a+q)*ne+e] = CAAA[(size_t)i*na3+((size_t)x*n_a+p)*n_a+q];
+                Qix[((size_t)p*n_a+q)*ne+e] = CAAA[(size_t)i*na3+((size_t)p*n_a+x)*n_a+q];
+                invDx[((size_t)p*n_a+q)*ne+e] = 1.0/Dca(eci,p,q,x);
+            }
+        }
+        sf_bothdouble_g2(n_a, ne, Jix, Qix, invDx, out.g2.data());
+    }
+
+    // both-double M table (6 terms, all +1): Cq=Pqᵀ·CAAA and Cr=Prᵀ·CAAA share ONE
+    // n_a^6 scratch; raw_ca gathers the 4 Cq-reads then the 2 Cr-reads (cert §4).
+    {
+        std::vector<double> C(na6);
+        nopt_par_dgemm(CblasRowMajor, CblasTrans, CblasNoTrans, (int)na3, (int)na3, n_c,
+                       1.0, Pq.data(), (int)na3, CAAA.data(), (int)na3, 0.0, C.data(), (int)na3);
+        auto Cx=[&](int a1,int a2,int a3,int b1,int b2,int b3)->double{
+            return C[(((size_t)a1*n_a+a2)*n_a+a3)*na3 + ((size_t)b1*n_a+b2)*n_a+b3]; };
+#pragma omp parallel for collapse(2) schedule(static)
+        for(int t=0;t<n_a;t++) for(int u=0;u<n_a;u++)
+        for(int v=0;v<n_a;v++) for(int w=0;w<n_a;w++)
+        for(int x=0;x<n_a;x++) for(int y=0;y<n_a;y++)
+            out.raw_ca[(((((size_t)t*n_a+u)*n_a+v)*n_a+w)*n_a+x)*n_a+y] +=
+                  Cx(w,x,y, t,u,v) + Cx(u,t,w, v,x,y) + Cx(u,x,y, v,t,w) + Cx(y,t,w, x,u,v);
+        nopt_par_dgemm(CblasRowMajor, CblasTrans, CblasNoTrans, (int)na3, (int)na3, n_c,
+                       1.0, Pr.data(), (int)na3, CAAA.data(), (int)na3, 0.0, C.data(), (int)na3);
+#pragma omp parallel for collapse(2) schedule(static)
+        for(int t=0;t<n_a;t++) for(int u=0;u<n_a;u++)
+        for(int v=0;v<n_a;v++) for(int w=0;w<n_a;w++)
+        for(int x=0;x<n_a;x++) for(int y=0;y<n_a;y++)
+            out.raw_ca[(((((size_t)t*n_a+u)*n_a+v)*n_a+w)*n_a+x)*n_a+y] +=
+                  Cx(w,u,v, t,x,y) + Cx(y,u,v, x,t,w);
     }
     return 0;
 }
@@ -750,57 +910,61 @@ static void sf_assert_rank12(const cdas_sf_tensors& out){
 }
 #endif
 
-// §6.3 g3 gauge projection (S1 §6.3 / cert_a2_g3_gauge.md §9.1). Maps ONE raw
-// both-double table T (n_a^6; creators t,v,x on even slots, annihilators u,w,y
-// on odd) to the certified pair-S3-symmetric Hermitian representative and
-// ACCUMULATES it into G_accum. One code path for AV and CA — T_AV is already
-// pair-symmetric and passes through unchanged (no branch). T read-only.
+// §6.3 g3 gauge projection (S1 §6.3 / cert_a2_g3_gauge.md §9.1). ACCUMULATES the
+// UN-Hermitized projection sym(D)−½asymC(D) of ONE raw both-double table into
+// G_accum; the Hermitization lives in sf_finalize_g3. D(·)=T(·)−T(·, u↔w) is
+// read straight from T inline (no full-size D/G temporary). One code path for
+// AV and CA. T read-only.
 namespace cdas_sf_detail {
 void sf_gauge_project_g3(const std::vector<double>& T, int n_a,
                          std::vector<double>& G_accum){
     const int n = n_a;
-    const size_t na6 = (size_t)n*n*n*n*n*n;
     auto ix = [n](int t,int u,int v,int w,int x,int y)->size_t {
         return (((((size_t)t*n+u)*n+v)*n+w)*n+x)*n+y; };
-    // Step 1  D = T − P12·T,  (P12·T)[t,u,v,w,x,y] = T[t,w,v,u,x,y] (swap u,w).
-    std::vector<double> D(na6);
-#pragma omp parallel for collapse(2) schedule(static)
-    for(int t=0;t<n;t++) for(int u=0;u<n;u++)
-    for(int v=0;v<n;v++) for(int w=0;w<n;w++)
-    for(int x=0;x<n;x++) for(int y=0;y<n;y++)
-        D[ix(t,u,v,w,x,y)] = T[ix(t,u,v,w,x,y)] - T[ix(t,w,v,u,x,y)];
-    // Steps 2-4  G = sym(D) − ½ asymC(D). sym: 6 whole-pair orderings; asymC: 6
-    // signed creator-slot permutations, annihilators fixed (id/3-cycles +, swaps −).
-    std::vector<double> G(na6);
+    // D on a pair-tuple: swap the two annihilator slots (positions 2 and 4).
+    auto Dv = [&](int a,int b,int c,int d,int e,int f)->double {
+        return T[ix(a,b,c,d,e,f)] - T[ix(a,d,c,b,e,f)]; };
+    // sym: 6 whole-pair orderings; asymC: 6 signed creator-slot permutations,
+    // annihilators fixed (id/3-cycles +, swaps −). Accumulate s−½c into g3.
 #pragma omp parallel for collapse(2) schedule(static)
     for(int t=0;t<n;t++) for(int u=0;u<n;u++)
     for(int v=0;v<n;v++) for(int w=0;w<n;w++)
     for(int x=0;x<n;x++) for(int y=0;y<n;y++){
-        const double s = ( D[ix(t,u,v,w,x,y)] + D[ix(t,u,x,y,v,w)]
-                         + D[ix(v,w,t,u,x,y)] + D[ix(v,w,x,y,t,u)]
-                         + D[ix(x,y,t,u,v,w)] + D[ix(x,y,v,w,t,u)] ) / 6.0;
-        const double c = ( D[ix(t,u,v,w,x,y)] - D[ix(v,u,t,w,x,y)]
-                         - D[ix(x,u,v,w,t,y)] - D[ix(t,u,x,w,v,y)]
-                         + D[ix(v,u,x,w,t,y)] + D[ix(x,u,t,w,v,y)] ) / 6.0;
-        G[ix(t,u,v,w,x,y)] = s - 0.5*c;
+        const double s = ( Dv(t,u,v,w,x,y) + Dv(t,u,x,y,v,w)
+                         + Dv(v,w,t,u,x,y) + Dv(v,w,x,y,t,u)
+                         + Dv(x,y,t,u,v,w) + Dv(x,y,v,w,t,u) ) / 6.0;
+        const double c = ( Dv(t,u,v,w,x,y) - Dv(v,u,t,w,x,y)
+                         - Dv(x,u,v,w,t,y) - Dv(t,u,x,w,v,y)
+                         + Dv(v,u,x,w,t,y) + Dv(x,u,t,w,v,y) ) / 6.0;
+        G_accum[ix(t,u,v,w,x,y)] += s - 0.5*c;
     }
-    // Step 5  Hermitize once, G ← ½(G + G†), G†[t,u,v,w,x,y]=G[u,t,w,v,y,x];
-    // accumulate the Hermitized representative into the shared g3.
-#pragma omp parallel for collapse(2) schedule(static)
-    for(int t=0;t<n;t++) for(int u=0;u<n;u++)
-    for(int v=0;v<n;v++) for(int w=0;w<n;w++)
-    for(int x=0;x<n;x++) for(int y=0;y<n;y++)
-        G_accum[ix(t,u,v,w,x,y)] += 0.5*(G[ix(t,u,v,w,x,y)] + G[ix(u,t,w,v,y,x)]);
 }
 }
 
-// Fill g3 from the raw both-double tables: ONE gauge-projection path per class,
-// results SUMMED into out.g3 (zero from alloc). raw_av/raw_ca are read only.
+// Fill g3 from the raw both-double tables: allocate g3 here (kept out of alloc()
+// so the build peaks at 3·n_a^6), accumulate the UN-Hermitized projection of each
+// class, then Hermitize ONCE in place. Hermitization is linear, so ½(G+G†) of the
+// AV+CA sum equals the per-class Hermitizations summed. raw_av/raw_ca read only.
 static void sf_finalize_g3(cdas_sf_tensors& out){
+    const int n = out.n_a;
+    const size_t na6 = (size_t)n*n*n*n*n*n;
+    out.g3.assign(na6, 0.0);
     if(!out.raw_av.empty())
-        cdas_sf_detail::sf_gauge_project_g3(out.raw_av, out.n_a, out.g3);
+        cdas_sf_detail::sf_gauge_project_g3(out.raw_av, n, out.g3);
     if(!out.raw_ca.empty())
-        cdas_sf_detail::sf_gauge_project_g3(out.raw_ca, out.n_a, out.g3);
+        cdas_sf_detail::sf_gauge_project_g3(out.raw_ca, n, out.g3);
+    // In-place Hermitization: pair (t,u,v,w,x,y) with its dagger (u,t,w,v,y,x);
+    // average each unordered pair once (self-conjugate elements untouched).
+    auto ix = [n](int t,int u,int v,int w,int x,int y)->size_t {
+        return (((((size_t)t*n+u)*n+v)*n+w)*n+x)*n+y; };
+    double* g3 = out.g3.data();
+#pragma omp parallel for collapse(2) schedule(static)
+    for(int t=0;t<n;t++) for(int u=0;u<n;u++)
+    for(int v=0;v<n;v++) for(int w=0;w<n;w++)
+    for(int x=0;x<n;x++) for(int y=0;y<n;y++){
+        const size_t i = ix(t,u,v,w,x,y), id = ix(u,t,w,v,y,x);
+        if(i < id){ double s = 0.5*(g3[i]+g3[id]); g3[i] = g3[id] = s; }
+    }
 }
 
 #ifndef NDEBUG
@@ -834,6 +998,12 @@ int cdas_sf_build(const RI_data& R, const double* eps,
     }
     if(K.deriv!=0){
         fprintf(stderr, "cdas_sf_build: only deriv==0 (bare resolvent) is implemented\n");
+        abort();
+    }
+    if(!sf_ee_flat(K)){
+        fprintf(stderr, "cdas_sf_build: the aggregate's rank-3 gauge projection is "
+                        "certified for a single EE scalar only; non-EE callers must use "
+                        "the cdas_sf_detail builders (rank<=2 only)\n");
         abort();
     }
     out.alloc(n_a);

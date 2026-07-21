@@ -79,14 +79,15 @@ int cdas_sf_to_rf(const cdas_sf_tensors& t,
     }
 
     // RF_P3_JK (same-spin ααα): (1/3)·mixed — aldet's 9-term e3 sum supplies the
-    // ×3. The stock table itself is a different gauge representative and is NOT
-    // reproducible from raw_av; only the e3 weight is invariant. aldet also
-    // self-contracts this table into T2_AA, and RF_PV_JK already carries the
-    // full 2-body from g2 — that shadow is subtracted below (no double count).
+    // ×3; only that weight is invariant (the stock table is a different gauge
+    // representative, NOT reproducible from raw_av). Hermitized BEFORE the shadow:
+    // aldet self-contracts this table into T2_AA and RF_PV_JK already carries the
+    // full 2-body, so the shadow of the table AS DELIVERED is subtracted below.
     for(int a=0;a<n;a++) for(int b=0;b<n;b++)
     for(int c=0;c<n;c++) for(int d=0;d<n;d++)
     for(int e=0;e<n;e++) for(int f=0;f<n;f++)
         RF_P3_JK[i6(a,b,c,d,e,f)] = (1.0/3.0)*mixed(a,c,b,d,e,f);
+    symmetrize_mm(RF_P3_JK, (int)(n2*n));       // n³×n³ Hermitize (as delivered)
     for(int i=0;i<n;i++) for(int j=0;j<n;j++)
     for(int k=0;k<n;k++) for(int l=0;l<n;l++){
         double sh=0.0;
@@ -109,13 +110,26 @@ void cdas_sf_write_dump(const char* path_prefix, const char* scheme,
     if(!fp){ fprintf(stderr,"cdas_sf_write_dump: cannot open %s\n", name); return; }
     const int n = t.n_a;
     const size_t n2=(size_t)n*n, n4=n2*n2, n6=n4*n2;
-    fprintf(fp, "CDAS_SF_DUMP v1\n");
-    fprintf(fp, "n_act %d  scheme %s  basis %s\n", n, scheme, basis);
-    fprintf(fp, "eps_A %.17g\n", eps_A);
-    fprintf(fp, "E0 %.17g\n", t.E0);
-    fwrite(t.g1.data(), sizeof(double), n2, fp);
-    fwrite(t.g2.data(), sizeof(double), n4, fp);
-    fwrite(t.g3.data(), sizeof(double), n6, fp);
-    fclose(fp);
+    // Every write is checked; a truncated dump would silently poison downstream
+    // probes, so on any failure we remove the partial file and skip the success line.
+    bool ok = true;
+    ok = ok && (fprintf(fp, "CDAS_SF_DUMP v1\n") >= 0);
+    ok = ok && (fprintf(fp, "n_act %d  scheme %s  basis %s\n", n, scheme, basis) >= 0);
+    ok = ok && (fprintf(fp, "eps_A %.17g\n", eps_A) >= 0);
+    ok = ok && (fprintf(fp, "E0 %.17g\n", t.E0) >= 0);
+    ok = ok && (fwrite(t.g1.data(), sizeof(double), n2, fp) == n2);
+    ok = ok && (fwrite(t.g2.data(), sizeof(double), n4, fp) == n4);
+    ok = ok && (fwrite(t.g3.data(), sizeof(double), n6, fp) == n6);
+    if(!ok){
+        fclose(fp);
+        fprintf(stderr, "cdas_sf_write_dump: write failed for %s (removed)\n", name);
+        remove(name);
+        return;
+    }
+    if(fclose(fp) != 0){
+        fprintf(stderr, "cdas_sf_write_dump: close failed for %s (removed)\n", name);
+        remove(name);
+        return;
+    }
     fprintf(stdout, "CDAS SF tensor dump written: %s\n", name);
 }

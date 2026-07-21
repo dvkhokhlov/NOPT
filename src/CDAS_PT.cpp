@@ -245,15 +245,15 @@ int CDAS_PT2(molecule * M, cdas_par * cdas, char * job_name){
     }
     CAS.CI->as_aldet()->simple_import_data(act_INTS, act_INTS, H_AA, 0);
 
-    if(cdas->SF_ENGINE){
-        // Spin-free EE engine (S1 §7): build g's -> map to the aldet RF arrays ->
-        // unchanged PT2_import_data + Davidson. EE-family schemes only.
+    if(cdas->SF_ENGINE || cdas->DUMP_TENSORS){
+        // Spin-free EE engine (S1 §7) and/or the tensor dump. Both need a valid EE
+        // build, so the EE-family + edshift guards and the build run for either flag.
         if(cdas->IPEA||cdas->MPPT||cdas->actual||cdas->orb_e||cdas->mult_e||cdas->fit_e){
-            fprintf(out_stream,"ERROR: SF_ENGINE supports the EE family only (HOMO or ENERGY)\n");
+            fprintf(out_stream,"ERROR: SF_ENGINE/DUMP_TENSORS support the EE family only (HOMO or ENERGY)\n");
             exit(EXIT_FAILURE);
         }
         if(fabs(cdas->edshift)>1E-8){
-            fprintf(out_stream,"ERROR: SF_ENGINE requires edshift=0 (bare resolvent)\n");
+            fprintf(out_stream,"ERROR: SF_ENGINE/DUMP_TENSORS require edshift=0 (bare resolvent)\n");
             exit(EXIT_FAILURE);
         }
         cdas_sf_kernel Ksf;
@@ -261,24 +261,49 @@ int CDAS_PT2(molecule * M, cdas_par * cdas, char * job_name){
         Ksf.e_EA.assign(n_act, 0.0);
         for(int i=0;i<n_act;i++){ Ksf.e_IP[i]=eps_a[i]; Ksf.e_EA[i]=eps_a[i]; }
         Ksf.deriv=0;
+        // Interlacing check (warning only, then proceed): a sign-consistent EE
+        // resolvent needs max core eps < eps_A < min virtual eps. Missing block
+        // (n_cor==0 / n_virt==0) skips that bound.
+        {
+            const double eA=eps_a[0];
+            double maxc=eA, minv=eA;
+            const bool hasc=(n_cor>0), hasv=(n_virt>0);
+            if(hasc){ maxc=eps[0]; for(int k=1;k<n_cor;k++) if(eps[k]>maxc) maxc=eps[k]; }
+            if(hasv){ minv=eps_e[0]; for(int k=1;k<n_virt;k++) if(eps_e[k]<minv) minv=eps_e[k]; }
+            if((hasc && !(maxc<eA)) || (hasv && !(eA<minv)))
+                fprintf(out_stream,"\nNOTE: EE active energy eps_A=%.6f violates interlacing"
+                        " (max core eps=%.6f, min virtual eps=%.6f); EE resolvent"
+                        " denominators change sign\n\n", eA, maxc, minv);
+        }
         cdas_sf_tensors out;
         cdas_sf_build(R, eps, n_cor, n_act, n_virt, H_AV, H_CA, H_CV, Ksf, out);
-        std::vector<double> RF_PH   ((size_t)n_act*n_act);
-        std::vector<double> RF_PV_JK((size_t)n_act*n_act*n_act*n_act);
-        std::vector<double> RF_PV_AB((size_t)n_act*n_act*n_act*n_act);
-        std::vector<double> RF_P3_JK((size_t)n_act*n_act*n_act*n_act*n_act*n_act);
-        std::vector<double> RF_P3_AB((size_t)n_act*n_act*n_act*n_act*n_act*n_act);
-        double RF_PS=0.0;
-        cdas_sf_to_rf(out, &RF_PS, RF_PH.data(), RF_PV_JK.data(), RF_PV_AB.data(),
-                      RF_P3_JK.data(), RF_P3_AB.data());
-        printf_timer("SF PT tensors calculation");
-        fprintf(out_stream,"_______________________________________________________________________\n\n\n");
-        CAS.CI->as_aldet()->PT2_import_data(RF_P3_JK.data(), RF_P3_AB.data(),
-                                RF_PV_JK.data(), RF_PV_AB.data(), RF_PH.data(), RF_PS);
-        if(cdas->DUMP_TENSORS)
+        auto release_sf = [&](){
+            std::vector<double>().swap(out.g1); std::vector<double>().swap(out.g2);
+            std::vector<double>().swap(out.g3); std::vector<double>().swap(out.raw_av);
+            std::vector<double>().swap(out.raw_ca); };
+        if(cdas->SF_ENGINE){
+            std::vector<double> RF_PH   ((size_t)n_act*n_act);
+            std::vector<double> RF_PV_JK((size_t)n_act*n_act*n_act*n_act);
+            std::vector<double> RF_PV_AB((size_t)n_act*n_act*n_act*n_act);
+            std::vector<double> RF_P3_JK((size_t)n_act*n_act*n_act*n_act*n_act*n_act);
+            std::vector<double> RF_P3_AB((size_t)n_act*n_act*n_act*n_act*n_act*n_act);
+            double RF_PS=0.0;
+            cdas_sf_to_rf(out, &RF_PS, RF_PH.data(), RF_PV_JK.data(), RF_PV_AB.data(),
+                          RF_P3_JK.data(), RF_P3_AB.data());
+            if(cdas->DUMP_TENSORS)                   // dump reads g3, before the release
+                cdas_sf_write_dump(job_name, "EE", "semicanonical", eps_a[0], out);
+            release_sf();                            // free engine tensors before PT2_import_data
+            printf_timer("SF PT tensors calculation");
+            fprintf(out_stream,"_______________________________________________________________________\n\n\n");
+            CAS.CI->as_aldet()->PT2_import_data(RF_P3_JK.data(), RF_P3_AB.data(),
+                                    RF_PV_JK.data(), RF_PV_AB.data(), RF_PH.data(), RF_PS);
+        }
+        else{   // DUMP_TENSORS only: write the dump, release, then run the stock path
             cdas_sf_write_dump(job_name, "EE", "semicanonical", eps_a[0], out);
+            release_sf();
+        }
     }
-    else{
+    if(!cdas->SF_ENGINE){
         T.set_par(&R, eps, n_cor, n_act, n_virt, H_AV, H_CA, H_CV, cdas->edshift);
         if(cdas->IPEA){
             T.IPEA(CAS.CI->as_aldet(), 0,cdas->cas->w_state);
