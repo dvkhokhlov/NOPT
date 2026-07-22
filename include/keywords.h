@@ -31,6 +31,9 @@ extern vector<const char *>nat_orb_kw           ;
 extern vector<const char *>cis_kw               ;
 extern vector<const char *>cis_group_start      ;
 extern vector<const char *>cis_group_end        ;
+extern vector<const char *>mp2_kw               ;
+extern vector<const char *>mp2_group_start      ;
+extern vector<const char *>mp2_group_end        ;
 
 extern vector<const char *>w_state_kw           ;
 extern vector<const char *>w_state_eq_kw        ;
@@ -148,6 +151,8 @@ extern vector<const char *>cdas_orb_en_kw       ;
 extern vector<const char *>cdas_fit_en_kw       ;
 extern vector<const char *>cdas_rot_orbs        ;
 extern vector<const char *>pt1_dipole_kw        ;
+extern vector<const char *>cdas_sf_engine_kw    ;
+extern vector<const char *>cdas_dump_tensors_kw ;
 extern vector<const char *>d5_kw                ;
 extern vector<const char *>ri_kw                ;
 extern vector<const char *>n_st_kw              ;

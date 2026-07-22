@@ -94,7 +94,15 @@ vector<const char *>cis_group_start{{"$cis"}};
 vector<const char *>cis_group_end{{"cis_end"},
                                   {"cisend"},
                                   {"$end"}};
-                           
+
+vector<const char *>mp2_kw{{"mp2"}};
+
+vector<const char *>mp2_group_start{{"$mp2"}};
+
+vector<const char *>mp2_group_end{{"mp2_end"},
+                                  {"mp2end"},
+                                  {"$end"}};
+
 vector<const char *>w_state_kw{{"wstate"},
                                {"w_state"}};
                                
@@ -432,8 +440,12 @@ vector<const char *>cdas_orb_en_kw{{"use_orb_for_energy"}};
 vector<const char *>cdas_fit_en_kw{{"use_firefly_fit_energy"}};
                                    
 vector<const char *>cdas_rot_orbs{{"rotate"}};
-                            
+
 vector<const char *>pt1_dipole_kw{{"pt1_dipole"}};
+
+vector<const char *>cdas_sf_engine_kw{{"sf_engine"}};
+
+vector<const char *>cdas_dump_tensors_kw{{"dump_tensors"}};
 
 vector<const char *>d5_kw{{"d5"}};
                             
