@@ -10,6 +10,7 @@
 # include "XMCQDPT.h"
 # include "CAS.h"
 # include "cdas_sf_tensors.h"
+# include "localizer.h"
 
 
 extern int num_threads;
@@ -169,10 +170,27 @@ int CDAS_PT2(molecule * M, cdas_par * cdas, char * job_name){
         fprintf(out_stream,"active PT:");fPrintMatr(out_stream,eps_a,1,n_act,0);
     }
     
+    // block2_casci_wrap DMRG(n_act, M->CI[0].na, M->CI[0].nb, M->CI[0].mult, n_s, M->CI[0].print_number, cas->dmrg);
+    // DMRG->init_state_storage(n_s,0);
     
+    pm_localizer localizer(*M);
+    
+    double * U_loc = new double[n_act*n_act];
+    exit(0);
+    loc_result lr = localizer.localize(ACT_VEC, n_ao, n_act, nullptr, U_loc);
+    if(!lr.converged)
+        fprintf(out_stream,"WARNING: active-space localization did not converge; running delocalized\n");
+    else
+        fprintf(out_stream,"WARNING: active-space localization CONVERGED; running localized\n");
     
     fprintf(out_stream,"vacant   :");fPrintMatr(out_stream,eps_e,1,n_virt,0);
     fprintf(out_stream,"\n\n");
+    
+    M->MO_gamess_format();
+    sprintf(name,"%s_DMRG_CDAS_loc.out\0",job_name);
+    M->GAMESS_type_out_print(name,-1);
+    fprintf(out_stream,"visualization file: %s\n",name);
+        
     
     
     printf_timer("Fock matrix calculation");
