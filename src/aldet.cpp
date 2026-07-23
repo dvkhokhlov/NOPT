@@ -7055,7 +7055,7 @@ int aldet_calc_DM_3body_AAB(double * G, int n_s, int ld,
     
     int * bit_a = new int [N];
     int * bit_b = new int [N];
-    int * buf = new int [na + 1];//more space for +a-b and -a+b
+    int * buf = new int [max(na+1,nb+1) + 1];//more space for +a-b and -a+b
     buf[0]=0;
     
     double sign ;
@@ -7173,7 +7173,7 @@ int aldet_calc_DM_3body_AAB_2(double * G, int n_s, int ld,
     
     int * bit_a = new int [N];
     int * bit_b = new int [N];
-    int * buf = new int [na + 1];//more space for +a-b and -a+b
+    int * buf = new int [max(na+1,nb+1) + 1];//more space for +a-b and -a+b
     buf[0]=0;
     
     double sign ;
@@ -7290,7 +7290,7 @@ int aldet_calc_DM_3body_AAB_3(double * G, int n_s, int ld,
     
     int * bit_a = new int [N];
     int * bit_b = new int [N];
-    int * buf = new int [na + 1];//more space for +a-b and -a+b
+    int * buf = new int [max(na+1,nb+1) + 1];//more space for +a-b and -a+b
     buf[0]=0;
     
     double sign ;
