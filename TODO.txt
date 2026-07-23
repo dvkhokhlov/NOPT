@@ -1,0 +1,14 @@
+This is a draft version that should not be used. Only for developers' information
+
+"features"
+1) CDAS-PT uses only DMRG (hard-coded) and only with CASSCF by ALDET
+1a)CDAS-PT with CASSCF by DMRG should not work 
+2) EE version is correct
+3) IPEA version requires correct IP and EA matrixes in localized orbital (not yet done)
+
+to be done:
+- correct interface for same method in  CASSCF and CDAS-PT
+- correct IPEA matrixes in localized orbitals
+- IPEA matrixes based on DMRG densities
+- common PT interface for aldet and DMRG
+- examples will be added
