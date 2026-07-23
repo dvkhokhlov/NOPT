@@ -176,8 +176,20 @@ int CDAS_PT2(molecule * M, cdas_par * cdas, char * job_name){
     pm_localizer localizer(*M);
     
     double * U_loc = new double[n_act*n_act];
-    exit(0);
+    
     loc_result lr = localizer.localize(ACT_VEC, n_ao, n_act, nullptr, U_loc);
+    double * TMP_MO = new double[M->n_act_orb[0]*M->n_ao];
+    double * ACT_MO = M->MO_VEC+M->n_cor_orb*M->n_ao;
+    nopt_par_dgemm(CblasRowMajor,CblasTrans,CblasNoTrans,
+                   M->n_act_orb[0], M->n_ao, M->n_act_orb[0], 1.0,
+                   U_loc, M->n_act_orb[0],
+                   ACT_MO, n_ao,0.0,
+                   TMP_MO,n_ao);
+    
+    memcpy(ACT_MO, TMP_MO, sizeof(double)*M->n_act_orb[0]*M->n_ao);
+    delete[] TMP_MO;
+    copy_MO_to_CVEC(M->MO_VEC,n_cor,n_act, n_virt,n_ao,COR_VEC,ACT_VEC,VIRT_VEC);
+    
     if(!lr.converged)
         fprintf(out_stream,"WARNING: active-space localization did not converge; running delocalized\n");
     else
