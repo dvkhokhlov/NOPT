@@ -24,3 +24,15 @@ void casci_solver::import_dressed_operator(const double*, const double*, const d
                         " (DMRG/block2 backend only)\n");
     exit(EXIT_FAILURE);
 }
+
+// Defaults: both shipped backends implement the transition-density read-outs; reaching one
+// of these is a driver mis-dispatch (our own contract), so abort loudly, never return silence.
+void casci_solver::G_calc_full(double*) {
+    fprintf(out_stream, "ERROR: this CI backend does not provide the full transition 2-RDM read-out\n");
+    exit(EXIT_FAILURE);
+}
+
+void casci_solver::h2caa_overlap(const double*, const double*, int, double*) {
+    fprintf(out_stream, "ERROR: this CI backend does not provide the complementary-overlap read-out\n");
+    exit(EXIT_FAILURE);
+}

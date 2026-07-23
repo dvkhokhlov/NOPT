@@ -131,6 +131,19 @@ public:
     virtual void import_dressed_operator(const double* h1_total, const double* h2_total,
                                          const double* h3_total, double const_total);
 
+    // --- transition-density read-outs (capability-gated) ---
+    // Full n_s x n_s state matrix of the spin-summed 2-RDM: G[(bra*n_s+ket)*n_act^4] blocks in
+    // the GAMMA convention above; diagonal = per-state 2-RDM, off-diagonal = <bra|..|ket>.
+    // Delocalized basis. Accumulates into G (caller zeroes it). Default aborts loudly.
+    virtual bool supports_g2_full() const { return false; }
+    virtual void G_calc_full(double* G);
+    // Complementary six-operator overlap (3-RDM-free lambda3): per root r, overwritten,
+    //   omega[r] = sum_{p,spins} Tbra[p,w,x,y] Tket[p,z,u,v] <r| x+_s y+_t w_t z+_q v_q u_s |r>.
+    // Tensors [np][n_act^3], axes (external p, creation, free-spin annih., paired annih.),
+    // active legs in the frozen lattice basis; unweighted. Default aborts loudly.
+    virtual bool supports_h2caa_overlap() const { return false; }
+    virtual void h2caa_overlap(const double* Tbra, const double* Tket, int np, double* omega);
+
     // --- IO / diagnostics ---
     virtual void gen_ext_ind() = 0;
     virtual void print_states(int a, int n_s, int print) = 0;
