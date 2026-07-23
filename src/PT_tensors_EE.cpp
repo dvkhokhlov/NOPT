@@ -73,7 +73,7 @@ int PT_tensors::E2_calc_EE(){
     for(int x=0; x<n_a; x++)
     for(int y=0; y<n_a; y++){
         RF_P3_tmp[((((t*n_a+u)*n_a+v)*n_a+w)*n_a+x)*n_a+y]=
-        RF_P3_AB    [((((t*n_a+u)*n_a+x)*n_a+v)*n_a+w)*n_a+y];
+        RF_P3_AB [((((t*n_a+u)*n_a+x)*n_a+v)*n_a+w)*n_a+y];
     }
     memcpy(RF_P3_AB,RF_P3_tmp,n_a*n_a*n_a*n_a*n_a*n_a*sizeof(double));
     

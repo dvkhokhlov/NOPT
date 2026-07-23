@@ -11,7 +11,7 @@
 # include "CAS.h"
 # include "cdas_sf_tensors.h"
 # include "localizer.h"
-
+# include "block2_casci_wrap.h"
 
 extern int num_threads;
 
@@ -269,103 +269,108 @@ int CDAS_PT2(molecule * M, cdas_par * cdas, char * job_name){
     PT_tensors T;
 
     //calculation of IP/EA Fockian matrix
-    if(CAS.CI->as_aldet() == nullptr){
-        fprintf(out_stream,"ERROR: CDAS-PT requires the determinant CI backend (cisolver=aldet)\n");
-        exit(EXIT_FAILURE);
+    // if(CAS.CI->as_aldet() == nullptr){
+        // fprintf(out_stream,"ERROR: CDAS-PT requires the determinant CI backend (cisolver=aldet)\n");
+        // exit(EXIT_FAILURE);
+        // CAS.CI->as_aldet()->simple_import_data(act_INTS, act_INTS, H_AA, 0);
+    // }
+    block2_casci_wrap DMRG(n_act, M->CI[0].na, M->CI[0].nb, M->CI[0].mult, n_s, M->CI[0].print_number, cdas->cas->dmrg);
+    DMRG.import_integrals(act_INTS, H_AA, 0);
+    
+    T.set_par(&R, eps, n_cor, n_act, n_virt, H_AV, H_CA, H_CV, cdas->edshift);
+    if(cdas->IPEA){
+        T.IPEA(CAS.CI->as_aldet(), 0,cdas->cas->w_state);
+        T.E2_calc_IPEA();
     }
-    CAS.CI->as_aldet()->simple_import_data(act_INTS, act_INTS, H_AA, 0);
-
-    if(cdas->SF_ENGINE || cdas->DUMP_TENSORS){
-        // Spin-free EE engine (S1 §7) and/or the tensor dump. Both need a valid EE
-        // build, so the EE-family + edshift guards and the build run for either flag.
-        if(cdas->IPEA||cdas->MPPT||cdas->actual||cdas->orb_e||cdas->mult_e||cdas->fit_e){
-            fprintf(out_stream,"ERROR: SF_ENGINE/DUMP_TENSORS support the EE family only (HOMO or ENERGY)\n");
-            exit(EXIT_FAILURE);
-        }
-        if(fabs(cdas->edshift)>1E-8){
-            fprintf(out_stream,"ERROR: SF_ENGINE/DUMP_TENSORS require edshift=0 (bare resolvent)\n");
-            exit(EXIT_FAILURE);
-        }
-        cdas_sf_kernel Ksf;
-        Ksf.e_IP.assign(n_act, 0.0);
-        Ksf.e_EA.assign(n_act, 0.0);
-        for(int i=0;i<n_act;i++){ Ksf.e_IP[i]=eps_a[i]; Ksf.e_EA[i]=eps_a[i]; }
-        Ksf.deriv=0;
-        // Interlacing check (warning only, then proceed): a sign-consistent EE
-        // resolvent needs max core eps < eps_A < min virtual eps. Missing block
-        // (n_cor==0 / n_virt==0) skips that bound.
-        {
-            const double eA=eps_a[0];
-            double maxc=eA, minv=eA;
-            const bool hasc=(n_cor>0), hasv=(n_virt>0);
-            if(hasc){ maxc=eps[0]; for(int k=1;k<n_cor;k++) if(eps[k]>maxc) maxc=eps[k]; }
-            if(hasv){ minv=eps_e[0]; for(int k=1;k<n_virt;k++) if(eps_e[k]<minv) minv=eps_e[k]; }
-            if((hasc && !(maxc<eA)) || (hasv && !(eA<minv)))
-                fprintf(out_stream,"\nNOTE: EE active energy eps_A=%.6f violates interlacing"
-                        " (max core eps=%.6f, min virtual eps=%.6f); EE resolvent"
-                        " denominators change sign\n\n", eA, maxc, minv);
-        }
-        cdas_sf_tensors out;
-        cdas_sf_build(R, eps, n_cor, n_act, n_virt, H_AV, H_CA, H_CV, Ksf, out);
-        auto release_sf = [&](){
-            std::vector<double>().swap(out.g1); std::vector<double>().swap(out.g2);
-            std::vector<double>().swap(out.g3); std::vector<double>().swap(out.raw_av);
-            std::vector<double>().swap(out.raw_ca); };
-        if(cdas->SF_ENGINE){
-            std::vector<double> RF_PH   ((size_t)n_act*n_act);
-            std::vector<double> RF_PV_JK((size_t)n_act*n_act*n_act*n_act);
-            std::vector<double> RF_PV_AB((size_t)n_act*n_act*n_act*n_act);
-            std::vector<double> RF_P3_JK((size_t)n_act*n_act*n_act*n_act*n_act*n_act);
-            std::vector<double> RF_P3_AB((size_t)n_act*n_act*n_act*n_act*n_act*n_act);
-            double RF_PS=0.0;
-            cdas_sf_to_rf(out, &RF_PS, RF_PH.data(), RF_PV_JK.data(), RF_PV_AB.data(),
-                          RF_P3_JK.data(), RF_P3_AB.data());
-            if(cdas->DUMP_TENSORS)                   // dump reads g3, before the release
-                cdas_sf_write_dump(job_name, "EE", "semicanonical", eps_a[0], out);
-            release_sf();                            // free engine tensors before PT2_import_data
-            printf_timer("SF PT tensors calculation");
-            fprintf(out_stream,"_______________________________________________________________________\n\n\n");
-            CAS.CI->as_aldet()->PT2_import_data(RF_P3_JK.data(), RF_P3_AB.data(),
-                                    RF_PV_JK.data(), RF_PV_AB.data(), RF_PH.data(), RF_PS);
-        }
-        else{   // DUMP_TENSORS only: write the dump, release, then run the stock path
-            cdas_sf_write_dump(job_name, "EE", "semicanonical", eps_a[0], out);
-            release_sf();
-        }
+    else if(cdas->MPPT){
+        T.MPPT(CAS.CI->as_aldet(), 0,cdas->cas->w_state);
+        T.E2_calc_EE();
     }
-    if(!cdas->SF_ENGINE){
-        T.set_par(&R, eps, n_cor, n_act, n_virt, H_AV, H_CA, H_CV, cdas->edshift);
-        if(cdas->IPEA){
-            T.IPEA(CAS.CI->as_aldet(), 0,cdas->cas->w_state);
-            T.E2_calc_IPEA();
-        }
-        else if(cdas->MPPT){
-            T.MPPT(CAS.CI->as_aldet(), 0,cdas->cas->w_state);
-            T.E2_calc_EE();
-        }
-        else{
-            T.E2_calc_EE();
-        }
-
-        printf_timer("PT tensors calculation");
-        fprintf(out_stream,"_______________________________________________________________________\n\n\n");
-
-
-        CAS.CI->as_aldet()->PT2_import_data(T.RF_P3_JK,
-                                T.RF_P3_AB,
-                                T.RF_PV_JK,
-                                T.RF_PV_AB,
-                                T.RF_PH,
-                                T.RF_PS);
+    else{
+        T.E2_calc_EE();
     }
 
+    printf_timer("PT tensors calculation");
+    fprintf(out_stream,"_______________________________________________________________________\n\n\n");
 
-    CAS.CI_calc(1,0,1);
-    if(LINEAR)CAS.rotate();
+
+    // CAS.CI->as_aldet()->PT2_import_data(T.RF_P3_JK,
+    //                         T.RF_P3_AB,
+    //                         T.RF_PV_JK,
+    //                         T.RF_PV_AB,
+    //                         T.RF_PH,
+    //                         T.RF_PS);
+    std::vector<double> h1((size_t)n_act*n_act);
+    std::vector<double> h2((size_t)n_act*n_act*n_act*n_act);
+    std::copy(H_AA,    H_AA+(size_t)n_act*n_act, h1.begin());
+    std::copy(act_INTS, act_INTS+(size_t)n_act*n_act*n_act*n_act, h2.begin());
+        
+    for(size_t i=0;i<(size_t)n_act*n_act;i++)                  h1[i]+=T.RF_PH[i];
+    
+    for(int a=0;a<n_act;a++) 
+    for(int c=0;c<n_act;c++) 
+    for(int b=0;b<n_act;b++)
+    for(int d=0;d<n_act;d++){
+        h2[((a*n_act+c)*n_act+b)*n_act+d]+=T.RF_PV_AB[((a*n_act+b)*n_act+c)*n_act+d];
+    }
+    
+    
+    // for(size_t i=0;i<(size_t)n_act*n_act*n_act*n_act;i++)      h2[i]+=out.g2[i];
+    
+    // #pragma omp parallel for collapse(2) schedule(static)
+    double* g3 = new double[n_act*n_act*n_act*n_act*n_act*n_act];
+    for(int t=0;t<n_act;t++) 
+    for(int u=0;u<n_act;u++)
+    for(int v=0;v<n_act;v++) 
+    for(int w=0;w<n_act;w++)
+    for(int x=0;x<n_act;x++) 
+    for(int y=0;y<n_act;y++){
+       g3[((((t*n_act+u)*n_act+v)*n_act+w)*n_act+x)*n_act+y] = 
+              ( 2.0*T.RF_P3_AB[((((t*n_act+v)*n_act+u)*n_act+w)*n_act+x)*n_act+y] 
+              + 2.0*T.RF_P3_AB[((((t*n_act+x)*n_act+u)*n_act+y)*n_act+v)*n_act+w]
+              + 2.0*T.RF_P3_AB[((((v*n_act+t)*n_act+w)*n_act+u)*n_act+x)*n_act+y] 
+              + 2.0*T.RF_P3_AB[((((v*n_act+x)*n_act+w)*n_act+y)*n_act+t)*n_act+u]
+              + 2.0*T.RF_P3_AB[((((x*n_act+t)*n_act+y)*n_act+u)*n_act+v)*n_act+w] 
+              + 2.0*T.RF_P3_AB[((((x*n_act+v)*n_act+y)*n_act+w)*n_act+t)*n_act+u]
+              -     T.RF_P3_AB[((((t*n_act+v)*n_act+u)*n_act+w)*n_act+x)*n_act+y] 
+              +     T.RF_P3_AB[((((v*n_act+t)*n_act+u)*n_act+w)*n_act+x)*n_act+y]
+              +     T.RF_P3_AB[((((x*n_act+v)*n_act+u)*n_act+w)*n_act+t)*n_act+y] 
+              +     T.RF_P3_AB[((((t*n_act+x)*n_act+u)*n_act+w)*n_act+v)*n_act+y]
+              -     T.RF_P3_AB[((((v*n_act+x)*n_act+u)*n_act+w)*n_act+t)*n_act+y] 
+              -     T.RF_P3_AB[((((x*n_act+t)*n_act+u)*n_act+w)*n_act+v)*n_act+y] ) / 12.0;
+    }
+    
+    auto ix = [n_act](int t,int u,int v,int w,int x,int y)->size_t {
+    return (((((size_t)t*n_act+u)*n_act+v)*n_act+w)*n_act+x)*n_act+y; };
+    #pragma omp parallel for collapse(2) schedule(static)
+        for(int t=0;t<n_act;t++) for(int u=0;u<n_act;u++)
+        for(int v=0;v<n_act;v++) for(int w=0;w<n_act;w++)
+        for(int x=0;x<n_act;x++) for(int y=0;y<n_act;y++){
+            const size_t i = ix(t,u,v,w,x,y), id = ix(u,t,w,v,y,x);
+            if(i < id){ double s = 0.5*(g3[i]+g3[id]); g3[i] = g3[id] = s; }
+        }
+    
+    
+    
+    double const_total = CAS.E_core + T.RF_PS;
+    // release_sf();                            // free engine tensors before PT2_import_data
+    
+    DMRG.import_dressed_operator(h1.data(), h2.data(), g3, const_total);
+    DMRG.solve(0,0,false);
+    
+    fprintf(out_stream,"\n\nCDAS-PT2 Energy summary:\n");
+    PrintEnergy(DMRG.E_states_ptr(),CAS.n_s,1);
+    printf_timer("DMRG");
+    exit(1);
+    
+
+
+    // CAS.CI_calc(1,0,1);
+    // if(LINEAR)CAS.rotate();
 
 //    }
     fprintf(out_stream,"\n\nCDAS-PT2 Energy summary:\n");
-    PrintEnergy(CAS.CI->as_aldet()->E_states[0],CAS.n_s,1);
+    // PrintEnergy(CAS.CI->as_aldet()->E_states[0],CAS.n_s,1);
     
     double * print_d[3];
     print_d[0]=CAS.Prop_value                  ;
