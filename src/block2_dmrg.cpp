@@ -278,9 +278,9 @@ static double rdm_energy(const dmrgci_engine &e, const double *d2) {
 // Expect dispatches on the canonical form, and its MultiMPS branch resolves Automatic to Normal, a
 // serial loop over operators; only a plain MPS reaches the OpenMP-parallel path. The center is then
 // put in the one-site form (block2's site_type=1 conversion), which needs it at an end.
-static std::shared_ptr<MPS<SU2, double>> extract_root_single(dmrgci_engine &e, int st,
-                                                             const std::string &xtag,
-                                                             const std::string &stag) {
+std::shared_ptr<MPS<SU2, double>> nopt_block2::extract_root_single(dmrgci_engine &e, int st,
+                                                                  const std::string &xtag,
+                                                                  const std::string &stag) {
     std::shared_ptr<MultiMPS<SU2, double>> xmps = e.mps->extract(st, xtag);
     std::shared_ptr<MPS<SU2, double>> imps = xmps->make_single(stag);
     if (imps->dot == 2) {
@@ -743,6 +743,7 @@ int block2_casci_wrap::solve(int, int, bool use_prev_guess) {
     assert_stack_clean("solve entry"); // block2 LIFO stacks must be empty between macro-iterations
     e.d2_valid = false; // new wavefunction -> any cached 2-RDM is stale
     e.dmfull_valid = false; // ... and the cached property 1-RDM
+    e.g2full_valid = false; // ... and the cached transition 2-RDM
 
     // Warm-start: rotate the retained MPS into the current basis and re-solve from it. Requires a
     // usable retained MPS and a rotation from the host; the rotation itself may decline (return

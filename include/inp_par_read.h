@@ -98,6 +98,7 @@ class dmrg_par // settings for the DMRG (block2) CI backend; see $DMRG group
         int    det_rot_steps;    // TE steps for the read-out rotation
         int    extract_m;        // bond dim the canonical MPS is compressed to before extraction (0 = none)
         double extract_cutoff;   // determinant magnitude cutoff for the extraction search
+        int    h2caa_m;          // compressed-intermediate bond dim for the DSRG h2caa overlap (0 = auto: 2m)
 
         dmrg_par();
         int read_group(char * inp);

@@ -212,6 +212,7 @@ vector<const char *>dmrg_det_rot_m_kw{{"det_rot_m"}};
 vector<const char *>dmrg_det_rot_steps_kw{{"det_rot_steps"}};
 vector<const char *>dmrg_extract_m_kw{{"extract_m"}};
 vector<const char *>dmrg_extract_cutoff_kw{{"extract_cutoff"}};
+vector<const char *>dmrg_h2caa_m_kw{{"h2caa_m"}};
 
 vector<const char *>MO_group_start{{"$vec1"},
                                    {"$vec"},

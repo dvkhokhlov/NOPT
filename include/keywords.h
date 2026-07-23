@@ -87,6 +87,7 @@ extern vector<const char *>dmrg_det_rot_m_kw         ;
 extern vector<const char *>dmrg_det_rot_steps_kw     ;
 extern vector<const char *>dmrg_extract_m_kw         ;
 extern vector<const char *>dmrg_extract_cutoff_kw    ;
+extern vector<const char *>dmrg_h2caa_m_kw           ;
 extern vector<const char *>MO_group_start       ;
 extern vector<const char *>MO_text_group_start  ;
 extern vector<const char *>MO_group_b_start     ;

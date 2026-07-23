@@ -61,6 +61,12 @@ public:
     void calc_DMA(double* g, int a, int b) override;
     void calc_DMB(double* g, int a, int b) override;
 
+    // --- transition-density read-outs ---
+    bool supports_g2_full() const override { return true; }
+    void G_calc_full(double* G) override;
+    bool supports_h2caa_overlap() const override { return true; }
+    void h2caa_overlap(const double* Tbra, const double* Tket, int np, double* omega) override;
+
     // --- queries ---
     int    n_act()            const override;
     int    n_states()         const override;

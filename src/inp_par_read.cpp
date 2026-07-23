@@ -815,6 +815,7 @@ dmrg_par::dmrg_par(){
     det_rot_steps    = DMRG_DET_ROT_STEPS_DEFAULT;
     extract_m        = DMRG_EXTRACT_M_DEFAULT;
     extract_cutoff   = DMRG_EXTRACT_CUTOFF_DEFAULT;
+    h2caa_m          = DMRG_H2CAA_M_DEFAULT;
 
 }
 
@@ -942,6 +943,10 @@ int dmrg_par::read_line(char * inp){
         extract_cutoff = kw_to_f(inp, dmrg_extract_cutoff_kw, DMRG_EXTRACT_CUTOFF_DEFAULT);
     }
 
+    if(key_word_comp(inp, dmrg_h2caa_m_kw)){
+        h2caa_m = kw_to_i(inp, dmrg_h2caa_m_kw, DMRG_H2CAA_M_DEFAULT);
+    }
+
     return 0;
 }
 
@@ -1017,6 +1022,10 @@ int dmrg_par::validate(){
     }
     if(extract_cutoff<=0){
         fprintf(out_stream,"ERROR: $DMRG extract_cutoff=%e must be > 0\n",extract_cutoff);
+        ok=0;
+    }
+    if(h2caa_m<0){
+        fprintf(out_stream,"ERROR: $DMRG h2caa_m=%d must be >= 0 (0 = auto: 2m)\n",h2caa_m);
         ok=0;
     }
     if(warm_start==DMRG_WARM_ON){
