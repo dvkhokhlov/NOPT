@@ -70,6 +70,12 @@ public:
     void calc_DMA(double* g, int a, int b) override { ci_->calc_DMA(g, a, b); }
     void calc_DMB(double* g, int a, int b) override { ci_->calc_DMB(g, a, b); }
 
+    // --- transition-density read-outs (the determinant CI supplies both natively) ---
+    bool supports_g2_full() const override { return true; }
+    void G_calc_full(double* G) override;                                     // full n_s x n_s 2-RDM
+    bool supports_h2caa_overlap() const override { return true; }
+    void h2caa_overlap(const double* Tbra, const double* Tket, int np, double* omega) override;
+
     // --- queries ---
     int    n_act()         const override { return ci_->n_act; }
     int    n_states()      const override { return ci_->n_states[0]; }
