@@ -4,6 +4,7 @@
 # include "XMCQDPT.h"
 # include "CDAS_PT.h"
 # include "CDAS_PT_rel.h"
+# include "dsrg_pt.h"
 # include "inp_par_read.h"
 # include "geom.h"
 # include "nopt_libint_engines.h"
@@ -79,8 +80,12 @@ int single_point_calc( inp_par * P, molecule * Qm){
         CDAS_PT2    (Qm,&(P->cdas), P->job_name);
     }
     if(SO==1)if(P->cdas.y)CDAS_PT2_rel(Qm,&(P->cdas), P->job_name);
-    
-    
+
+    // DSRG-PT2 drives through the casci_solver seam (not as_aldet()), so it is not caught by the
+    // CISOLVER_DMRG reject above and works for both the aldet and DMRG backends.
+    if(P->dsrg.y)SA_DSRG_PT2(Qm,&(P->dsrg), P->job_name);
+
+
 //     Qm->MO_restore();
     
     return 0;

@@ -49,3 +49,9 @@
 #define DMRG_EXTRACT_M_DEFAULT 0           // bond dim the canonical MPS is compressed to before determinant extraction (0 = none)
 #define DMRG_EXTRACT_CUTOFF_DEFAULT 1e-3   // determinant magnitude cutoff for the TRIE extraction search
 #define DMRG_H2CAA_M_DEFAULT 0             // compressed-intermediate bond dim for the DSRG h2caa overlap (0 = auto: 2m)
+
+#define DSRG_S_DEFAULT 0.5                 // DSRG flow parameter
+#define DSRG_ROOT_DEFAULT 0                // state-specific root (unrelaxed)
+#define DSRG_PRINT_DEFAULT 1               // print verbosity (>=2 adds per-class rows)
+#define DSRG_SA_DEFAULT 0                  // state-averaged ensemble reference (0 = state-specific root)
+#define DSRG_RELAX_DEFAULT DSRG_RELAX_NONE // reference relaxation level (none = unrelaxed)

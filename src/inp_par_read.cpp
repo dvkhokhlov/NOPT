@@ -1452,9 +1452,139 @@ int cdas_par::write_info(int n_a, int n_b, int n_o, int mult){
 
 
 cdas_par::~cdas_par(){
-    
+
     if(gamess_file_name!=NULL)delete[] gamess_file_name;
-    
+
+}
+
+dsrg_par::dsrg_par(){
+
+    y=0;
+    cas=NULL;
+    s=DSRG_S_DEFAULT;
+    ccvv_source=DSRG_CCVV_SRC_NORMAL;
+    root=DSRG_ROOT_DEFAULT;
+    print=DSRG_PRINT_DEFAULT;
+    sa=DSRG_SA_DEFAULT;
+    relax=DSRG_RELAX_DEFAULT;
+
+}
+
+int dsrg_par::read_group(char * inp, cas_par * ext_cas){
+
+    cas=ext_cas;
+
+    recursive_file P;
+    char line[BUF_LINE_LENGTH];
+
+    P.r_open(inp);
+
+    P.r_gets(line,BUF_LINE_LENGTH);;
+    while((key_word_comp(line, dsrg_group_start)==0)&&(!P.r_eof()))P.r_gets(line,BUF_LINE_LENGTH);;
+    if(key_word_comp(line, dsrg_group_start)==0){
+        fprintf(out_stream,"ERROR: could not find $DSRG group in file %s\n",inp);
+        exit(1);
+    }
+
+    while(!P.r_eof()){
+        read_line(line);
+        if(key_word_comp(line, dsrg_group_end))break;
+        P.r_gets(line,BUF_LINE_LENGTH);;
+    }
+
+    validate();
+
+    return 0;
+}
+
+int dsrg_par::read_line(char * inp){
+
+    if(key_word_comp(inp, dsrg_s_kw))
+        s = kw_to_f(inp, dsrg_s_kw, DSRG_S_DEFAULT);
+
+    if(key_word_comp(inp, dsrg_ccvv_source_kw)){
+        if     (kw_to_kw(inp, dsrg_ccvv_source_kw, dsrg_ccvv_normal_kw)) ccvv_source = DSRG_CCVV_SRC_NORMAL;
+        else if(kw_to_kw(inp, dsrg_ccvv_source_kw, dsrg_ccvv_zero_kw))   ccvv_source = DSRG_CCVV_SRC_ZERO;
+        else                                                            ccvv_source = DSRG_CCVV_SRC_UNKNOWN;
+    }
+
+    if(key_word_comp(inp, dsrg_root_kw))
+        root = kw_to_i(inp, dsrg_root_kw, DSRG_ROOT_DEFAULT);
+
+    if(key_word_comp(inp, dsrg_print_kw))
+        print = kw_to_i(inp, dsrg_print_kw, DSRG_PRINT_DEFAULT);
+
+    if(key_word_comp(inp, dsrg_sa_kw))
+        sa = kw_to_i(inp, dsrg_sa_kw, DSRG_SA_DEFAULT);
+
+    if(key_word_comp(inp, dsrg_relax_kw)){
+        if     (kw_to_kw(inp, dsrg_relax_kw, dsrg_relax_none_kw)) relax = DSRG_RELAX_NONE;
+        else if(kw_to_kw(inp, dsrg_relax_kw, dsrg_relax_once_kw)) relax = DSRG_RELAX_ONCE;
+        else                                                      relax = DSRG_RELAX_UNKNOWN;
+    }
+
+    return 0;
+}
+
+int dsrg_par::validate(){
+
+    int ok=1;
+
+    if(s<=0){
+        fprintf(out_stream,"ERROR: $DSRG s=%g must be > 0 (the regularizer uses sqrt(s))\n",s);
+        ok=0;
+    }
+    if(ccvv_source==DSRG_CCVV_SRC_UNKNOWN){
+        fprintf(out_stream,"ERROR: $DSRG unknown ccvv_source value; accepted: normal, zero\n");
+        ok=0;
+    }
+    if(root<0){
+        fprintf(out_stream,"ERROR: $DSRG root=%d must be >= 0\n",root);
+        ok=0;
+    }
+    if(sa!=0 && sa!=1){
+        fprintf(out_stream,"ERROR: $DSRG sa=%d must be 0 or 1\n",sa);
+        ok=0;
+    }
+    if(relax==DSRG_RELAX_UNKNOWN){
+        fprintf(out_stream,"ERROR: $DSRG unknown relax value; accepted: none, once\n");
+        ok=0;
+    }
+    if(sa==1 && root!=DSRG_ROOT_DEFAULT){
+        fprintf(out_stream,"ERROR: $DSRG sa=1 averages all states; do not also set root=%d\n",root);
+        ok=0;
+    }
+
+    if(!ok) exit(1);
+
+    return 0;
+}
+
+int dsrg_par::write_info(int n_a, int n_b, int n_o, int mult){
+
+    fprintf(out_stream,"\n\n\n");
+    fprintf(out_stream,"_____________________Starting_DSRG_PT2_calculation_____________________\n\n");
+
+    fprintf(out_stream,"Number of states                  %d\n",cas->n_s);
+    fprintf(out_stream,"Selected root (state-specific)    %d\n",root);
+    fprintf(out_stream,"State multiplicity                %d\n",mult);
+    fprintf(out_stream,"\n");
+    fprintf(out_stream,"Active space:\n");
+    fprintf(out_stream,"Number of alpha electrons         %d\n",n_a);
+    fprintf(out_stream,"Number of beta  electrons         %d\n",n_b);
+    fprintf(out_stream,"Number of active orbitals         %d\n",n_o);
+    fprintf(out_stream,"\n");
+    fprintf(out_stream,"Flow parameter s                  %g\n",s);
+    fprintf(out_stream,"CCVV source                       %s\n",ccvv_source==DSRG_CCVV_SRC_ZERO?"zero":"normal");
+    fprintf(out_stream,"State averaging (sa)              %s\n",sa?"on (ensemble reference)":"off (state-specific)");
+    fprintf(out_stream,"Reference relaxation              %s\n",relax==DSRG_RELAX_ONCE?"once":"none");
+    fprintf(out_stream,"_______________________________________________________________________\n\n\n");
+
+    return 0;
+}
+
+dsrg_par::~dsrg_par(){
+
 }
 
 int print_dipole     = PRINT_DIPOLE;
@@ -1546,6 +1676,7 @@ int inp_par::write_info(){
     fprintf(out_stream,"eXtended MultiConfiguration QuasiDegenerate PT   -     %c%c%c\n",ny[3*xmc.y],ny[3*xmc.y+1],ny[3*xmc.y+2]);
     fprintf(out_stream,"Complete Degenerate Active Space PT              -     %c%c%c\n",ny[3*cdas.y],ny[3*cdas.y+1],ny[3*cdas.y+2]);
     fprintf(out_stream,"Second order Moller-Plesset PT                   -     %c%c%c\n",ny[3*mp2.y],ny[3*mp2.y+1],ny[3*mp2.y+2]);
+    fprintf(out_stream,"State-specific DSRG-PT2                          -     %c%c%c\n",ny[3*dsrg.y],ny[3*dsrg.y+1],ny[3*dsrg.y+2]);
     fprintf(out_stream,"Settings:\n");
     fprintf(out_stream,"D5                                               -     %c%c%c\n",ny[3*D5],ny[3*D5+1],ny[3*D5+2]);
     fprintf(out_stream,"Resolution of Identity                           -     %c%c%c\n",ny[3*RI],ny[3*RI+1],ny[3*RI+2]);
@@ -1694,7 +1825,8 @@ int inp_par::read(char * ext_inp){
     if(cas.y)  mc=1;
     if(xmc.y)  mc=1;
     if(cdas.y) mc=1;
-    if((cas.y+xmc.y+cdas.y+rhf.y)==0){
+    if(dsrg.y) mc=1;
+    if((cas.y+xmc.y+cdas.y+dsrg.y+rhf.y)==0){
         mc=1;
         nopt_printf("WARNING: no QM method chosen\n");
         nopt_printf("         probably nothing to do\n");
@@ -1727,11 +1859,13 @@ int inp_par::read(char * ext_inp){
     
     if(xmc.y) cas.y=1;
     if(cdas.y)cas.y=1;
-        
+    if(dsrg.y)cas.y=1;
+
     if(rhf.y)  rhf.read_group(inp_name);
     if(cas.y)  cas.read_group(inp_name);
     if(xmc.y)  xmc.read_group(inp_name,&cas);
     if(cdas.y)cdas.read_group(inp_name,&cas);
+    if(dsrg.y)dsrg.read_group(inp_name,&cas);
     if(cis.y)  cis.read_group(inp_name);
     if(mp2.y)  mp2.read_group(inp_name);
 
@@ -1787,6 +1921,9 @@ int inp_par::read_p_line(char * inp){
 
     if(key_word_comp(inp, cdas_kw))
         cdas.y=kw_to_i(inp, cdas_kw,0);
+
+    if(key_word_comp(inp, dsrg_kw))
+        dsrg.y=kw_to_i(inp, dsrg_kw,0);
 
     if(key_word_comp(inp, cis_kw))
         cis.y=kw_to_i(inp, cis_kw,0);
@@ -1846,8 +1983,8 @@ std::vector<int> molecule_read_by_inp_par(molecule * M, inp_par * P){
     int s = P->mol_line.size();
     
     int mc=0;
-    if( P->cas.y||P->xmc.y||P->cdas.y)mc=1;
-    if((P->cas.y +P->xmc.y +P->cdas.y+P->rhf.y)==0)mc=1;
+    if( P->cas.y||P->xmc.y||P->cdas.y||P->dsrg.y)mc=1;
+    if((P->cas.y +P->xmc.y +P->cdas.y+P->dsrg.y+P->rhf.y)==0)mc=1;
     
     // Linking several molecules rebuilds the active space with mult=0, which the DMRG
     // backend rejects -- and the rebuild is a full determinant build, so stop before it.

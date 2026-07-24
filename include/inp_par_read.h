@@ -74,6 +74,11 @@ enum dmrg_localize_kind { DMRG_LOC_UNKNOWN = -1, DMRG_LOC_OFF = 0, DMRG_LOC_PM =
 enum dmrg_locorder_kind { DMRG_LOCORDER_UNKNOWN = -1, DMRG_LOCORDER_FIEDLER = 0, DMRG_LOCORDER_GAOPT = 1, DMRG_LOCORDER_NONE = 2 };
 enum dmrg_warm_kind     { DMRG_WARM_UNKNOWN = -1, DMRG_WARM_OFF = 0, DMRG_WARM_ON = 1 };
 
+// $DSRG group — CCVV source dressing (dsrg_par::read_line).
+enum dsrg_ccvv_src_kind { DSRG_CCVV_SRC_UNKNOWN = -1, DSRG_CCVV_SRC_NORMAL = 0, DSRG_CCVV_SRC_ZERO = 1 };
+// $DSRG group — reference relaxation level (dsrg_par::read_line).
+enum dsrg_relax_kind { DSRG_RELAX_UNKNOWN = -1, DSRG_RELAX_NONE = 0, DSRG_RELAX_ONCE = 1 };
+
 class dmrg_par // settings for the DMRG (block2) CI backend; see $DMRG group
 {
     public:
@@ -255,13 +260,34 @@ class cdas_par
         int pt1_d;
 
         cdas_par();
-        int read_group(char * inp, cas_par * ext_cas); 
-        int read_line(char * inp); 
+        int read_group(char * inp, cas_par * ext_cas);
+        int read_line(char * inp);
         int write_info(int n_a, int n_b, int n_o, int mult);
 //         int write_ci_info(int n_a, int n_b, int n_o, int mult);
         ~cdas_par();
-        
-    
+
+
+};
+
+class dsrg_par            // settings for state-specific unrelaxed DSRG-PT2; see $DSRG group
+{
+    public:
+        int y;
+        cas_par * cas;
+        double s;          // flow parameter (> 0)
+        int ccvv_source;   // dsrg_ccvv_src_kind: normal | zero
+        int root;          // state-specific root (>= 0)
+        int print;         // print verbosity
+        int sa;            // state-averaged ensemble reference (0 | 1)
+        int relax;         // dsrg_relax_kind: none | once
+
+        dsrg_par();
+        int read_group(char * inp, cas_par * ext_cas);
+        int read_line(char * inp);
+        int validate();        // enforces the value checks; exits loudly on a bad value
+        int write_info(int n_a, int n_b, int n_o, int mult);
+        ~dsrg_par();
+
 };
 
 # include "molecule.h"
@@ -285,6 +311,7 @@ class inp_par
         mp2_par mp2;
         xmc_par xmc;
         cdas_par cdas;
+        dsrg_par dsrg;
         
 //         int charge;
 //         int parsing_done;

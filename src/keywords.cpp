@@ -442,6 +442,34 @@ vector<const char *>cdas_fit_en_kw{{"use_firefly_fit_energy"}};
                                    
 vector<const char *>cdas_rot_orbs{{"rotate"}};
 
+vector<const char *>dsrg_kw{{"dsrg"}};
+
+vector<const char *>dsrg_group_start{{"$dsrg"}};
+
+vector<const char *>dsrg_group_end{{"$dsrgend"},
+                                   {"$dsrg_end"},
+                                   {"$end"}};
+
+vector<const char *>dsrg_s_kw{{"s"}};
+
+vector<const char *>dsrg_ccvv_source_kw{{"ccvv_source"}};
+
+vector<const char *>dsrg_ccvv_normal_kw{{"normal"}};
+
+vector<const char *>dsrg_ccvv_zero_kw{{"zero"}};
+
+vector<const char *>dsrg_root_kw{{"root"}};
+
+vector<const char *>dsrg_print_kw{{"print"}};
+
+vector<const char *>dsrg_sa_kw{{"sa"}};
+
+vector<const char *>dsrg_relax_kw{{"relax"}};
+
+vector<const char *>dsrg_relax_none_kw{{"none"}};
+
+vector<const char *>dsrg_relax_once_kw{{"once"}};
+
 vector<const char *>pt1_dipole_kw{{"pt1_dipole"}};
 
 vector<const char *>d5_kw{{"d5"}};
