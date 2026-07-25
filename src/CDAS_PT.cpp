@@ -189,6 +189,8 @@ int CDAS_PT2(molecule * M, cdas_par * cdas, char * job_name){
     memcpy(ACT_MO, TMP_MO, sizeof(double)*M->n_act_orb[0]*M->n_ao);
     delete[] TMP_MO;
     copy_MO_to_CVEC(M->MO_VEC,n_cor,n_act, n_virt,n_ao,COR_VEC,ACT_VEC,VIRT_VEC);
+    CAS.CI->malmqvist(0, U_loc);
+    
     
     if(!lr.converged)
         fprintf(out_stream,"WARNING: active-space localization did not converge; running delocalized\n");
@@ -272,7 +274,7 @@ int CDAS_PT2(molecule * M, cdas_par * cdas, char * job_name){
     // if(CAS.CI->as_aldet() == nullptr){
         // fprintf(out_stream,"ERROR: CDAS-PT requires the determinant CI backend (cisolver=aldet)\n");
         // exit(EXIT_FAILURE);
-        // CAS.CI->as_aldet()->simple_import_data(act_INTS, act_INTS, H_AA, 0);
+        CAS.CI->as_aldet()->simple_import_data(act_INTS, act_INTS, H_AA, 0);
     // }
     block2_casci_wrap DMRG(n_act, M->CI[0].na, M->CI[0].nb, M->CI[0].mult, n_s, M->CI[0].print_number, cdas->cas->dmrg);
     DMRG.import_integrals(act_INTS, H_AA, 0);

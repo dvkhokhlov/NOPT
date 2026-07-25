@@ -343,39 +343,12 @@ int PT_tensors::IPEA(aldet_data * I, int i_set, std::vector<double> avecoe){
         fprintf(out_stream,"ERROR in IPEA\n");
         exit(0);
     }
-//     MPPT(I,i_set,avecoe);
-//     set_zero_matr(IP_U , n_a*n_a);
-//     set_zero_matr(EA_U , n_a*n_a);
-//     set_zero_matr(IP_Um, n_a*n_a);
-//     set_zero_matr(EA_Um, n_a*n_a);
-//     set_zero_matr(IP_Up, n_a*n_a);
-//     set_zero_matr(EA_Up, n_a*n_a);
-//     for(int i=0;i<n_a;i++)IP_U [i*n_a+i]=1.0;
-//     for(int i=0;i<n_a;i++)EA_U [i*n_a+i]=1.0;
-//     for(int i=0;i<n_a;i++)IP_Um[i*n_a+i]=1.0;
-//     for(int i=0;i<n_a;i++)EA_Um[i*n_a+i]=1.0;
-//     for(int i=0;i<n_a;i++)IP_Up[i*n_a+i]=1.0;
-//     for(int i=0;i<n_a;i++)EA_Up[i*n_a+i]=1.0;
-// 
-//     return 0;
     
     int n_s =I->n_states[i_set];
-//     double * E0 = new double[n_s*n_s];
-//     I->H_calc(E0,n_s);
-    
-//     aldet_data E_IP;
-//     ci_ext(&E_IP,-1,I,i_set);
-    int n_a_2=n_a*(n_a-1)/2;
-    int n_a_AB=n_a*n_a;
     
     double * IP_H   = new double[n_a*n_a];
     double * EA_H   = new double[n_a*n_a];
-    double * IP_2_H = new double[n_a_2*n_a_2];
-    double * EA_2_H = new double[n_a_2*n_a_2];
-    double * IP_AB_H = new double[n_a_AB*n_a_AB];
-    double * EA_AB_H = new double[n_a_AB*n_a_AB];
-    
-    
+        
     I->calc_IPEA_single(IP_U, IP_H, EA_U, EA_H, 0 ,avecoe);
     
     
@@ -402,10 +375,6 @@ int PT_tensors::IPEA(aldet_data * I, int i_set, std::vector<double> avecoe){
 
     delete[] IP_H   ;
     delete[] EA_H   ;
-    delete[] IP_2_H ;
-    delete[] EA_2_H ;
-    delete[] IP_AB_H;
-    delete[] EA_AB_H;
     
     return 0;
     

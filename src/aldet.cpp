@@ -2513,25 +2513,14 @@ int change_ci_with_P_1(double * ci_1, const int& N, const int& na, const int& Na
 int aldet_data::malmqvist(int i_set, double * U){
     
     if(n_act==0) return 0;
-    // Вспомогательные переменные
+    
     double * U_copy = new double[n_act*n_act];
     memcpy(U_copy, U, sizeof(double)*n_act*n_act);
     
-    double * ci_buf = new double[Na*Nb*n_states[i_set]];///????
+    double * ci_buf = new double[Na*Nb*n_states[i_set]];
     int * P_l = new int[n_act];
     double * T_l = new double[n_act*n_act];
     calc_P_T(P_l, T_l, n_act, U_copy);
-//     for(int i=0;i<Na;i++){
-//         for(int j=0;j<Nb;j++)fprintf(out_stream,"%e  ",coef[i_set][(i*Nb+j)*n_states[i_set]]);
-//         fprintf(out_stream,"\n");
-//     }
-//     getchar();
-//     for(int i=0;i<Na;i++){
-//         for(int j=0;j<Nb;j++)fprintf(out_stream,"%e  ",coef[i_set][(i*Nb+j)*n_states[i_set]+1]);
-//         fprintf(out_stream,"\n");
-//     }
-//     getchar();    
-//     
     
     change_ci_with_P_1(coef[i_set], n_act, na, Na, vec_a, fa, nb, Nb, vec_b, fb, P_l, n_states[i_set]);
 
@@ -2542,24 +2531,9 @@ int aldet_data::malmqvist(int i_set, double * U){
     change_ci_with_T_one_dim(n_act, nb, Nb, vec_b, fb, Na*n_states[i_set], coef[i_set], ci_buf, T_l);
     transpose_3d_abc_to_bac(ci_buf, coef[i_set], Nb, Na, n_states[i_set]);
     memcpy(coef[i_set], ci_buf, sizeof(double)*Na*Nb*n_states[i_set]);
-    transpose_3d_abc_to_bac(coef_bas[i_set], coef[i_set], Na, Nb, n_states[i_set]);
     
+    transpose_ci(i_set);
     
-
-//     for(int i=0;i<Na;i++){
-//         for(int j=0;j<Nb;j++)fprintf(out_stream,"%e  ",coef[i_set][(i*Nb+j)*n_states[i_set]]);
-//         fprintf(out_stream,"\n");
-//     }
-//     getchar();
-// 
-//     for(int i=0;i<Na;i++){
-//         for(int j=0;j<Nb;j++)fprintf(out_stream,"%e  ",coef[i_set][(i*Nb+j)*n_states[i_set]+1]);
-//         fprintf(out_stream,"\n");
-//     }
-//     getchar();
-
-    
-    // Чистим память
     delete[] ci_buf;
     delete[] T_l;
     delete[] P_l;
