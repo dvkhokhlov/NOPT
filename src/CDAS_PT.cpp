@@ -141,9 +141,8 @@ int CDAS_PT2(molecule * M, cdas_par * cdas, char * job_name){
     
     
     
-    CAS_engine CAS;
-    CAS.init(cdas->cas,M);
-    double E_core = CAS.CI->E_core();
+    CAS_engine * CAS = M->CAS;
+    double E_core = CAS->CI->E_core();
        
     fflush(out_stream);
     copy_MO_to_CVEC(M->MO_VEC,n_cor,n_act, n_virt,n_ao,COR_VEC,ACT_VEC,VIRT_VEC);
@@ -191,7 +190,7 @@ int CDAS_PT2(molecule * M, cdas_par * cdas, char * job_name){
     memcpy(ACT_MO, TMP_MO, sizeof(double)*M->n_act_orb[0]*M->n_ao);
     delete[] TMP_MO;
     copy_MO_to_CVEC(M->MO_VEC,n_cor,n_act, n_virt,n_ao,COR_VEC,ACT_VEC,VIRT_VEC);
-    CAS.CI->malmqvist(0, U_loc);
+    CAS->CI->malmqvist(0, U_loc);
     
     
     if(!lr.converged)
@@ -212,7 +211,7 @@ int CDAS_PT2(molecule * M, cdas_par * cdas, char * job_name){
     printf_timer("Fock matrix calculation");
     fprintf(out_stream,"_______________________________________________________________________\n\n\n");
     
-    CAS.calc_DM_C();
+    CAS->calc_DM_C();
     
     double * H_core = new double[n_ao*n_ao];;
     
@@ -220,9 +219,9 @@ int CDAS_PT2(molecule * M, cdas_par * cdas, char * job_name){
     set_zero_matr(J ,n_ao*n_ao);
     set_zero_matr(K ,n_ao*n_ao);
     if(RI==0)
-        calc_2el_MO_INTS(M->s, n_ao, CAS.DM_C, J, K, act_INTS, ACT_VEC, ACT_VEC, n_act);
+        calc_2el_MO_INTS(M->s, n_ao, CAS->DM_C, J, K, act_INTS, ACT_VEC, ACT_VEC, n_act);
     else
-        calc_2el_MO_INTS_RI(   n_ao, CAS.DM_C, J, K, act_INTS, M->MO_VEC, M->MO_VEC+n_ao*n_cor, M->MO_VEC+n_ao*n_cor, n_cor, n_act,0);
+        calc_2el_MO_INTS_RI(   n_ao, CAS->DM_C, J, K, act_INTS, M->MO_VEC, M->MO_VEC+n_ao*n_cor, M->MO_VEC+n_ao*n_cor, n_cor, n_act,0);
     
     for(int i=0;i<n_ao*n_ao;i++)H_core[i]=M->H_AO[i]+2*J[i]-K[i];//-F_backup[i];
     
@@ -272,19 +271,20 @@ int CDAS_PT2(molecule * M, cdas_par * cdas, char * job_name){
     //deferred into the stock branch so the SF path never builds the n_a^6 tables.
     PT_tensors T;
 
-    block2_casci_wrap DMRG(n_act, M->CI[0].na, M->CI[0].nb, M->CI[0].mult, n_s, M->CI[0].print_number, cdas->cas->dmrg);
+    if(CAS->CI->as_aldet()!=nullptr){
+        CAS->CI->as_aldet()->simple_import_data(act_INTS, act_INTS, H_AA, E_core);
+    }
+    else
+        CAS->CI->import_integrals(act_INTS, H_AA, E_core);
     
-    CAS.CI->as_aldet()->simple_import_data(act_INTS, act_INTS, H_AA, E_core);
-    DMRG.import_integrals(act_INTS, H_AA, E_core);
-    
-    CAS.CI=&DMRG;
+    // CAS->CI=&DMRG;
     T.set_par(&R, eps, n_cor, n_act, n_virt, H_AV, H_CA, H_CV, cdas->edshift);
     if(cdas->IPEA){
-        T.IPEA(CAS.CI,cdas->cas->w_state);
+        T.IPEA(CAS->CI,cdas->cas->w_state);
         T.E2_calc_IPEA();
     }
     else if(cdas->MPPT){
-        T.MPPT(CAS.CI->as_aldet(), 0,cdas->cas->w_state);//to be fixed
+        T.MPPT(CAS->CI->as_aldet(), 0,cdas->cas->w_state);//to be fixed
         T.E2_calc_EE();
     }
     else{
@@ -295,25 +295,25 @@ int CDAS_PT2(molecule * M, cdas_par * cdas, char * job_name){
     fprintf(out_stream,"_______________________________________________________________________\n\n\n");
 
 
-    CAS.CI->PT2_import_data(T.RF_P3_JK,
+    CAS->CI->PT2_import_data(T.RF_P3_JK,
                 T.RF_P3_AB,
                 T.RF_PV_JK,
                 T.RF_PV_AB,
                 T.RF_PH,
                 T.RF_PS);
     
-    CAS.CI->solve(1,1,true);
-    if(LINEAR)CAS.rotate();
+    CAS->CI->solve(1,1,true);
+    if(LINEAR)CAS->rotate();
 
 //    }
     fprintf(out_stream,"\n\nCDAS-PT2 Energy summary:\n");
-    PrintEnergy(CAS.CI->E_states_ptr(),CAS.n_s,1);
+    PrintEnergy(CAS->CI->E_states_ptr(),CAS->n_s,1);
     
     exit(1);
     double * print_d[3];
-    print_d[0]=CAS.Prop_value                  ;
-    print_d[1]=CAS.Prop_value+CAS.n_s*CAS.n_s  ; 
-    print_d[2]=CAS.Prop_value+CAS.n_s*CAS.n_s*2;
+    print_d[0]=CAS->Prop_value                  ;
+    print_d[1]=CAS->Prop_value+CAS->n_s*CAS->n_s  ; 
+    print_d[2]=CAS->Prop_value+CAS->n_s*CAS->n_s*2;
     
     char * print_n[3];
     print_n[0]=new char[BUF_LINE_LENGTH];sprintf(print_n[0],"     d_x     ");
@@ -321,24 +321,24 @@ int CDAS_PT2(molecule * M, cdas_par * cdas, char * job_name){
     print_n[2]=new char[BUF_LINE_LENGTH];sprintf(print_n[2],"     d_z     ");
     
     
-    CAS.Prop_calc();
-    CAS.print_av_table_with_prop("CDAS-PT2 extended results:",3,print_d, print_n);
+    CAS->Prop_calc();
+    CAS->print_av_table_with_prop("CDAS-PT2 extended results:",3,print_d, print_n);
     
 //     getchar();
     fprintf(out_stream,"\n");
     if(write_ci){
         fprintf(out_stream,"Writing CDAS-PT2 WaveFunctions:\n");
         sprintf(name,"%s_CDAS.ci\0",job_name);
-        CAS.CI->as_aldet()->write_civec(0, name);
+        CAS->CI->as_aldet()->write_civec(0, name);
         fprintf(out_stream,"data file         : %s\n",name);
     }
     
 
-    CAS.print_properties("CDAS-PT(0)");    
+    CAS->print_properties("CDAS-PT(0)");    
     
-    double * d_x = CAS.Prop_value                  ;
-    double * d_y = CAS.Prop_value+CAS.n_s*CAS.n_s  ;
-    double * d_z = CAS.Prop_value+CAS.n_s*CAS.n_s*2;
+    double * d_x = CAS->Prop_value                  ;
+    double * d_y = CAS->Prop_value+CAS->n_s*CAS->n_s  ;
+    double * d_z = CAS->Prop_value+CAS->n_s*CAS->n_s*2;
     
     
     set_zero_matr(d_x1,n_s*n_s);
@@ -352,14 +352,14 @@ int CDAS_PT2(molecule * M, cdas_par * cdas, char * job_name){
     if(print_dipole)if(cdas->pt1_d){
         fprintf(out_stream,"PT1 dipole moment - d(1):\n\n");
         if(cdas->IPEA){
-            T.P1_calc_IPEA(d_x1, CAS.CI->as_aldet(), d_x_AV, d_x_CA, d_x_CV, 1, 1, 1);
-            T.P1_calc_IPEA(d_y1, CAS.CI->as_aldet(), d_y_AV, d_y_CA, d_y_CV, 1, 1, 1);
-            T.P1_calc_IPEA(d_z1, CAS.CI->as_aldet(), d_z_AV, d_z_CA, d_z_CV, 1, 1, 1);
+            T.P1_calc_IPEA(d_x1, CAS->CI->as_aldet(), d_x_AV, d_x_CA, d_x_CV, 1, 1, 1);
+            T.P1_calc_IPEA(d_y1, CAS->CI->as_aldet(), d_y_AV, d_y_CA, d_y_CV, 1, 1, 1);
+            T.P1_calc_IPEA(d_z1, CAS->CI->as_aldet(), d_z_AV, d_z_CA, d_z_CV, 1, 1, 1);
         }
         else{
-            T.P1_calc_EE(d_x1, CAS.CI->as_aldet(), d_x_AV, d_x_CA, d_x_CV, 1, 1, 1);
-            T.P1_calc_EE(d_y1, CAS.CI->as_aldet(), d_y_AV, d_y_CA, d_y_CV, 1, 1, 1);
-            T.P1_calc_EE(d_z1, CAS.CI->as_aldet(), d_z_AV, d_z_CA, d_z_CV, 1, 1, 1);
+            T.P1_calc_EE(d_x1, CAS->CI->as_aldet(), d_x_AV, d_x_CA, d_x_CV, 1, 1, 1);
+            T.P1_calc_EE(d_y1, CAS->CI->as_aldet(), d_y_AV, d_y_CA, d_y_CV, 1, 1, 1);
+            T.P1_calc_EE(d_z1, CAS->CI->as_aldet(), d_z_AV, d_z_CA, d_z_CV, 1, 1, 1);
         }
         
         symmetrization_with_scaling(d_x1,n_s,2.0);
