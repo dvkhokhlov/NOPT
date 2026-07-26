@@ -30,6 +30,14 @@ public:
                                   double e_core) = 0;          // inactive + nuclear scalar
     virtual void import_lambda(double* lambda_act,             // linear-molecule Lambda machinery (optional;
                                double lambda_core) {}          //   no-op unless the backend supports it)
+    virtual void PT2_import_data(double * ext_T3,
+                                 double * ext_T3_AB,
+                                 double * ext_T2,
+                                 double * ext_T2_AB,
+                                 double * ext_T1,
+                                 double   ext_T0) {}
+    
+    
     // Active-space localizing rotation U (n_act x n_act, [a*n_act+p], C_loc=C*U, U^T U=I). The
     // backend solves in the rotated basis and reports RDMs back in the original basis; nullptr or
     // never-called means solve in the supplied basis. aldet ignores it.
@@ -69,8 +77,9 @@ public:
     virtual void calc_DMB(double* g, int a, int b) = 0;
 
     // --- queries ---
-    virtual int    n_states()       const = 0;
-    virtual int    mult()           const = 0;
+    virtual int    n_states()        const = 0;
+    virtual int    mult()            const = 0;
+    virtual double E_core()          const = 0;
     virtual double E_state(int i)    const = 0;
     virtual double S2_state(int i)   const = 0;
     virtual double L2_state(int i)   const = 0;                // linear molecules

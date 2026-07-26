@@ -64,6 +64,7 @@ void block2_casci_wrap::set_state_weights(const double *w, int n_s) {
 
 int    block2_casci_wrap::n_states()      const { return impl_->n_s; }
 int    block2_casci_wrap::mult()          const { return impl_->mult; }
+double block2_casci_wrap::E_core()        const { return g0; }
 double block2_casci_wrap::E_state(int i)  const { return impl_->E_states[i]; }
 double block2_casci_wrap::S2_state(int)   const { double S = impl_->twos / 2.0; return S * (S + 1.0); }
 double block2_casci_wrap::L2_state(int)   const { return 0.0; } // linear-molecule Lambda: deferred

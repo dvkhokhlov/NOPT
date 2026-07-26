@@ -36,6 +36,15 @@ public:
         ci_->Lambda_act = lambda_act;
         ci_->Lambda_core = lambda_core;
     }
+    
+    void PT2_import_data(double * ext_T3,
+                         double * ext_T3_AB,
+                         double * ext_T2,
+                         double * ext_T2_AB,
+                         double * ext_T1,
+                         double   ext_T0) override {ci_->PT2_import_data(ext_T3,ext_T3_AB,ext_T2,ext_T2_AB,ext_T1,ext_T0);}
+
+    
 
     // --- solve (transcription of CI_calc:306-314: fresh solver, set_par, H_diag, run) ---
     int solve(int primary, int read, bool use_prev_guess) override {
@@ -55,6 +64,7 @@ public:
     // --- queries ---
     int    n_states()    const override { return ci_->n_states[0]; }
     int    mult()        const override { return ci_->mult; }
+    double E_core()      const override { return ci_->E_core; }
     double E_state(int i) const override { return ci_->E_states[0][i]; }
     double S2_state(int i) const override { return ci_->S2[0][i]; }
     double L2_state(int i) const override { return ci_->L2[0][i]; }

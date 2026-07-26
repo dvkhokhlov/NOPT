@@ -9,4 +9,3 @@ This is a draft version that should not be used. Only for developers' informatio
 to be done:
 - correct interface for same method in  CASSCF and CDAS-PT
 - IPEA matrixes based on DMRG densities
-- common PT interface for aldet and DMRG

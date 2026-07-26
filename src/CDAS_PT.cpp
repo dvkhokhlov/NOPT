@@ -140,8 +140,10 @@ int CDAS_PT2(molecule * M, cdas_par * cdas, char * job_name){
     H_CV = new double[n_cor*n_virt];
     
     
+    
     CAS_engine CAS;
     CAS.init(cdas->cas,M);
+    double E_core = CAS.CI->E_core();
        
     fflush(out_stream);
     copy_MO_to_CVEC(M->MO_VEC,n_cor,n_act, n_virt,n_ao,COR_VEC,ACT_VEC,VIRT_VEC);
@@ -270,14 +272,10 @@ int CDAS_PT2(molecule * M, cdas_par * cdas, char * job_name){
     //deferred into the stock branch so the SF path never builds the n_a^6 tables.
     PT_tensors T;
 
-    //calculation of IP/EA Fockian matrix
-    // if(CAS.CI->as_aldet() == nullptr){
-        // fprintf(out_stream,"ERROR: CDAS-PT requires the determinant CI backend (cisolver=aldet)\n");
-        // exit(EXIT_FAILURE);
-        CAS.CI->as_aldet()->simple_import_data(act_INTS, act_INTS, H_AA, 0);
-    // }
     block2_casci_wrap DMRG(n_act, M->CI[0].na, M->CI[0].nb, M->CI[0].mult, n_s, M->CI[0].print_number, cdas->cas->dmrg);
-    DMRG.import_integrals(act_INTS, H_AA, 0);
+    
+    CAS.CI->as_aldet()->simple_import_data(act_INTS, act_INTS, H_AA, E_core);
+    DMRG.import_integrals(act_INTS, H_AA, E_core);
     
     T.set_par(&R, eps, n_cor, n_act, n_virt, H_AV, H_CA, H_CV, cdas->edshift);
     if(cdas->IPEA){
@@ -296,84 +294,22 @@ int CDAS_PT2(molecule * M, cdas_par * cdas, char * job_name){
     fprintf(out_stream,"_______________________________________________________________________\n\n\n");
 
 
-    // CAS.CI->as_aldet()->PT2_import_data(T.RF_P3_JK,
-    //                         T.RF_P3_AB,
-    //                         T.RF_PV_JK,
-    //                         T.RF_PV_AB,
-    //                         T.RF_PH,
-    //                         T.RF_PS);
-    std::vector<double> h1((size_t)n_act*n_act);
-    std::vector<double> h2((size_t)n_act*n_act*n_act*n_act);
-    std::copy(H_AA,    H_AA+(size_t)n_act*n_act, h1.begin());
-    std::copy(act_INTS, act_INTS+(size_t)n_act*n_act*n_act*n_act, h2.begin());
-        
-    for(size_t i=0;i<(size_t)n_act*n_act;i++)                  h1[i]+=T.RF_PH[i];
+    CAS.CI=&DMRG;
+    CAS.CI->PT2_import_data(T.RF_P3_JK,
+                T.RF_P3_AB,
+                T.RF_PV_JK,
+                T.RF_PV_AB,
+                T.RF_PH,
+                T.RF_PS);
     
-    for(int a=0;a<n_act;a++) 
-    for(int c=0;c<n_act;c++) 
-    for(int b=0;b<n_act;b++)
-    for(int d=0;d<n_act;d++){
-        h2[((a*n_act+c)*n_act+b)*n_act+d]+=T.RF_PV_AB[((a*n_act+b)*n_act+c)*n_act+d];
-    }
-    
-    
-    // for(size_t i=0;i<(size_t)n_act*n_act*n_act*n_act;i++)      h2[i]+=out.g2[i];
-    
-    // #pragma omp parallel for collapse(2) schedule(static)
-    double* g3 = new double[n_act*n_act*n_act*n_act*n_act*n_act];
-    for(int t=0;t<n_act;t++) 
-    for(int u=0;u<n_act;u++)
-    for(int v=0;v<n_act;v++) 
-    for(int w=0;w<n_act;w++)
-    for(int x=0;x<n_act;x++) 
-    for(int y=0;y<n_act;y++){
-       g3[((((t*n_act+u)*n_act+v)*n_act+w)*n_act+x)*n_act+y] = 
-              ( 2.0*T.RF_P3_AB[((((t*n_act+v)*n_act+u)*n_act+w)*n_act+x)*n_act+y] 
-              + 2.0*T.RF_P3_AB[((((t*n_act+x)*n_act+u)*n_act+y)*n_act+v)*n_act+w]
-              + 2.0*T.RF_P3_AB[((((v*n_act+t)*n_act+w)*n_act+u)*n_act+x)*n_act+y] 
-              + 2.0*T.RF_P3_AB[((((v*n_act+x)*n_act+w)*n_act+y)*n_act+t)*n_act+u]
-              + 2.0*T.RF_P3_AB[((((x*n_act+t)*n_act+y)*n_act+u)*n_act+v)*n_act+w] 
-              + 2.0*T.RF_P3_AB[((((x*n_act+v)*n_act+y)*n_act+w)*n_act+t)*n_act+u]
-              -     T.RF_P3_AB[((((t*n_act+v)*n_act+u)*n_act+w)*n_act+x)*n_act+y] 
-              +     T.RF_P3_AB[((((v*n_act+t)*n_act+u)*n_act+w)*n_act+x)*n_act+y]
-              +     T.RF_P3_AB[((((x*n_act+v)*n_act+u)*n_act+w)*n_act+t)*n_act+y] 
-              +     T.RF_P3_AB[((((t*n_act+x)*n_act+u)*n_act+w)*n_act+v)*n_act+y]
-              -     T.RF_P3_AB[((((v*n_act+x)*n_act+u)*n_act+w)*n_act+t)*n_act+y] 
-              -     T.RF_P3_AB[((((x*n_act+t)*n_act+u)*n_act+w)*n_act+v)*n_act+y] ) / 12.0;
-    }
-    
-    auto ix = [n_act](int t,int u,int v,int w,int x,int y)->size_t {
-    return (((((size_t)t*n_act+u)*n_act+v)*n_act+w)*n_act+x)*n_act+y; };
-    #pragma omp parallel for collapse(2) schedule(static)
-        for(int t=0;t<n_act;t++) for(int u=0;u<n_act;u++)
-        for(int v=0;v<n_act;v++) for(int w=0;w<n_act;w++)
-        for(int x=0;x<n_act;x++) for(int y=0;y<n_act;y++){
-            const size_t i = ix(t,u,v,w,x,y), id = ix(u,t,w,v,y,x);
-            if(i < id){ double s = 0.5*(g3[i]+g3[id]); g3[i] = g3[id] = s; }
-        }
-    
-    
-    
-    double const_total = CAS.E_core + T.RF_PS;
-    // release_sf();                            // free engine tensors before PT2_import_data
-    
-    DMRG.import_dressed_operator(h1.data(), h2.data(), g3, const_total);
-    DMRG.solve(0,0,false);
-    
-    fprintf(out_stream,"\n\nCDAS-PT2 Energy summary:\n");
-    PrintEnergy(DMRG.E_states_ptr(),CAS.n_s,1);
-    printf_timer("DMRG");
-    exit(1);
-    
-
-
-    // CAS.CI_calc(1,0,1);
-    // if(LINEAR)CAS.rotate();
+    CAS.CI->solve(1,1,true);
+    if(LINEAR)CAS.rotate();
 
 //    }
     fprintf(out_stream,"\n\nCDAS-PT2 Energy summary:\n");
-    // PrintEnergy(CAS.CI->as_aldet()->E_states[0],CAS.n_s,1);
+    PrintEnergy(CAS.CI->E_states_ptr(),CAS.n_s,1);
     
+    exit(1);
     double * print_d[3];
     print_d[0]=CAS.Prop_value                  ;
     print_d[1]=CAS.Prop_value+CAS.n_s*CAS.n_s  ; 

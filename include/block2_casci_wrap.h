@@ -11,8 +11,15 @@ struct dmrgci_engine;       // opaque; defined in the .cpp (holds all block2 sta
 
 class block2_casci_wrap final : public casci_solver {
     std::unique_ptr<dmrgci_engine> impl_;   // pimpl; complete type only in the .cpp
-
+    
 public:
+    //integral storage
+                double  g0;
+    std::vector<double> g1;
+    std::vector<double> g2;
+    std::vector<double> g3;
+    int n_act;
+
     // active-space dims (from M->CI[0]) + DMRG config; inits the block2 runtime once.
     block2_casci_wrap(int n_act, int na, int nb, int mult, int n_s, int print_number,
                       const dmrg_par& cfg);
@@ -33,6 +40,15 @@ public:
     bool supports_dressed_import() const override { return true; }
     void import_dressed_operator(const double* h1_total, const double* h2_total,
                                  const double* h3_total, double const_total) override;
+    
+    void PT2_import_data(double * ext_T3,
+                         double * ext_T3_AB,
+                         double * ext_T2,
+                         double * ext_T2_AB,
+                         double * ext_T1,
+                         double   ext_T0) override;
+
+    
 
     // --- solve ---
     int solve(int primary, int read, bool use_prev_guess) override;
@@ -44,13 +60,14 @@ public:
     void calc_DMB(double* g, int a, int b) override;
 
     // --- queries ---
-    int    n_states()      const override;
-    int    mult()          const override;
-    double E_state(int i)   const override;
-    double S2_state(int i)  const override;
-    double L2_state(int i)  const override;
-    double P_state(int i)   const override;
-    double* E_states_ptr()  const override;
+    int    n_states()         const override;
+    int    mult()             const override;
+    double E_core()           const override;
+    double E_state(int i)     const override;
+    double S2_state(int i)    const override;
+    double L2_state(int i)    const override;
+    double P_state(int i)     const override;
+    double* E_states_ptr()    const override;
     double last_solve_resid() const override;
     bool last_solve_hit_max() const override;
 

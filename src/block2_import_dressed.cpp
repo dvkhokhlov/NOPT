@@ -110,3 +110,78 @@ void block2_casci_wrap::import_dressed_operator(const double *h1_total, const do
 
     e.mpo = mpo; // the existing solve() runs the dressed MPO cold (have_rotation stays false)
 }
+
+void block2_casci_wrap::PT2_import_data(double * ext_T3,
+                                       double * ext_T3_AB,
+                                       double * ext_T2,
+                                       double * ext_T2_AB,
+                                       double * ext_T1,
+                                       double   ext_T0){
+    
+    int error=0;
+    if(g1.size()!=n_act*n_act            ) error=1;
+    if(g2.size()!=n_act*n_act*n_act*n_act) error=1;
+    if(error){
+        fprintf(out_stream,"ERROR: block2_casci_wrap::PT2_import_data found inconsistent n_act\n");
+        fprintf(out_stream,"       check your code\n");
+        exit(0);
+    }
+    // std::vector<double> h1((size_t)n_act*n_act);
+    // std::vector<double> h2((size_t)n_act*n_act*n_act*n_act);
+    // std::copy(H_AA,    H_AA+(size_t)n_act*n_act, h1.begin());
+    // std::copy(act_INTS, act_INTS+(size_t)n_act*n_act*n_act*n_act, h2.begin());
+        
+    for(size_t i=0;i<(size_t)n_act*n_act;i++)g1[i]+=ext_T1[i];
+    
+    for(int a=0;a<n_act;a++) 
+    for(int c=0;c<n_act;c++) 
+    for(int b=0;b<n_act;b++)
+    for(int d=0;d<n_act;d++){
+        g2[((a*n_act+c)*n_act+b)*n_act+d]+=ext_T2_AB[((a*n_act+b)*n_act+c)*n_act+d];
+    }
+    
+    // #pragma omp parallel for collapse(2) schedule(static)
+    g3.resize(n_act*n_act*n_act*n_act*n_act*n_act);
+    for(int t=0;t<n_act;t++) 
+    for(int u=0;u<n_act;u++)
+    for(int v=0;v<n_act;v++) 
+    for(int w=0;w<n_act;w++)
+    for(int x=0;x<n_act;x++) 
+    for(int y=0;y<n_act;y++){
+       g3[((((t*n_act+u)*n_act+v)*n_act+w)*n_act+x)*n_act+y] = 
+              ( 2.0*ext_T3_AB[((((t*n_act+v)*n_act+u)*n_act+w)*n_act+x)*n_act+y] 
+              + 2.0*ext_T3_AB[((((t*n_act+x)*n_act+u)*n_act+y)*n_act+v)*n_act+w]
+              + 2.0*ext_T3_AB[((((v*n_act+t)*n_act+w)*n_act+u)*n_act+x)*n_act+y] 
+              + 2.0*ext_T3_AB[((((v*n_act+x)*n_act+w)*n_act+y)*n_act+t)*n_act+u]
+              + 2.0*ext_T3_AB[((((x*n_act+t)*n_act+y)*n_act+u)*n_act+v)*n_act+w] 
+              + 2.0*ext_T3_AB[((((x*n_act+v)*n_act+y)*n_act+w)*n_act+t)*n_act+u]
+              -     ext_T3_AB[((((t*n_act+v)*n_act+u)*n_act+w)*n_act+x)*n_act+y] 
+              +     ext_T3_AB[((((v*n_act+t)*n_act+u)*n_act+w)*n_act+x)*n_act+y]
+              +     ext_T3_AB[((((x*n_act+v)*n_act+u)*n_act+w)*n_act+t)*n_act+y] 
+              +     ext_T3_AB[((((t*n_act+x)*n_act+u)*n_act+w)*n_act+v)*n_act+y]
+              -     ext_T3_AB[((((v*n_act+x)*n_act+u)*n_act+w)*n_act+t)*n_act+y] 
+              -     ext_T3_AB[((((x*n_act+t)*n_act+u)*n_act+w)*n_act+v)*n_act+y] ) / 12.0;
+    }
+    int n=n_act;
+    auto ix = [n](int t,int u,int v,int w,int x,int y)->size_t {
+    return (((((size_t)t*n+u)*n+v)*n+w)*n+x)*n+y; };
+    #pragma omp parallel for collapse(2) schedule(static)
+        for(int t=0;t<n;t++) for(int u=0;u<n_act;u++)
+        for(int v=0;v<n_act;v++) for(int w=0;w<n_act;w++)
+        for(int x=0;x<n_act;x++) for(int y=0;y<n_act;y++){
+            const size_t i = ix(t,u,v,w,x,y), id = ix(u,t,w,v,y,x);
+            if(i < id){ double s = 0.5*(g3[i]+g3[id]); g3[i] = g3[id] = s; }
+        }
+    
+    
+    
+    double const_total = g0 + ext_T0;
+    
+    import_dressed_operator(g1.data(), g2.data(), g3.data(), const_total);
+    
+    
+    return;
+}
+
+
+

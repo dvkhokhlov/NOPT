@@ -612,7 +612,9 @@ static bool rotate_retained_mps(dmrgci_engine &e) {
 
 void block2_casci_wrap::import_integrals(double *aaaa, double *f_act, double e_core) {
     dmrgci_engine &e = *impl_;
-    const int n = e.n_act;
+    n_act = e.n_act;
+    const int n = n_act; //short name for more readability
+    
     // When localizing, rotate the integrals into the localized basis (E_core is invariant).
     double *h1 = f_act, *h2 = aaaa;
     if (e.localize_on) {
@@ -623,6 +625,14 @@ void block2_casci_wrap::import_integrals(double *aaaa, double *f_act, double e_c
         h1 = e.F_loc.data();
         h2 = e.g_loc.data();
     }
+    
+    g0=e_core;
+    g1.resize(n*n    );
+    g2.resize(n*n*n*n);
+    memcpy(g1.data(), h1, sizeof(double)*n*n    );
+    memcpy(g2.data(), h2, sizeof(double)*n*n*n*n);
+    
+    
     // In-memory FCIDUMP (classic SU2 path). No rescale(): NOPT passes the embedded 1-e
     // Hamiltonian F_act (frozen core folded in) and chemist (tu|vw) directly
     e.fcidump = std::make_shared<FCIDUMP<double>>();
