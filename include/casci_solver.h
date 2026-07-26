@@ -16,6 +16,7 @@
 // flat-array code; this interface introduces no ownership.
 
 class aldet_data;  // opaque to consumers; only the aldet adapter dereferences it
+#include <vector>
 
 class casci_solver {
 public:
@@ -37,7 +38,11 @@ public:
                                  double * ext_T1,
                                  double   ext_T0) {}
     
+    virtual int calc_IPEA_single(double * U_IP, double * H_IP, 
+                                 double * U_EA, double * H_EA,
+                                 int a, std::vector<double> avecoe) {return 0;}
     
+
     // Active-space localizing rotation U (n_act x n_act, [a*n_act+p], C_loc=C*U, U^T U=I). The
     // backend solves in the rotated basis and reports RDMs back in the original basis; nullptr or
     // never-called means solve in the supplied basis. aldet ignores it.
@@ -61,7 +66,8 @@ public:
     // Encapsulates the full diagonalisation (aldet: copy_coef -> set_par -> H_diag_calc -> run).
     // use_prev_guess: warm-start from the previous CI vector. Returns an iteration/convergence count.
     virtual int solve(int primary, int read, bool use_prev_guess) = 0;
-
+    
+    
     // --- reduced density matrices (the actual contract) ---
     // 1-RDM diagonal-form: spin-summed, symmetric; trace = N_active_el; each diagonal
     // entry (orbital occupation) satisfies 0 <= gamma_tt <= 2.
@@ -77,6 +83,7 @@ public:
     virtual void calc_DMB(double* g, int a, int b) = 0;
 
     // --- queries ---
+    virtual int    n_act()           const = 0;
     virtual int    n_states()        const = 0;
     virtual int    mult()            const = 0;
     virtual double E_core()          const = 0;
@@ -109,7 +116,9 @@ public:
     virtual void rotate_pi_pair(int i_set, double s, double c,               // linear-molecule pi-pair rotation
                                 int pair, int* ind_pi) {}
     virtual void calc_S(double* S_track, int a, int b) {}                    // overlap vs previous iter's CI vectors
-
+    
+        
+    
     // --- dressed active-space operator import (capability-gated) ---
     // A backend that can encode a TOTAL dressed operator (F_act+g1, (tu|vw)+g2, g3, E_core+E0) as
     // its own eigenproblem and re-solve it advertises true; the DMRG/block2 backend does. Default is

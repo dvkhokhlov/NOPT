@@ -68,8 +68,7 @@ int single_point_calc( inp_par * P, molecule * Qm){
     if(P->xmc.y)QDPT2    (Qm,&(P->xmc), P->job_name);
     
     if(SO==0)if(P->cdas.y){
-        if(P->cas.ci_solver==CISOLVER_DMRG) CDAS_PT_dmrg(Qm,&(P->cdas), P->job_name);
-        else                                CDAS_PT2    (Qm,&(P->cdas), P->job_name);
+        CDAS_PT2    (Qm,&(P->cdas), P->job_name);
     }
     if(SO==1)if(P->cdas.y)CDAS_PT2_rel(Qm,&(P->cdas), P->job_name);
     

@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "common_vars.h"          // out_stream
+#include "matr.h"
 
 using namespace block2;
 using namespace nopt_block2;
@@ -119,56 +120,56 @@ void block2_casci_wrap::PT2_import_data(double * ext_T3,
                                        double   ext_T0){
     
     int error=0;
-    if(g1.size()!=n_act*n_act            ) error=1;
-    if(g2.size()!=n_act*n_act*n_act*n_act) error=1;
+    if(g1.size()!=n_act_*n_act_            ) error=1;
+    if(g2.size()!=n_act_*n_act_*n_act_*n_act_) error=1;
     if(error){
         fprintf(out_stream,"ERROR: block2_casci_wrap::PT2_import_data found inconsistent n_act\n");
         fprintf(out_stream,"       check your code\n");
         exit(0);
     }
-    // std::vector<double> h1((size_t)n_act*n_act);
-    // std::vector<double> h2((size_t)n_act*n_act*n_act*n_act);
-    // std::copy(H_AA,    H_AA+(size_t)n_act*n_act, h1.begin());
-    // std::copy(act_INTS, act_INTS+(size_t)n_act*n_act*n_act*n_act, h2.begin());
+    // std::vector<double> h1((size_t)n_act_*n_act_);
+    // std::vector<double> h2((size_t)n_act_*n_act_*n_act_*n_act_);
+    // std::copy(H_AA,    H_AA+(size_t)n_act_*n_act_, h1.begin());
+    // std::copy(act_INTS, act_INTS+(size_t)n_act_*n_act_*n_act_*n_act_, h2.begin());
         
-    for(size_t i=0;i<(size_t)n_act*n_act;i++)g1[i]+=ext_T1[i];
+    for(size_t i=0;i<(size_t)n_act_*n_act_;i++)g1[i]+=ext_T1[i];
     
-    for(int a=0;a<n_act;a++) 
-    for(int c=0;c<n_act;c++) 
-    for(int b=0;b<n_act;b++)
-    for(int d=0;d<n_act;d++){
-        g2[((a*n_act+c)*n_act+b)*n_act+d]+=ext_T2_AB[((a*n_act+b)*n_act+c)*n_act+d];
+    for(int a=0;a<n_act_;a++) 
+    for(int c=0;c<n_act_;c++) 
+    for(int b=0;b<n_act_;b++)
+    for(int d=0;d<n_act_;d++){
+        g2[((a*n_act_+c)*n_act_+b)*n_act_+d]+=ext_T2_AB[((a*n_act_+b)*n_act_+c)*n_act_+d];
     }
     
     // #pragma omp parallel for collapse(2) schedule(static)
-    g3.resize(n_act*n_act*n_act*n_act*n_act*n_act);
-    for(int t=0;t<n_act;t++) 
-    for(int u=0;u<n_act;u++)
-    for(int v=0;v<n_act;v++) 
-    for(int w=0;w<n_act;w++)
-    for(int x=0;x<n_act;x++) 
-    for(int y=0;y<n_act;y++){
-       g3[((((t*n_act+u)*n_act+v)*n_act+w)*n_act+x)*n_act+y] = 
-              ( 2.0*ext_T3_AB[((((t*n_act+v)*n_act+u)*n_act+w)*n_act+x)*n_act+y] 
-              + 2.0*ext_T3_AB[((((t*n_act+x)*n_act+u)*n_act+y)*n_act+v)*n_act+w]
-              + 2.0*ext_T3_AB[((((v*n_act+t)*n_act+w)*n_act+u)*n_act+x)*n_act+y] 
-              + 2.0*ext_T3_AB[((((v*n_act+x)*n_act+w)*n_act+y)*n_act+t)*n_act+u]
-              + 2.0*ext_T3_AB[((((x*n_act+t)*n_act+y)*n_act+u)*n_act+v)*n_act+w] 
-              + 2.0*ext_T3_AB[((((x*n_act+v)*n_act+y)*n_act+w)*n_act+t)*n_act+u]
-              -     ext_T3_AB[((((t*n_act+v)*n_act+u)*n_act+w)*n_act+x)*n_act+y] 
-              +     ext_T3_AB[((((v*n_act+t)*n_act+u)*n_act+w)*n_act+x)*n_act+y]
-              +     ext_T3_AB[((((x*n_act+v)*n_act+u)*n_act+w)*n_act+t)*n_act+y] 
-              +     ext_T3_AB[((((t*n_act+x)*n_act+u)*n_act+w)*n_act+v)*n_act+y]
-              -     ext_T3_AB[((((v*n_act+x)*n_act+u)*n_act+w)*n_act+t)*n_act+y] 
-              -     ext_T3_AB[((((x*n_act+t)*n_act+u)*n_act+w)*n_act+v)*n_act+y] ) / 12.0;
+    g3.resize(n_act_*n_act_*n_act_*n_act_*n_act_*n_act_);
+    for(int t=0;t<n_act_;t++) 
+    for(int u=0;u<n_act_;u++)
+    for(int v=0;v<n_act_;v++) 
+    for(int w=0;w<n_act_;w++)
+    for(int x=0;x<n_act_;x++) 
+    for(int y=0;y<n_act_;y++){
+       g3[((((t*n_act_+u)*n_act_+v)*n_act_+w)*n_act_+x)*n_act_+y] = 
+              ( 2.0*ext_T3_AB[((((t*n_act_+v)*n_act_+u)*n_act_+w)*n_act_+x)*n_act_+y] 
+              + 2.0*ext_T3_AB[((((t*n_act_+x)*n_act_+u)*n_act_+y)*n_act_+v)*n_act_+w]
+              + 2.0*ext_T3_AB[((((v*n_act_+t)*n_act_+w)*n_act_+u)*n_act_+x)*n_act_+y] 
+              + 2.0*ext_T3_AB[((((v*n_act_+x)*n_act_+w)*n_act_+y)*n_act_+t)*n_act_+u]
+              + 2.0*ext_T3_AB[((((x*n_act_+t)*n_act_+y)*n_act_+u)*n_act_+v)*n_act_+w] 
+              + 2.0*ext_T3_AB[((((x*n_act_+v)*n_act_+y)*n_act_+w)*n_act_+t)*n_act_+u]
+              -     ext_T3_AB[((((t*n_act_+v)*n_act_+u)*n_act_+w)*n_act_+x)*n_act_+y] 
+              +     ext_T3_AB[((((v*n_act_+t)*n_act_+u)*n_act_+w)*n_act_+x)*n_act_+y]
+              +     ext_T3_AB[((((x*n_act_+v)*n_act_+u)*n_act_+w)*n_act_+t)*n_act_+y] 
+              +     ext_T3_AB[((((t*n_act_+x)*n_act_+u)*n_act_+w)*n_act_+v)*n_act_+y]
+              -     ext_T3_AB[((((v*n_act_+x)*n_act_+u)*n_act_+w)*n_act_+t)*n_act_+y] 
+              -     ext_T3_AB[((((x*n_act_+t)*n_act_+u)*n_act_+w)*n_act_+v)*n_act_+y] ) / 12.0;
     }
-    int n=n_act;
+    int n=n_act_;
     auto ix = [n](int t,int u,int v,int w,int x,int y)->size_t {
     return (((((size_t)t*n+u)*n+v)*n+w)*n+x)*n+y; };
     #pragma omp parallel for collapse(2) schedule(static)
-        for(int t=0;t<n;t++) for(int u=0;u<n_act;u++)
-        for(int v=0;v<n_act;v++) for(int w=0;w<n_act;w++)
-        for(int x=0;x<n_act;x++) for(int y=0;y<n_act;y++){
+        for(int t=0;t<n;t++) for(int u=0;u<n_act_;u++)
+        for(int v=0;v<n_act_;v++) for(int w=0;w<n_act_;w++)
+        for(int x=0;x<n_act_;x++) for(int y=0;y<n_act_;y++){
             const size_t i = ix(t,u,v,w,x,y), id = ix(u,t,w,v,y,x);
             if(i < id){ double s = 0.5*(g3[i]+g3[id]); g3[i] = g3[id] = s; }
         }
@@ -183,5 +184,135 @@ void block2_casci_wrap::PT2_import_data(double * ext_T3,
     return;
 }
 
+int average_DM_aldet_diag(double * G_out, double * G, std::vector<double> avecoe,int na_p, int n_s);
+
+int block2_casci_wrap::calc_IPEA_single(double * U_IP, double * H_IP, 
+                                        double * U_EA, double * H_EA,
+                                        int a, std::vector<double> avecoe) {
+     
+    int n_s = n_states();
+    
+    //U_IP
+    double * gamma = new double[n_s*n_act_*n_act_];
+    set_zero_matr(gamma,n_act_*n_act_*n_s);
+//     calc_DM(gamma, coef[a], coef[a], n_states[a], n_states[a], na, Na, Nb, fa, fb, vec_a, bit_a);
+    calc_DM_diag(gamma,a);
+    // for(int i=0;i<n_s*n_act_*n_act_;i++)gamma[i]=gamma[i]*0.5;
+    // memcpy(U_IP,gamma,sizeof(double)*n_act_*n_act_);
+    average_DM_aldet_diag(U_IP,gamma, avecoe,n_act_*n_act_,n_s);
+    
+    PrintMatr(U_IP, n_act_, n_act_, 0);
+    exit(0);
+    
+/*    //U_EA
+    for(int i=0;i<n_act_*n_act_;i++)U_EA[i]=-U_IP[i];
+    for(int i=0;i<n_act_;i++)U_EA[i*(n_act_+1)]=1.0+U_EA[i*(n_act_+1)];
+    
+    
+    double * GAMMA = new double[n_s*n_act_*n_act_*n_act_*n_act_];
+    set_zero_matr(GAMMA,n_s*n_act_*n_act_*n_act_*n_act_);
+    aldet_calc_DM_2body_AA_diag(GAMMA, n_states[a], n_states[a], coef    [a], n_act_, na, Na, Nb, fa, vec_a, 0, 1);
+    aldet_calc_DM_2body_AA_diag(GAMMA, n_states[a], n_states[a], coef_bas[0], n_act_, nb, Nb, Na, fb, vec_b, 0, 1);
+    for(int i=0;i<n_s*n_act_*n_act_*n_act_*n_act_;i++)GAMMA[i]=GAMMA[i]*0.5;
+    average_DM_aldet_diag(GAMMA,GAMMA,avecoe,n_act_*n_act_*n_act_*n_act_,n_s);
+    
+    double * GAMMA_EA = new double[n_act_*n_act_*n_act_*n_act_];
+    
+    for(int t=0;t<n_act_;t++)
+    for(int v=0;v<n_act_;v++)
+    for(int w=0;w<n_act_;w++)
+    for(int x=0;x<n_act_;x++){
+        GAMMA_EA[((v*n_act_+x)*n_act_+w)*n_act_+t]=GAMMA[((v*n_act_+x)*n_act_+w)*n_act_+t];
+        if(t==v)GAMMA_EA[((v*n_act_+x)*n_act_+w)*n_act_+t]+=U_IP[x*n_act_+w];
+        if(t==w)GAMMA_EA[((v*n_act_+x)*n_act_+w)*n_act_+t]-=U_IP[x*n_act_+v];
+    }
+    
+    double * GAMMA2 = new double[n_s*n_act_*n_act_*n_act_*n_act_];
+    set_zero_matr(GAMMA2,n_s*n_act_*n_act_*n_act_*n_act_);
+    aldet_calc_DM_2body_AB_diag(GAMMA2, n_states[a], n_states[a], coef    [a], n_act_, na, nb, Na, Nb, fa, fb, vec_a, vec_b, 0, 1);
+    average_DM_aldet_diag(GAMMA2,GAMMA2,avecoe,n_act_*n_act_*n_act_*n_act_,n_s);
+    
+    
+    double * GAMMA2_EA = new double[n_act_*n_act_*n_act_*n_act_];
+    
+    for(int t=0;t<n_act_;t++)
+    for(int v=0;v<n_act_;v++)
+    for(int w=0;w<n_act_;w++)
+    for(int x=0;x<n_act_;x++){
+        GAMMA2_EA[((v*n_act_+t)*n_act_+x)*n_act_+w]=-GAMMA2[((v*n_act_+t)*n_act_+x)*n_act_+w];
+        if(t==v)GAMMA2_EA[((v*n_act_+t)*n_act_+x)*n_act_+w]+=U_IP[x*n_act_+w]*2.0;
+    }
+    
+    //H_IP
+    set_zero_matr(H_IP,n_act_*n_act_);
+
+    for(int t=0;t<n_act_;t++)
+    for(int u=0;u<n_act_;u++)
+    for(int w=0;w<n_act_;w++)
+        H_IP[t*n_act_+u]+= U_IP[t*n_act_+w]*F_act_A[u*n_act_+w];//unrestricted variant
+    
+    
+    for(int t=0;t<n_act_;t++)
+    for(int u=0;u<n_act_;u++)
+    for(int v=0;v<n_act_;v++)
+    for(int x=0;x<n_act_;x++)
+    for(int y=0;y<n_act_;y++)
+        H_IP[t*n_act_+u]+=GAMMA[((t*n_act_+y)*n_act_+v)*n_act_+x]*0.5*
+                      (act_INTS_AA[((u*n_act_+y)*n_act_+x)*n_act_+v]-
+                       act_INTS_AA[((v*n_act_+y)*n_act_+x)*n_act_+u]);//unrestricted variant
+    
+    
+    for(int t=0;t<n_act_;t++)
+    for(int u=0;u<n_act_;u++)
+    for(int v=0;v<n_act_;v++)
+    for(int x=0;x<n_act_;x++)
+    for(int y=0;y<n_act_;y++)
+        H_IP[t*n_act_+u]+= GAMMA2[((t*n_act_+y)*n_act_+v)*n_act_+x]*0.5*
+                         act_INTS_AB[((u*n_act_+y)*n_act_+v)*n_act_+x];//unrestricted variant
+   
+//     fprintf(out_stream,"H:\n");
+//     PrintMatr(H_IP,n_act_,n_act_,0);
+    
+    
+    //H_EA
+    set_zero_matr(H_EA,n_act_*n_act_);
+
+    for(int t=0;t<n_act_;t++)
+    for(int u=0;u<n_act_;u++)
+    for(int v=0;v<n_act_;v++)
+        H_EA[t*n_act_+u]+= U_EA[t*n_act_+v]*F_act_A[u*n_act_+v];//unrestricted variant
+    
+    
+    for(int t=0;t<n_act_;t++)
+    for(int u=0;u<n_act_;u++)
+    for(int v=0;v<n_act_;v++)
+    for(int w=0;w<n_act_;w++)
+    for(int x=0;x<n_act_;x++)
+        H_EA[t*n_act_+u]+=GAMMA_EA[((v*n_act_+x)*n_act_+w)*n_act_+t]*0.5*
+                      (act_INTS_AA[((v*n_act_+u)*n_act_+w)*n_act_+x]-
+                       act_INTS_AA[((v*n_act_+x)*n_act_+w)*n_act_+u]);//unrestricted variant
+    for(int t=0;t<n_act_;t++)
+    for(int u=0;u<n_act_;u++)
+    for(int v=0;v<n_act_;v++)
+    for(int w=0;w<n_act_;w++)
+    for(int x=0;x<n_act_;x++)
+        H_EA[t*n_act_+u]+=GAMMA2_EA[((v*n_act_+t)*n_act_+x)*n_act_+w]*0.5*
+                      ( act_INTS_AB[((v*n_act_+u)*n_act_+w)*n_act_+x]);//unrestricted variant
+    
+   
+    
+//     PrintMatr(H_EA,n_act_,n_act_,0);
+    
+    
+    printf_timer("calculation of IPEA matrices");
+    delete[] GAMMA;
+    delete[] GAMMA_EA;
+    delete[] GAMMA2;
+    delete[] GAMMA2_EA;
+    delete[] gamma;
+ */   
+    return 0;
+}
+           
 
 

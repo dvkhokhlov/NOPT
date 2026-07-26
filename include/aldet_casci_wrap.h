@@ -42,9 +42,17 @@ public:
                          double * ext_T2,
                          double * ext_T2_AB,
                          double * ext_T1,
-                         double   ext_T0) override {ci_->PT2_import_data(ext_T3,ext_T3_AB,ext_T2,ext_T2_AB,ext_T1,ext_T0);}
+                         double   ext_T0) override {
+        ci_->PT2_import_data(ext_T3,ext_T3_AB,ext_T2,ext_T2_AB,ext_T1,ext_T0);
+    }
 
-    
+    int calc_IPEA_single(double * U_IP, double * H_IP, 
+                         double * U_EA, double * H_EA,
+                         int a, std::vector<double> avecoe)override {
+         ci_->calc_IPEA_single(U_IP, H_IP, U_EA, H_EA, a, avecoe);
+         return 1;
+    }
+
 
     // --- solve (transcription of CI_calc:306-314: fresh solver, set_par, H_diag, run) ---
     int solve(int primary, int read, bool use_prev_guess) override {
@@ -54,21 +62,23 @@ public:
         dav.V.H_diag_calc();
         return dav.run(primary, read);
     }
+        
 
     // --- reduced density matrices ---
     void calc_DM_diag(double* gamma, int a) override { ci_->calc_DM_diag(gamma, a); }
-    void G_calc(double* GAMMA) override { ci_->G_calc(GAMMA); }
+    void G_calc(double* GAMMA) override { ci_->G_calc(GAMMA); } //works differently then in DMRG !!!
     void calc_DMA(double* g, int a, int b) override { ci_->calc_DMA(g, a, b); }
     void calc_DMB(double* g, int a, int b) override { ci_->calc_DMB(g, a, b); }
 
     // --- queries ---
-    int    n_states()    const override { return ci_->n_states[0]; }
-    int    mult()        const override { return ci_->mult; }
-    double E_core()      const override { return ci_->E_core; }
-    double E_state(int i) const override { return ci_->E_states[0][i]; }
+    int    n_act()         const override { return ci_->n_act; }
+    int    n_states()      const override { return ci_->n_states[0]; }
+    int    mult()          const override { return ci_->mult; }
+    double E_core()        const override { return ci_->E_core; }
+    double E_state(int i)  const override { return ci_->E_states[0][i]; }
     double S2_state(int i) const override { return ci_->S2[0][i]; }
     double L2_state(int i) const override { return ci_->L2[0][i]; }
-    double P_state(int i) const override { return ci_->P[0][i]; }
+    double P_state(int i)  const override { return ci_->P[0][i]; }
     double* E_states_ptr() const override { return ci_->E_states[0]; }
 
     // --- wavefunction-vs-rotated-basis ops (all supported by the determinant CI) ---

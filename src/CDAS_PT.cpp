@@ -277,13 +277,14 @@ int CDAS_PT2(molecule * M, cdas_par * cdas, char * job_name){
     CAS.CI->as_aldet()->simple_import_data(act_INTS, act_INTS, H_AA, E_core);
     DMRG.import_integrals(act_INTS, H_AA, E_core);
     
+    CAS.CI=&DMRG;
     T.set_par(&R, eps, n_cor, n_act, n_virt, H_AV, H_CA, H_CV, cdas->edshift);
     if(cdas->IPEA){
-        T.IPEA(CAS.CI->as_aldet(), 0,cdas->cas->w_state);
+        T.IPEA(CAS.CI,cdas->cas->w_state);
         T.E2_calc_IPEA();
     }
     else if(cdas->MPPT){
-        T.MPPT(CAS.CI->as_aldet(), 0,cdas->cas->w_state);
+        T.MPPT(CAS.CI->as_aldet(), 0,cdas->cas->w_state);//to be fixed
         T.E2_calc_EE();
     }
     else{
@@ -294,7 +295,6 @@ int CDAS_PT2(molecule * M, cdas_par * cdas, char * job_name){
     fprintf(out_stream,"_______________________________________________________________________\n\n\n");
 
 
-    CAS.CI=&DMRG;
     CAS.CI->PT2_import_data(T.RF_P3_JK,
                 T.RF_P3_AB,
                 T.RF_PV_JK,

@@ -612,8 +612,8 @@ static bool rotate_retained_mps(dmrgci_engine &e) {
 
 void block2_casci_wrap::import_integrals(double *aaaa, double *f_act, double e_core) {
     dmrgci_engine &e = *impl_;
-    n_act = e.n_act;
-    const int n = n_act; //short name for more readability
+    n_act_ = e.n_act;
+    const int n = n_act_; //short name for more readability
     
     // When localizing, rotate the integrals into the localized basis (E_core is invariant).
     double *h1 = f_act, *h2 = aaaa;

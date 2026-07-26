@@ -1597,6 +1597,9 @@ int aldet_data::calc_IPEA_single(double * U_IP, double * H_IP,
     for(int i=0;i<n_s*n_act*n_act;i++)gamma[i]=gamma[i]*0.5;
     average_DM_aldet_diag(U_IP,gamma, avecoe,n_act*n_act,n_s);
     
+    PrintMatr(U_IP, n_act, n_act, 0);
+    exit(0);
+    
     //U_EA
     for(int i=0;i<n_act*n_act;i++)U_EA[i]=-U_IP[i];
     for(int i=0;i<n_act;i++)U_EA[i*(n_act+1)]=1.0+U_EA[i*(n_act+1)];

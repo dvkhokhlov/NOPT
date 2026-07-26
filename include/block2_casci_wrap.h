@@ -18,7 +18,7 @@ public:
     std::vector<double> g1;
     std::vector<double> g2;
     std::vector<double> g3;
-    int n_act;
+    int n_act_;
 
     // active-space dims (from M->CI[0]) + DMRG config; inits the block2 runtime once.
     block2_casci_wrap(int n_act, int na, int nb, int mult, int n_s, int print_number,
@@ -48,7 +48,9 @@ public:
                          double * ext_T1,
                          double   ext_T0) override;
 
-    
+    int calc_IPEA_single(double * U_IP, double * H_IP, 
+                         double * U_EA, double * H_EA,
+                         int a, std::vector<double> avecoe) override;
 
     // --- solve ---
     int solve(int primary, int read, bool use_prev_guess) override;
@@ -60,6 +62,7 @@ public:
     void calc_DMB(double* g, int a, int b) override;
 
     // --- queries ---
+    int    n_act()            const override;
     int    n_states()         const override;
     int    mult()             const override;
     double E_core()           const override;

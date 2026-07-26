@@ -62,6 +62,7 @@ void block2_casci_wrap::set_state_weights(const double *w, int n_s) {
     e.w_state.assign(w, w + n_s);
 }
 
+int    block2_casci_wrap::n_act()         const { return n_act_; }
 int    block2_casci_wrap::n_states()      const { return impl_->n_s; }
 int    block2_casci_wrap::mult()          const { return impl_->mult; }
 double block2_casci_wrap::E_core()        const { return g0; }

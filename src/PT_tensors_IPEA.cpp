@@ -337,14 +337,14 @@ int M_average(double * A, double * M, int n, int m, std::vector<double> w){
 // }
 // 
 
-int PT_tensors::IPEA(aldet_data * I, int i_set, std::vector<double> avecoe){
+int PT_tensors::IPEA(casci_solver * I, std::vector<double> avecoe){
         
-    if(n_a!= I->n_act){
+    if(n_a!= I->n_act()){
         fprintf(out_stream,"ERROR in IPEA\n");
         exit(0);
     }
     
-    int n_s =I->n_states[i_set];
+    int n_s =I->n_states();
     
     double * IP_H   = new double[n_a*n_a];
     double * EA_H   = new double[n_a*n_a];

@@ -11,6 +11,8 @@
 # include "CAS.h"
 # include "ecp.h"
 # include "aldet_rel.h"
+# include "version.h" // to be deleted after refactoring
+
 
 # define max(a,b)  (((a)<(b))?(b):(a))
 
@@ -400,7 +402,11 @@ int CDAS_PT2_rel(molecule * M, cdas_par * cdas, char * job_name){
 //         F_IPEA(T.e_IP,T.IP_U,T.IP_Um,T.IP_Up,-1, &(D.aldet),0,cdas->cas->w_state);//IP
         
         if(cdas->IPEA){
-            T.IPEA(&(D.aldet), 0,cdas->cas->w_state);
+            // delete include verssioh in the top ^
+            fprintf(out_stream,"ERROR: relativistic PT is not supported in %s version %s\n\n", PROJ_NAME, VERSION);
+            fprintf(out_stream,"       update is comming soon\n");
+            exit(1);
+            // T.IPEA(&(D.aldet), 0,cdas->cas->w_state);
             T.E2_calc_IPEA();
         }
         else if(cdas->MPPT){

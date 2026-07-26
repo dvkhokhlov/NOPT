@@ -2,6 +2,7 @@
 #define RES_FIT_H
 
 # include "RI.h"
+# include "casci_solver.h"
 
 class PT_tensors;
 
@@ -75,7 +76,7 @@ class PT_tensors
                     int ext_n_c, int ext_n_a, int ext_n_v, 
                     double * ext_H_AV, double * ext_H_CA, double * ext_H_CV,
                     double ext_edshift);
-        int IPEA(aldet_data * I, int i_set, std::vector<double> avecoe);
+        int IPEA(casci_solver * I, std::vector<double> avecoe);
         int MPPT(aldet_data * I, int i_set, std::vector<double> avecoe);
         int set_zero();
         int symm();
