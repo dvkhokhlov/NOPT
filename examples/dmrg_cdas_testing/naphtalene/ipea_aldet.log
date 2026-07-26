@@ -1,6 +1,6 @@
 
 NonOrtogonal quantum chemistry and Perturbation Theory
-                  NOPT version 3.3
+                  NOPT version 3.3.1 -- testing DMRG-CDAS
 
 
 sQM - standart QM module.
@@ -10,9 +10,9 @@ Compilation options:
 2) non-parallel BLAS matrix multiplication in the OMP parallel cycles
 
 selected command  line options:
--i           naphtalene_IPEA.inp	 input file
+-i           naphtalene_IPEA_aldet.inp	 input file
 
-Calculation started at: 02:08 (MSK), 24 July 2026 (Friday).
+Calculation started at: 02:33 (MSK), 27 July 2026 (Monday).
 
 _______________________________________________________________________
 
@@ -49,8 +49,7 @@ Input file:
   28: _MO INP=naphtalene_RHF_S.orb
   29: $END
   30: $CAS n_s=1 w_state=all_1; cisolver=aldet maxit=50 dE=1e-12 grad=1e-6 p_cutoff=0.03 $END
-  31: $DMRG m=200 extract_cutoff=1E-10 sweep_tol=1E-10 $END
-  32: $CDAS IPEA $END
+  31: $CDAS IPEA $END
 _______________________________________________________________________
 
 
@@ -67,6 +66,7 @@ Restricted Hartree-Fock                          -     no
 Complete Active Space SCF                        -     yes
 eXtended MultiConfiguration QuasiDegenerate PT   -     no 
 Complete Degenerate Active Space PT              -     yes
+Second order Moller-Plesset PT                   -     no 
 Settings:
 D5                                               -     yes
 Resolution of Identity                           -     yes
@@ -1156,8 +1156,8 @@ X,Y,Z - cartesian coordinates (Bohr)
 
 
 Calculation of 1-el matrices:
-Time to step -    0.75521
-Full time    -    0.75521
+Time to step -    0.76880
+Full time    -    0.76880
 
 
 
@@ -1202,8 +1202,8 @@ _______________________________________________________________________
 
 
 RI integrals calculation:
-Time to step -    0.69482
-Full time    -    1.45003
+Time to step -    0.77814
+Full time    -    1.54694
 
 
 ____________________Starting_Davidson_diagonalization__________________
@@ -1312,8 +1312,8 @@ State 0  E  =    -383.4763810791 S^2 = 0.00:
 
 
 Davidson diagonalization:
-Time to step -    1.30465
-Full time    -    2.75469
+Time to step -    1.48443
+Full time    -    3.03137
 _______________________________________________________________________
 
 
@@ -1346,11 +1346,11 @@ ____|___________________|____________|___________|___________|_______|__________
 Lagrangian converged after 9 iterations
 
 CAS_SCF iterations:
-Time to step -   12.46394
-Full time    -   15.21863
+Time to step -   11.96375
+Full time    -   14.99512
 Preparation of canonical orbitals:
-Time to step -    0.78637
-Full time    -   16.00500
+Time to step -    0.79106
+Full time    -   15.78618
 CAS_SCF WaveFunctions:
 
 State 0  E  =    -383.5052853387 S^2 = 0.00:
@@ -1397,8 +1397,8 @@ _______________________________________________________________________
 
 
 CAS_SCF:
-Time to step -    0.08065
-Full time    -   16.08566
+Time to step -    0.08124
+Full time    -   15.86743
 
 
 
@@ -1431,8 +1431,8 @@ vacant   :  1.8647e-01   2.0168e-01   2.0194e-01   2.3653e-01   2.4145e-01   2.5
 
 
 Fock matrix calculation:
-Time to step -    0.00069
-Full time    -   16.08635
+Time to step -    0.00062
+Full time    -   15.86805
 _______________________________________________________________________
 
 
@@ -1440,12 +1440,12 @@ Start calculation of PT2 correction
 
 
 RI orbital transformation:
-Time to step -    0.60812
-Full time    -   16.69447
+Time to step -    0.59757
+Full time    -   16.46562
 
 calculation of IPEA matrices:
-Time to step -    0.39224
-Full time    -   17.08670
+Time to step -    0.37215
+Full time    -   16.83777
 IP:
  -7.6914e-01  -7.1925e-01  -6.7396e-01  -6.3039e-01  -6.1587e-01  -5.4107e-01  -4.6353e-01  -4.0650e-01  -3.4730e-01  -3.2322e-01 
 IP coefficients:
@@ -1462,51 +1462,51 @@ IP coefficients:
 EA:
   1.5924e-01   1.8646e-01   2.6192e-01   3.5425e-01   4.6320e-01   4.8020e-01   4.9419e-01   5.3521e-01   6.0784e-01   6.8757e-01 
 EA coefficients:
- -2.0802e-12  -1.0934e-02   3.2948e-12  -3.1307e-12   2.1669e-12  -9.9994e-01  -2.5951e-11   3.2429e-12  -3.3138e-12   2.7533e-12 
-  4.0777e-12  -7.7063e-13  -3.3674e-02   4.7541e-13   6.8661e-12  -2.6028e-11   9.9942e-01  -4.6659e-12   2.7745e-12   4.0891e-03 
- -2.2606e-03   4.3286e-12  -5.7553e-12   4.3364e-02  -1.0861e-11  -3.4185e-12  -4.8847e-12  -9.9906e-01  -1.1500e-11   3.7126e-12 
-  1.5854e-12   4.3289e-12  -2.8626e-12  -4.0718e-12   9.5310e-03   3.2870e-12   2.6161e-12   1.1226e-11  -9.9995e-01  -4.7360e-13 
- -1.0552e-11   1.6021e-11   3.1204e-11   6.4020e-11   9.9995e-01   1.9606e-12  -5.7133e-12  -8.1777e-12   9.5310e-03  -3.2246e-11 
-  1.3791e-02   2.9350e-11   1.4380e-11   9.9897e-01  -6.3417e-11  -3.3368e-12   4.9539e-13   4.3329e-02  -4.1639e-12  -8.3130e-11 
-  2.3069e-12  -1.3793e-12  -5.5012e-02   8.3518e-11   3.3881e-11   2.7372e-12  -5.9387e-03   7.6763e-12  -8.0111e-15   9.9847e-01 
-  1.3504e-11  -4.8598e-11  -9.9792e-01   9.3387e-12   2.9141e-11  -2.0419e-12  -3.3397e-02   6.0823e-12   3.0738e-12  -5.5180e-02 
-  3.6253e-11  -9.9994e-01   4.8565e-11   2.9053e-11   1.6039e-11   1.0934e-02   1.1450e-12  -3.1909e-12  -4.1400e-12   1.2713e-12 
- -9.9990e-01  -3.5837e-11  -1.3530e-11   1.3680e-02  -1.1387e-11   2.4385e-12   3.6289e-12   2.8563e-03  -1.7175e-12   4.2005e-13 
+ -2.0802e-12  -1.0934e-02   3.2948e-12  -3.1310e-12   2.1669e-12  -9.9994e-01  -2.5954e-11   3.2429e-12  -3.3137e-12   2.7533e-12 
+  4.0777e-12  -7.7075e-13  -3.3674e-02   4.7525e-13   6.8666e-12  -2.6032e-11   9.9942e-01  -4.6660e-12   2.7747e-12   4.0891e-03 
+ -2.2606e-03   4.3285e-12  -5.7551e-12   4.3364e-02  -1.0861e-11  -3.4185e-12  -4.8847e-12  -9.9906e-01  -1.1500e-11   3.7126e-12 
+  1.5854e-12   4.3290e-12  -2.8629e-12  -4.0718e-12   9.5310e-03   3.2869e-12   2.6164e-12   1.1226e-11  -9.9995e-01  -4.7367e-13 
+ -1.0552e-11   1.6022e-11   3.1209e-11   6.4020e-11   9.9995e-01   1.9597e-12  -5.7135e-12  -8.1777e-12   9.5310e-03  -3.2247e-11 
+  1.3791e-02   2.9350e-11   1.4380e-11   9.9897e-01  -6.3417e-11  -3.3368e-12   4.9548e-13   4.3329e-02  -4.1639e-12  -8.3130e-11 
+  2.3069e-12  -1.3793e-12  -5.5012e-02   8.3518e-11   3.3882e-11   2.7372e-12  -5.9387e-03   7.6762e-12  -8.0551e-15   9.9847e-01 
+  1.3504e-11  -4.8600e-11  -9.9792e-01   9.3394e-12   2.9146e-11  -2.0418e-12  -3.3397e-02   6.0817e-12   3.0736e-12  -5.5180e-02 
+  3.6253e-11  -9.9994e-01   4.8568e-11   2.9053e-11   1.6040e-11   1.0934e-02   1.1448e-12  -3.1907e-12  -4.1401e-12   1.2714e-12 
+ -9.9990e-01  -3.5837e-11  -1.3530e-11   1.3680e-02  -1.1388e-11   2.4385e-12   3.6289e-12   2.8563e-03  -1.7175e-12   4.2005e-13 
 CCVV res table:
-Time to step -    0.28423
-Full time    -   17.37093
+Time to step -    0.29352
+Full time    -   17.13129
 
 CAVV res table:
-Time to step -    0.30656
-Full time    -   17.67750
+Time to step -    0.31274
+Full time    -   17.44403
 
 AAVV res table:
-Time to step -   12.13180
-Full time    -   29.80930
+Time to step -   11.30740
+Full time    -   28.75143
 
 CCAV res table:
-Time to step -    0.58021
-Full time    -   30.38951
+Time to step -    0.56015
+Full time    -   29.31158
 
 CCAA res table:
-Time to step -    0.78193
-Full time    -   31.17144
+Time to step -    0.77251
+Full time    -   30.08409
 
 CV   res table:
-Time to step -    0.16357
-Full time    -   31.33501
+Time to step -    0.16514
+Full time    -   30.24923
 
 AV   res table:
-Time to step -    0.57536
-Full time    -   31.91036
+Time to step -    0.51791
+Full time    -   30.76714
 
 CA   res table:
-Time to step -    2.55900
-Full time    -   34.46936
+Time to step -    2.53309
+Full time    -   33.30023
 
 PT tensors calculation:
-Time to step -    0.00572
-Full time    -   34.47508
+Time to step -    0.00584
+Full time    -   33.30606
 _______________________________________________________________________
 
 
@@ -1523,7 +1523,7 @@ ____|___________________|____________|___________|
 ____|___________________|____________|___________|
 number of corr vectors=302
 0 roots converged at step 0
-maximum deviation from symmetric form - 1.663087e-13
+maximum deviation from symmetric form - 1.529626e-13
 
 
 Step 1
@@ -1534,7 +1534,7 @@ ____|___________________|____________|___________|
 ____|___________________|____________|___________|
 number of corr vectors=303
 0 roots converged at step 1
-maximum deviation from symmetric form - 6.529454e-13
+maximum deviation from symmetric form - 1.852597e-12
 
 
 Step 2
@@ -1545,7 +1545,7 @@ ____|___________________|____________|___________|
 ____|___________________|____________|___________|
 number of corr vectors=304
 0 roots converged at step 2
-maximum deviation from symmetric form - 3.161480e-12
+maximum deviation from symmetric form - 4.285386e-12
 
 
 Step 3
@@ -1556,7 +1556,7 @@ ____|___________________|____________|___________|
 ____|___________________|____________|___________|
 number of corr vectors=305
 0 roots converged at step 3
-maximum deviation from symmetric form - 2.054997e-11
+maximum deviation from symmetric form - 1.605437e-11
 
 
 Step 4
@@ -1573,20 +1573,20 @@ CAS_CI WaveFunctions:
 
 State 0  E  =    -384.8065493233 S^2 = 0.00:
 -9.6524572066e-01  | 1111100000 | 1111100000
- 7.5672589078e-02  | 1111010000 | 1111010000
- 6.2892958822e-02  | 1110101000 | 1110101000
- 4.8767755381e-02  | 1111100000 | 1110011000
- 4.8767755381e-02  | 1110011000 | 1111100000
--4.4136782347e-02  | 1111010000 | 1101100100
+ 7.5672589080e-02  | 1111010000 | 1111010000
+ 6.2892958824e-02  | 1110101000 | 1110101000
+ 4.8767755382e-02  | 1110011000 | 1111100000
+ 4.8767755382e-02  | 1111100000 | 1110011000
 -4.4136782347e-02  | 1101100100 | 1111010000
--4.1890988360e-02  | 1110110000 | 1111001000
--4.1890988360e-02  | 1111001000 | 1110110000
--4.0939787440e-02  | 1101110000 | 1111000100
+-4.4136782347e-02  | 1111010000 | 1101100100
+-4.1890988361e-02  | 1110110000 | 1111001000
+-4.1890988361e-02  | 1111001000 | 1110110000
+-4.0939787441e-02  | 1111000100 | 1101110000
 
 
 Davidson diagonalization:
-Time to step -    4.90755
-Full time    -   39.38263
+Time to step -    4.56217
+Full time    -   37.86823
 _______________________________________________________________________
 
 
@@ -1598,50 +1598,50 @@ CDAS-PT2 extended results:
 __________________________________________________________________________________________
  State| E                 | S^2  | weight |      d_x      |      d_y      |      d_z      |
 ______|___________________|______|________|_______________|_______________|_______________|
-    0 |   -384.8065493233 | 0.00 | 1.00   | -6.010667e-14 | -1.508762e-10 | -4.167823e-11 |
+    0 |   -384.8065493233 | 0.00 | 1.00   | -6.010667e-14 | -1.545434e-10 | -4.134739e-11 |
 ______|___________________|______|________________________________________________________|
 
 
 
 CDAS-PT(0) Dipole moment:
 
-d[  0,  0] = {-6.010667e-14,-1.508762e-10,-4.167823e-11} |d| = 1.565270e-10
+d[  0,  0] = {-6.010667e-14,-1.545434e-10,-4.134739e-11} |d| = 1.599790e-10
 
 
 PT1 dipole moment - d(1):
 
 calculation of 1st order correction of one-electron property (dipole moment d(1)):
-Time to step -    0.05493
-Full time    -   39.43756
+Time to step -    0.05373
+Full time    -   37.92196
 calculation of first order properties:
-Time to step -    0.38302
-Full time    -   39.82058
+Time to step -    0.40103
+Full time    -   38.32299
 calculation of 1st order correction of one-electron property (dipole moment d(1)):
-Time to step -    0.03562
-Full time    -   39.85620
+Time to step -    0.02402
+Full time    -   38.34701
 calculation of first order properties:
-Time to step -    0.42312
-Full time    -   40.27932
+Time to step -    0.39253
+Full time    -   38.73954
 calculation of 1st order correction of one-electron property (dipole moment d(1)):
-Time to step -    0.03149
-Full time    -   40.31082
+Time to step -    0.02443
+Full time    -   38.76397
 calculation of first order properties:
-Time to step -    0.42169
-Full time    -   40.73251
+Time to step -    0.38856
+Full time    -   39.15253
 
 
 
 Dipole CDAS(0+1):
 
-d[  0,  0] = {-6.093796e-14,-1.512681e-10,-5.743346e-11} |d| = 1.618044e-10
+d[  0,  0] = {-6.093796e-14,-1.545666e-10,-5.718209e-11} |d| = 1.648048e-10
 
 
 _______________________________________________________________________
 
 
 CDAS-PT2:
-Time to step -    0.00003
-Full time    -   40.73254
+Time to step -    0.00002
+Full time    -   39.15256
 
 
-Calculation finished at: 02:09 (MSK), 24 July 2026 (Friday).
+Calculation finished at: 02:34 (MSK), 27 July 2026 (Monday).

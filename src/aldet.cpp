@@ -1597,9 +1597,6 @@ int aldet_data::calc_IPEA_single(double * U_IP, double * H_IP,
     for(int i=0;i<n_s*n_act*n_act;i++)gamma[i]=gamma[i]*0.5;
     average_DM_aldet_diag(U_IP,gamma, avecoe,n_act*n_act,n_s);
     
-    PrintMatr(U_IP, n_act, n_act, 0);
-    exit(0);
-    
     //U_EA
     for(int i=0;i<n_act*n_act;i++)U_EA[i]=-U_IP[i];
     for(int i=0;i<n_act;i++)U_EA[i*(n_act+1)]=1.0+U_EA[i*(n_act+1)];
@@ -1612,16 +1609,6 @@ int aldet_data::calc_IPEA_single(double * U_IP, double * H_IP,
     for(int i=0;i<n_s*n_act*n_act*n_act*n_act;i++)GAMMA[i]=GAMMA[i]*0.5;
     average_DM_aldet_diag(GAMMA,GAMMA,avecoe,n_act*n_act*n_act*n_act,n_s);
     
-    double * GAMMA_EA = new double[n_act*n_act*n_act*n_act];
-    
-    for(int t=0;t<n_act;t++)
-    for(int v=0;v<n_act;v++)
-    for(int w=0;w<n_act;w++)
-    for(int x=0;x<n_act;x++){
-        GAMMA_EA[((v*n_act+x)*n_act+w)*n_act+t]=GAMMA[((v*n_act+x)*n_act+w)*n_act+t];
-        if(t==v)GAMMA_EA[((v*n_act+x)*n_act+w)*n_act+t]+=U_IP[x*n_act+w];
-        if(t==w)GAMMA_EA[((v*n_act+x)*n_act+w)*n_act+t]-=U_IP[x*n_act+v];
-    }
     
     double * GAMMA2 = new double[n_s*n_act*n_act*n_act*n_act];
     set_zero_matr(GAMMA2,n_s*n_act*n_act*n_act*n_act);
@@ -1629,15 +1616,12 @@ int aldet_data::calc_IPEA_single(double * U_IP, double * H_IP,
     average_DM_aldet_diag(GAMMA2,GAMMA2,avecoe,n_act*n_act*n_act*n_act,n_s);
     
     
-    double * GAMMA2_EA = new double[n_act*n_act*n_act*n_act];
+    // double * GAMMA3 = new double[n_s*n_act*n_act*n_act*n_act];
+    // for(int i=0; i<n_act*n_act*n_act*n_act;i++)GAMMA3[i]=2*GAMMA[i]+GAMMA2[i];
     
-    for(int t=0;t<n_act;t++)
-    for(int v=0;v<n_act;v++)
-    for(int w=0;w<n_act;w++)
-    for(int x=0;x<n_act;x++){
-        GAMMA2_EA[((v*n_act+t)*n_act+x)*n_act+w]=-GAMMA2[((v*n_act+t)*n_act+x)*n_act+w];
-        if(t==v)GAMMA2_EA[((v*n_act+t)*n_act+x)*n_act+w]+=U_IP[x*n_act+w]*2.0;
-    }
+    // PrintMatr(GAMMA3, n_act*n_act, n_act*n_act, 0);
+    // exit(0);
+    
     
     //H_IP
     set_zero_matr(H_IP,n_act*n_act);
@@ -1646,6 +1630,8 @@ int aldet_data::calc_IPEA_single(double * U_IP, double * H_IP,
     for(int u=0;u<n_act;u++)
     for(int w=0;w<n_act;w++)
         H_IP[t*n_act+u]+= U_IP[t*n_act+w]*F_act_A[u*n_act+w];//unrestricted variant
+    
+    
     
     
     for(int t=0;t<n_act;t++)
@@ -1665,8 +1651,10 @@ int aldet_data::calc_IPEA_single(double * U_IP, double * H_IP,
     for(int y=0;y<n_act;y++)
         H_IP[t*n_act+u]+= GAMMA2[((t*n_act+y)*n_act+v)*n_act+x]*0.5*
                          act_INTS_AB[((u*n_act+y)*n_act+v)*n_act+x];//unrestricted variant
-   
-//     fprintf(out_stream,"H:\n");
+    
+    // fprintf(out_stream,"H_IP:\n");
+    // PrintMatr(H_IP, n_act, n_act, 0);
+    
 //     PrintMatr(H_IP,n_act,n_act,0);
     
     
@@ -1683,28 +1671,37 @@ int aldet_data::calc_IPEA_single(double * U_IP, double * H_IP,
     for(int u=0;u<n_act;u++)
     for(int v=0;v<n_act;v++)
     for(int w=0;w<n_act;w++)
-    for(int x=0;x<n_act;x++)
-        H_EA[t*n_act+u]+=GAMMA_EA[((v*n_act+x)*n_act+w)*n_act+t]*0.5*
+    for(int x=0;x<n_act;x++){
+        H_EA[t*n_act+u]+=GAMMA[((v*n_act+x)*n_act+w)*n_act+t]*0.5*
                       (act_INTS_AA[((v*n_act+u)*n_act+w)*n_act+x]-
                        act_INTS_AA[((v*n_act+x)*n_act+w)*n_act+u]);//unrestricted variant
+    }
+    
+    for(int t=0;t<n_act;t++)
+    for(int u=0;u<n_act;u++)
+    for(int v=0;v<n_act;v++)
+    for(int x=0;x<n_act;x++){
+        H_EA[t*n_act+u]+=U_IP[x*n_act+v]*(2*act_INTS_AA[((t*n_act+u)*n_act+v)*n_act+x]-act_INTS_AA[((t*n_act+x)*n_act+v)*n_act+u]);
+    }
+    
+    
     for(int t=0;t<n_act;t++)
     for(int u=0;u<n_act;u++)
     for(int v=0;v<n_act;v++)
     for(int w=0;w<n_act;w++)
-    for(int x=0;x<n_act;x++)
-        H_EA[t*n_act+u]+=GAMMA2_EA[((v*n_act+t)*n_act+x)*n_act+w]*0.5*
-                      ( act_INTS_AB[((v*n_act+u)*n_act+w)*n_act+x]);//unrestricted variant
+    for(int x=0;x<n_act;x++){
+        H_EA[t*n_act+u]-=GAMMA2[((v*n_act+t)*n_act+x)*n_act+w]*0.5*( act_INTS_AB[((v*n_act+u)*n_act+w)*n_act+x]);//unrestricted variant
+    }
     
    
-    
-//     PrintMatr(H_EA,n_act,n_act,0);
-    
+    // fprintf(out_stream,"H_EA:\n");
+    // PrintMatr(H_EA,n_act,n_act,0);
+    // exit(0);
     
     printf_timer("calculation of IPEA matrices");
     delete[] GAMMA;
-    delete[] GAMMA_EA;
+    // delete[] GAMMA_EA;
     delete[] GAMMA2;
-    delete[] GAMMA2_EA;
     delete[] gamma;
     
     return 0;

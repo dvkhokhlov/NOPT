@@ -1,6 +1,6 @@
 
 NonOrtogonal quantum chemistry and Perturbation Theory
-                  NOPT version 3.3
+                  NOPT version 3.3.1 -- testing DMRG-CDAS
 
 
 sQM - standart QM module.
@@ -10,9 +10,9 @@ Compilation options:
 2) non-parallel BLAS matrix multiplication in the OMP parallel cycles
 
 selected command  line options:
--i           naphtalene_EE.inp	 input file
+-i           naphtalene_EE_aldet.inp	 input file
 
-Calculation started at: 02:05 (MSK), 24 July 2026 (Friday).
+Calculation started at: 02:23 (MSK), 27 July 2026 (Monday).
 
 _______________________________________________________________________
 
@@ -49,8 +49,7 @@ Input file:
   28: _MO INP=naphtalene_RHF_S.orb
   29: $END
   30: $CAS n_s=1 w_state=all_1; cisolver=aldet maxit=50 dE=1e-12 grad=1e-6 p_cutoff=0.03 $END
-  31: $DMRG m=300 extract_cutoff=1E-10 sweep_tol=1E-10 $END
-  32: $CDAS HOMO $END
+  31: $CDAS HOMO $END
 _______________________________________________________________________
 
 
@@ -67,6 +66,7 @@ Restricted Hartree-Fock                          -     no
 Complete Active Space SCF                        -     yes
 eXtended MultiConfiguration QuasiDegenerate PT   -     no 
 Complete Degenerate Active Space PT              -     yes
+Second order Moller-Plesset PT                   -     no 
 Settings:
 D5                                               -     yes
 Resolution of Identity                           -     yes
@@ -1156,8 +1156,8 @@ X,Y,Z - cartesian coordinates (Bohr)
 
 
 Calculation of 1-el matrices:
-Time to step -    0.75708
-Full time    -    0.75708
+Time to step -    0.76651
+Full time    -    0.76651
 
 
 
@@ -1202,8 +1202,8 @@ _______________________________________________________________________
 
 
 RI integrals calculation:
-Time to step -    0.68835
-Full time    -    1.44543
+Time to step -    0.69162
+Full time    -    1.45812
 
 
 ____________________Starting_Davidson_diagonalization__________________
@@ -1312,8 +1312,8 @@ State 0  E  =    -383.4763810791 S^2 = 0.00:
 
 
 Davidson diagonalization:
-Time to step -    1.33372
-Full time    -    2.77915
+Time to step -    1.50929
+Full time    -    2.96741
 _______________________________________________________________________
 
 
@@ -1346,11 +1346,11 @@ ____|___________________|____________|___________|___________|_______|__________
 Lagrangian converged after 9 iterations
 
 CAS_SCF iterations:
-Time to step -   12.91167
-Full time    -   15.69082
+Time to step -   12.85101
+Full time    -   15.81842
 Preparation of canonical orbitals:
-Time to step -    0.84706
-Full time    -   16.53788
+Time to step -    0.83556
+Full time    -   16.65398
 CAS_SCF WaveFunctions:
 
 State 0  E  =    -383.5052853387 S^2 = 0.00:
@@ -1397,8 +1397,8 @@ _______________________________________________________________________
 
 
 CAS_SCF:
-Time to step -    0.07980
-Full time    -   16.61768
+Time to step -    0.08036
+Full time    -   16.73435
 
 
 
@@ -1432,8 +1432,8 @@ vacant   :  1.8647e-01   2.0168e-01   2.0194e-01   2.3653e-01   2.4145e-01   2.5
 
 
 Fock matrix calculation:
-Time to step -    0.00073
-Full time    -   16.61841
+Time to step -    0.00064
+Full time    -   16.73499
 _______________________________________________________________________
 
 
@@ -1441,44 +1441,44 @@ Start calculation of PT2 correction
 
 
 RI orbital transformation:
-Time to step -    0.59361
-Full time    -   17.21202
+Time to step -    0.73203
+Full time    -   17.46702
 
 CCVV res table:
-Time to step -    0.28557
-Full time    -   17.49758
+Time to step -    0.31553
+Full time    -   17.78255
 
 CAVV res table:
-Time to step -    0.30261
-Full time    -   17.80020
+Time to step -    0.31438
+Full time    -   18.09693
 
 AAVV res table:
-Time to step -    0.32456
-Full time    -   18.12476
+Time to step -    0.32690
+Full time    -   18.42383
 
 CCAV res table:
-Time to step -    0.09358
-Full time    -   18.21833
+Time to step -    0.09508
+Full time    -   18.51891
 
 CCAA res table:
-Time to step -    0.01516
-Full time    -   18.23349
+Time to step -    0.01514
+Full time    -   18.53405
 
 CV   res table:
-Time to step -    0.16995
-Full time    -   18.40343
+Time to step -    0.17376
+Full time    -   18.70781
 
 AV   res table:
-Time to step -    0.29580
-Full time    -   18.69923
+Time to step -    0.26660
+Full time    -   18.97442
 
 CA   res table:
-Time to step -    0.09689
-Full time    -   18.79613
+Time to step -    0.09825
+Full time    -   19.07267
 
 PT tensors calculation:
-Time to step -    0.00590
-Full time    -   18.80202
+Time to step -    0.00598
+Full time    -   19.07865
 _______________________________________________________________________
 
 
@@ -1557,8 +1557,8 @@ State 0  E  =    -384.8413775097 S^2 = 0.00:
 
 
 Davidson diagonalization:
-Time to step -    5.68591
-Full time    -   24.48793
+Time to step -    5.04042
+Full time    -   24.11907
 _______________________________________________________________________
 
 
@@ -1583,23 +1583,23 @@ d[  0,  0] = {-6.011861e-14,-1.584162e-10,-3.990146e-11} |d| = 1.633641e-10
 PT1 dipole moment - d(1):
 
 calculation of 1st order correction of one-electron property (dipole moment d(1)):
-Time to step -    0.05445
-Full time    -   24.54239
+Time to step -    0.08055
+Full time    -   24.19962
 calculation of first order properties:
-Time to step -    0.37697
-Full time    -   24.91936
+Time to step -    0.38238
+Full time    -   24.58199
 calculation of 1st order correction of one-electron property (dipole moment d(1)):
-Time to step -    0.02518
-Full time    -   24.94453
+Time to step -    0.03418
+Full time    -   24.61618
 calculation of first order properties:
-Time to step -    0.40647
-Full time    -   25.35100
+Time to step -    0.37661
+Full time    -   24.99279
 calculation of 1st order correction of one-electron property (dipole moment d(1)):
-Time to step -    0.03582
-Full time    -   25.38683
+Time to step -    0.03267
+Full time    -   25.02546
 calculation of first order properties:
-Time to step -    0.38062
-Full time    -   25.76744
+Time to step -    0.37408
+Full time    -   25.39954
 
 
 
@@ -1613,7 +1613,7 @@ _______________________________________________________________________
 
 CDAS-PT2:
 Time to step -    0.00003
-Full time    -   25.76747
+Full time    -   25.39957
 
 
-Calculation finished at: 02:05 (MSK), 24 July 2026 (Friday).
+Calculation finished at: 02:24 (MSK), 27 July 2026 (Monday).

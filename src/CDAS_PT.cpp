@@ -174,6 +174,7 @@ int CDAS_PT2(molecule * M, cdas_par * cdas, char * job_name){
     // block2_casci_wrap DMRG(n_act, M->CI[0].na, M->CI[0].nb, M->CI[0].mult, n_s, M->CI[0].print_number, cas->dmrg);
     // DMRG->init_state_storage(n_s,0);
     
+#ifdef LOCALIZE_CDAS
     pm_localizer localizer(*M);
     
     double * U_loc = new double[n_act*n_act];
@@ -192,19 +193,19 @@ int CDAS_PT2(molecule * M, cdas_par * cdas, char * job_name){
     copy_MO_to_CVEC(M->MO_VEC,n_cor,n_act, n_virt,n_ao,COR_VEC,ACT_VEC,VIRT_VEC);
     CAS->CI->malmqvist(0, U_loc);
     
-    
     if(!lr.converged)
         fprintf(out_stream,"WARNING: active-space localization did not converge; running delocalized\n");
     else
         fprintf(out_stream,"WARNING: active-space localization CONVERGED; running localized\n");
     
-    fprintf(out_stream,"vacant   :");fPrintMatr(out_stream,eps_e,1,n_virt,0);
-    fprintf(out_stream,"\n\n");
     
     M->MO_gamess_format();
     sprintf(name,"%s_DMRG_CDAS_loc.out\0",job_name);
     M->GAMESS_type_out_print(name,-1);
     fprintf(out_stream,"visualization file: %s\n",name);
+#endif
+    fprintf(out_stream,"vacant   :");fPrintMatr(out_stream,eps_e,1,n_virt,0);
+    fprintf(out_stream,"\n\n");
         
     
     
@@ -271,13 +272,19 @@ int CDAS_PT2(molecule * M, cdas_par * cdas, char * job_name){
     //deferred into the stock branch so the SF path never builds the n_a^6 tables.
     PT_tensors T;
 
+    block2_casci_wrap DMRG(n_act, M->CI[0].na, M->CI[0].nb, M->CI[0].mult, n_s, M->CI[0].print_number, cdas->cas->dmrg);
+    
     if(CAS->CI->as_aldet()!=nullptr){
         CAS->CI->as_aldet()->simple_import_data(act_INTS, act_INTS, H_AA, E_core);
     }
-    else
-        CAS->CI->import_integrals(act_INTS, H_AA, E_core);
+    else{
     
-    // CAS->CI=&DMRG;
+        DMRG.import_integrals(act_INTS, H_AA, E_core);
+        CAS->CI=&DMRG;
+        // CAS->CI->import_integrals(act_INTS, H_AA, E_core);
+        CAS->CI->solve(1,0,false);
+    }
+    
     T.set_par(&R, eps, n_cor, n_act, n_virt, H_AV, H_CA, H_CV, cdas->edshift);
     if(cdas->IPEA){
         T.IPEA(CAS->CI,cdas->cas->w_state);
@@ -309,7 +316,7 @@ int CDAS_PT2(molecule * M, cdas_par * cdas, char * job_name){
     fprintf(out_stream,"\n\nCDAS-PT2 Energy summary:\n");
     PrintEnergy(CAS->CI->E_states_ptr(),CAS->n_s,1);
     
-    exit(1);
+    if(CAS->CI->as_aldet()==nullptr)exit(1);
     double * print_d[3];
     print_d[0]=CAS->Prop_value                  ;
     print_d[1]=CAS->Prop_value+CAS->n_s*CAS->n_s  ; 
