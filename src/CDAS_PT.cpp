@@ -301,7 +301,11 @@ int CDAS_PT2(molecule * M, cdas_par * cdas, char * job_name){
         T.E2_calc_IPEA();
     }
     else if(cdas->MPPT){
-        T.MPPT(CAS->CI->as_aldet(), 0,cdas->cas->w_state);//to be fixed
+        if(CAS->CI->as_aldet()==nullptr){
+            fprintf(out_stream,"ERROR: MPPT is supported by the aldet solver only; use cisolver=aldet\n\n");
+            exit(1);
+        }
+        T.MPPT(CAS->CI->as_aldet(), 0,cdas->cas->w_state);
         T.E2_calc_EE();
     }
     else{
