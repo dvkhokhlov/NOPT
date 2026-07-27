@@ -34,6 +34,14 @@ int single_point_calc( inp_par * P, molecule * Qm){
                                "(the SO/GRPP path is determinant-only)\n");
             exit(EXIT_FAILURE);
         }
+        // The dmrg backend fills the active orbital energies from a dense diagonalization of the
+        // active Fock block, the aldet one per irrep, so away from C1 the two orderings differ.
+        if(P->cdas.y && IS_SYM && (P->cdas.HOMO || P->cdas.orb_e)){
+            fprintf(out_stream,"ERROR: HOMO and USE_ORB_FOR_ENERGY pick an active orbital by position, and that "
+                               "position is not the same for the dmrg and aldet backends under symmetry\n"
+                               "       (use ENERGY or IPEA)\n");
+            exit(EXIT_FAILURE);
+        }
     }
 
     Qm->gen_1el_data();

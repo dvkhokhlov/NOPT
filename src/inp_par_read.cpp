@@ -1317,7 +1317,7 @@ int cdas_par::read_group(char * inp, cas_par * ext_cas){
         if(actual||mult_e||fit_e){
             fprintf(out_stream,"ERROR: per-orbital active energies are not supported with the dmrg solver\n");
             fprintf(out_stream,"       (active orbitals are not canonical)\n");
-            fprintf(out_stream,"       use HOMO, ENERGY or USE_ORB_FOR_ENERGY\n");
+            fprintf(out_stream,"       use HOMO, ENERGY, USE_ORB_FOR_ENERGY or IPEA\n");
             exit(1);
         }
     }

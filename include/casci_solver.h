@@ -64,8 +64,9 @@ public:
 
     // --- solve ---
     // Encapsulates the full diagonalisation (aldet: copy_coef -> set_par -> H_diag_calc -> run).
-    // use_prev_guess: warm-start from the previous state when the backend holds a usable one in the
-    // current basis; a backend without one starts cold. false forces a cold start.
+    // use_prev_guess: this solve continues from the previous solution -- the backend may snapshot
+    // that solution (state tracking) and/or reuse it as its starting guess. false marks an
+    // independent solve and forces a cold start.
     // Returns an iteration/convergence count.
     virtual int solve(int primary, int read, bool use_prev_guess) = 0;
     

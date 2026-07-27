@@ -294,7 +294,7 @@ int CDAS_PT2(molecule * M, cdas_par * cdas, char * job_name){
         //the PT stage solves in the orbitals rotated above, so the solver keeps that frame
         dmrg_par pt_dmrg = cdas->cas->dmrg;
         pt_dmrg.localize = DMRG_LOC_OFF;
-        if(cdas->cas->dmrg.localize==DMRG_LOC_PM)
+        if(ACT_MO_save!=nullptr)
             fprintf(out_stream,"NOTE: the PT stage runs in the localized orbitals -- solver-internal localization is off\n\n");
         DMRG = std::make_unique<block2_casci_wrap>(n_act, M->CI[0].na, M->CI[0].nb, M->CI[0].mult, n_s, M->CI[0].print_number, pt_dmrg);
         //the weights the internally averaged RDMs carry, the same the driver averages with
@@ -344,8 +344,11 @@ int CDAS_PT2(molecule * M, cdas_par * cdas, char * job_name){
     fprintf(out_stream,"\n\nCDAS-PT2 Energy summary:\n");
     PrintEnergy(CAS->CI->E_states_ptr(),CAS->n_s,1);
     
-    if(CAS->CI->as_aldet()==nullptr)
-        fprintf(out_stream,"properties are not available with cisolver=dmrg -- skipped\n\n");
+    if(CAS->CI->as_aldet()==nullptr){
+        fprintf(out_stream,"properties are not available with cisolver=dmrg -- skipped\n");
+        if(write_ci)fprintf(out_stream,"CI/MPS wavefunction output not supported by the DMRG backend -- skipped\n");
+        fprintf(out_stream,"\n");
+    }
     else{
         double * print_d[3];
         print_d[0]=CAS->Prop_value                  ;
