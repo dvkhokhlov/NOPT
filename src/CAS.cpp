@@ -1439,8 +1439,7 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
         fprintf(out_stream,"data file         : %s\n",name);
         fprintf(out_stream,"\n");
         
-        //this must be checked!! 
-        if(false/*MO_act_save!=nullptr*/){
+        if(MO_act_save!=nullptr){
             memcpy(M->MO_VEC+CAS->n_core*M->n_ao, MO_act_save, CAS->n_act*M->n_ao*sizeof(double));
             memcpy(M->orb_energy+CAS->n_core    , ev_act_save, CAS->n_act        *sizeof(double));
         }
