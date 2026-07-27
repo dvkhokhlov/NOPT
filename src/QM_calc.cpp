@@ -21,7 +21,7 @@ extern coord_list C;
 int single_point_calc( inp_par * P, molecule * Qm){ 
         
     // XMCQDPT needs the determinant CI object the DMRG backend does not provide; the relativistic
-    // (SO) CDAS path is likewise determinant-only. Non-relativistic CDAS routes to CDAS_PT_dmrg
+    // (SO) CDAS path is likewise determinant-only. Non-relativistic CDAS runs through CDAS_PT2
     // below (SO is a global fixed at parse time, so it is already valid here).
     if(P->cas.y && P->cas.ci_solver==CISOLVER_DMRG){
         if(P->xmc.y){
