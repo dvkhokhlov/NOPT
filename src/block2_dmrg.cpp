@@ -737,7 +737,7 @@ static void recompute_cold_order(dmrgci_engine &e) {
     e.mpo = build_qc_mpo(e.hamil);
 }
 
-int block2_casci_wrap::solve(int, int, bool) {
+int block2_casci_wrap::solve(int, int, bool use_prev_guess) {
     dmrgci_engine &e = *impl_;
     host_threads_guard htg;
     assert_stack_clean("solve entry"); // block2 LIFO stacks must be empty between macro-iterations
@@ -749,8 +749,10 @@ int block2_casci_wrap::solve(int, int, bool) {
     // false) if the basis change is too large, in which case we cold-start this iteration.
     // Same condition import_integrals keyed the frozen lattice order on, before the rotation could decline.
     const bool order_frozen = (e.have_rotation && !e.reorder_perm.empty());
+    // use_prev_guess false forces a cold start; true warms only when the host armed a rotation
+    // and an MPS is retained.
     bool warm = (e.cfg.warm_start == DMRG_WARM_ON && e.have_rotation && e.mps != nullptr &&
-                 e.mps_info != nullptr);
+                 e.mps_info != nullptr && use_prev_guess);
     if (warm) {
         reload_retained_mps(e);        // fresh from disk (the in-memory shell is stale post-solve)
         if (e.cfg.warm_rotate == DMRG_WARM_ON)
