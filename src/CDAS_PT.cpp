@@ -297,7 +297,8 @@ int CDAS_PT2(molecule * M, cdas_par * cdas, char * job_name){
         DMRG->set_state_weights(cdas->cas->w_state.data(), n_s);
         DMRG->import_integrals(act_INTS, H_AA, E_core);
         CAS->CI=DMRG.get();
-        CAS->CI->solve(1,0,false);
+        //the bare solution is read by the IP/EA construction only
+        if(cdas->IPEA) CAS->CI->solve(1,0,false);
 #else
         fprintf(out_stream,"ERROR: CISOLVER=dmrg selected, but this build was compiled without block2 (set USE_BLOCK2=yes)\n");
         exit(EXIT_FAILURE);
