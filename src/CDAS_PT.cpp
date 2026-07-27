@@ -9,18 +9,12 @@
 # include "inp_out.h"
 # include "XMCQDPT.h"
 # include "CAS.h"
-# include "cdas_sf_tensors.h"
 # include "localizer.h"
 #ifdef NOPT_HAS_BLOCK2
 # include "block2_casci_wrap.h"
 #endif
 
 extern int num_threads;
-
-// SF tensor dump writer (src/cdas_sf_spincase.cpp); the frozen header is untouched.
-void cdas_sf_write_dump(const char* path_prefix, const char* scheme,
-                        const char* basis, double eps_A,
-                        const cdas_sf_tensors& t);
 
 // extern int testing;
 
@@ -285,8 +279,8 @@ int CDAS_PT2(molecule * M, cdas_par * cdas, char * job_name){
     fflush(out_stream);
     
     
-    //PT — declaration only (ctor nulls pointers); set_par (allocation) is
-    //deferred into the stock branch so the SF path never builds the n_a^6 tables.
+    //PT — declaration only (ctor nulls pointers); the n_a^6 tables are
+    //allocated below by set_par.
     PT_tensors T;
 
     //the PT stage may drive its own solver; the engine gets its original back before return
@@ -390,10 +384,6 @@ int CDAS_PT2(molecule * M, cdas_par * cdas, char * job_name){
         set_zero_matr(d_y1,n_s*n_s);
         set_zero_matr(d_z1,n_s*n_s);
     
-        if(cdas->SF_ENGINE && print_dipole && cdas->pt1_d)
-            fprintf(out_stream,"PT1 dipole (d(1)) skipped under SF_ENGINE"
-                               " (the SF engine builds no property tensors)\n");
-        if(!cdas->SF_ENGINE)
         if(print_dipole)if(cdas->pt1_d){
             fprintf(out_stream,"PT1 dipole moment - d(1):\n\n");
             if(cdas->IPEA){

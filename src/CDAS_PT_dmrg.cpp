@@ -19,11 +19,6 @@
 # include <cstdio>
 # include <cstdlib>
 
-// SF tensor dump writer (src/cdas_sf_spincase.cpp); the frozen header is untouched.
-void cdas_sf_write_dump(const char* path_prefix, const char* scheme,
-                        const char* basis, double eps_A,
-                        const cdas_sf_tensors& t);
-
 // Split an MO-row matrix V[orb*d_all+ao] into per-space column vectors [ao*n+orb]
 // (core|active|virtual by row offset). Mirrors CDAS_PT.cpp's copy_MO_to_CVEC.
 static void mo_rows_to_cvec(const double* V, int d1, int d2, int d3, int d_all,
@@ -200,8 +195,6 @@ int CDAS_PT_dmrg(molecule * M, cdas_par * cdas, char * job_name){
     Ksf.deriv = 0;
     cdas_sf_tensors out;
     cdas_sf_build(R_loc, eps, n_cor, n_act, n_virt, H_AV.data(), H_CA.data(), H_CV.data(), Ksf, out);
-    if(cdas->DUMP_TENSORS)
-        cdas_sf_write_dump(job_name, "EE", "lattice", eps_A, out);
     printf_timer("DMRG-CDAS SF tensors");
     fflush(out_stream);
 

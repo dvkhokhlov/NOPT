@@ -443,10 +443,6 @@ vector<const char *>cdas_rot_orbs{{"rotate"}};
 
 vector<const char *>pt1_dipole_kw{{"pt1_dipole"}};
 
-vector<const char *>cdas_sf_engine_kw{{"sf_engine"}};
-
-vector<const char *>cdas_dump_tensors_kw{{"dump_tensors"}};
-
 vector<const char *>d5_kw{{"d5"}};
                             
 vector<const char *>ri_kw{{"ri"}};
