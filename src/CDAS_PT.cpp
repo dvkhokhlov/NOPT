@@ -151,13 +151,6 @@ int CDAS_PT2(molecule * M, cdas_par * cdas, char * job_name){
     if((cdas->cas->ci_solver!=CISOLVER_DMRG)&&(cdas->cas->dmrg.localize==DMRG_LOC_PM))
         fprintf(out_stream,"NOTE: active-space localization is a DMRG feature -- ignored for cisolver=aldet\n\n");
 
-    //only a scheme giving every active orbital the same energy survives the active rotation
-    if(localize_act&&!cdas->IPEA&&(cdas->have_eps||cdas->actual)){
-        fprintf(out_stream,"ERROR: per-orbital active energies are not supported with active-space localization\n");
-        fprintf(out_stream,"       use HOMO, ENERGY or USE_ORB_FOR_ENERGY\n");
-        exit(1);
-    }
-
     fprintf(out_stream,"\n");
     fprintf(out_stream,"Orbital energies (3 blocks):\n");
     fprintf(out_stream,"core     :");fPrintMatr(out_stream,eps  ,1,n_cor,0);

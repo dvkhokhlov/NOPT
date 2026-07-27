@@ -1308,9 +1308,22 @@ int cdas_par::read_group(char * inp, cas_par * ext_cas){
         fprintf(out_stream,"       you must choose only one.\n");
         exit(1);
     }
-        
-    
-    
+
+    if(ext_cas->ci_solver==CISOLVER_DMRG){
+        if(MPPT){
+            fprintf(out_stream,"ERROR: MPPT is supported by the aldet solver only; use cisolver=aldet\n");
+            exit(1);
+        }
+        if(actual||mult_e||fit_e){
+            fprintf(out_stream,"ERROR: per-orbital active energies are not supported with the dmrg solver\n");
+            fprintf(out_stream,"       (active orbitals are not canonical)\n");
+            fprintf(out_stream,"       use HOMO, ENERGY or USE_ORB_FOR_ENERGY\n");
+            exit(1);
+        }
+    }
+
+
+
     return 0;
 }
 
