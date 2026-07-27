@@ -174,7 +174,9 @@ int CDAS_PT2(molecule * M, cdas_par * cdas, char * job_name){
     
     // block2_casci_wrap DMRG(n_act, M->CI[0].na, M->CI[0].nb, M->CI[0].mult, n_s, M->CI[0].print_number, cas->dmrg);
     // DMRG->init_state_storage(n_s,0);
-    
+
+    //the localized actives belong to the PT stage; the molecule gets its own back before return
+    double * ACT_MO_save = nullptr;
     if(localize_act){
         pm_localizer localizer(*M);
 
@@ -188,6 +190,8 @@ int CDAS_PT2(molecule * M, cdas_par * cdas, char * job_name){
         else{
             double * TMP_MO = new double[M->n_act_orb[0]*M->n_ao];
             double * ACT_MO = M->MO_VEC+M->n_cor_orb*M->n_ao;
+            ACT_MO_save = new double[M->n_act_orb[0]*M->n_ao];
+            memcpy(ACT_MO_save, ACT_MO, sizeof(double)*M->n_act_orb[0]*M->n_ao);
             nopt_par_dgemm(CblasRowMajor,CblasTrans,CblasNoTrans,
                            M->n_act_orb[0], M->n_ao, M->n_act_orb[0], 1.0,
                            U_loc, M->n_act_orb[0],
@@ -492,6 +496,11 @@ int CDAS_PT2(molecule * M, cdas_par * cdas, char * job_name){
     delete[] act_INTS ;
 
     CAS->CI = CI_engine;
+
+    if(ACT_MO_save != nullptr){
+        memcpy(M->MO_VEC+M->n_cor_orb*M->n_ao, ACT_MO_save, sizeof(double)*M->n_act_orb[0]*M->n_ao);
+        delete[] ACT_MO_save;
+    }
 
     return 0;
  
