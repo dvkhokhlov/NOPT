@@ -152,6 +152,18 @@ int CDAS_PT2(molecule * M, cdas_par * cdas, char * job_name){
     double * eps_a = eps   + n_cor;
     double * eps_e = eps_a + n_act;
 
+    //active-space localization: the $DMRG localize option, DMRG backend only
+    int localize_act = (cdas->cas->ci_solver==CISOLVER_DMRG)&&(cdas->cas->dmrg.localize==DMRG_LOC_PM);
+    if((cdas->cas->ci_solver!=CISOLVER_DMRG)&&(cdas->cas->dmrg.localize==DMRG_LOC_PM))
+        fprintf(out_stream,"NOTE: active-space localization is a DMRG feature -- ignored for cisolver=aldet\n\n");
+
+    //only a scheme giving every active orbital the same energy survives the active rotation
+    if(localize_act&&!cdas->IPEA&&(cdas->have_eps||cdas->actual)){
+        fprintf(out_stream,"ERROR: per-orbital active energies are not supported with active-space localization\n");
+        fprintf(out_stream,"       use HOMO, ENERGY or USE_ORB_FOR_ENERGY\n");
+        exit(1);
+    }
+
     fprintf(out_stream,"\n");
     fprintf(out_stream,"Orbital energies (3 blocks):\n");
     fprintf(out_stream,"core     :");fPrintMatr(out_stream,eps  ,1,n_cor,0);
@@ -176,11 +188,6 @@ int CDAS_PT2(molecule * M, cdas_par * cdas, char * job_name){
     // block2_casci_wrap DMRG(n_act, M->CI[0].na, M->CI[0].nb, M->CI[0].mult, n_s, M->CI[0].print_number, cas->dmrg);
     // DMRG->init_state_storage(n_s,0);
     
-    //active-space localization: the $DMRG localize option, DMRG backend only
-    int localize_act = (cdas->cas->ci_solver==CISOLVER_DMRG)&&(cdas->cas->dmrg.localize==DMRG_LOC_PM);
-    if((cdas->cas->ci_solver!=CISOLVER_DMRG)&&(cdas->cas->dmrg.localize==DMRG_LOC_PM))
-        fprintf(out_stream,"NOTE: active-space localization is a DMRG feature -- ignored for cisolver=aldet\n\n");
-
     if(localize_act){
         pm_localizer localizer(*M);
 
