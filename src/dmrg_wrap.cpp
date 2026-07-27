@@ -22,7 +22,17 @@ block2_casci_wrap::block2_casci_wrap(int n_act, int na, int nb, int mult, int n_
     ensure_block2_runtime(cfg.save_dir, cfg.memory, nthr);
 }
 
-block2_casci_wrap::~block2_casci_wrap() = default;
+// The engine owns its MPS tag namespace, so its final scratch set leaves with it: every other tag
+// (per-root extracts, the read-out copies) is removed where it is made. Best-effort and silent --
+// a destructor must not propagate, and the runtime clears the whole scratch dir at exit anyway.
+block2_casci_wrap::~block2_casci_wrap() {
+    if (impl_ == nullptr || impl_->mps_info == nullptr)
+        return;
+    try {
+        remove_tag_files(impl_->mps_info->tag);
+    } catch (...) {
+    }
+}
 
 // ----------------------- casci_solver contract ----------------------------------------
 void block2_casci_wrap::init_state_storage(int n_s, int) {
