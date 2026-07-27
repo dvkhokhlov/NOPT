@@ -1269,6 +1269,7 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
     }
     
     //CAS engine reading from A state 0 fragment 0
+    if(M->CAS!=nullptr)delete [] M->CAS;
     M->CAS = new CAS_engine[1];
     CAS_engine * CAS = M->CAS;
     CAS->init(cas ,M);
