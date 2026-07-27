@@ -293,7 +293,14 @@ int CDAS_PT2(molecule * M, cdas_par * cdas, char * job_name){
     }
     else{
 #ifdef NOPT_HAS_BLOCK2
-        DMRG = std::make_unique<block2_casci_wrap>(n_act, M->CI[0].na, M->CI[0].nb, M->CI[0].mult, n_s, M->CI[0].print_number, cdas->cas->dmrg);
+        //the PT stage solves in the orbitals rotated above, so the solver keeps that frame
+        dmrg_par pt_dmrg = cdas->cas->dmrg;
+        pt_dmrg.localize = DMRG_LOC_OFF;
+        if(cdas->cas->dmrg.localize==DMRG_LOC_PM)
+            fprintf(out_stream,"NOTE: the PT stage runs in the localized orbitals -- solver-internal localization is off\n\n");
+        DMRG = std::make_unique<block2_casci_wrap>(n_act, M->CI[0].na, M->CI[0].nb, M->CI[0].mult, n_s, M->CI[0].print_number, pt_dmrg);
+        //the weights the internally averaged RDMs carry, the same the driver averages with
+        DMRG->set_state_weights(cdas->cas->w_state.data(), n_s);
         DMRG->import_integrals(act_INTS, H_AA, E_core);
         CAS->CI=DMRG.get();
         CAS->CI->solve(1,0,false);
