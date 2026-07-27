@@ -11,7 +11,9 @@
 # include "CAS.h"
 # include "cdas_sf_tensors.h"
 # include "localizer.h"
+#ifdef NOPT_HAS_BLOCK2
 # include "block2_casci_wrap.h"
+#endif
 
 extern int num_threads;
 
@@ -272,17 +274,25 @@ int CDAS_PT2(molecule * M, cdas_par * cdas, char * job_name){
     //deferred into the stock branch so the SF path never builds the n_a^6 tables.
     PT_tensors T;
 
-    block2_casci_wrap DMRG(n_act, M->CI[0].na, M->CI[0].nb, M->CI[0].mult, n_s, M->CI[0].print_number, cdas->cas->dmrg);
-    
+    //the PT stage may drive its own solver; the engine gets its original back before return
+    casci_solver * CI_engine = CAS->CI;
+#ifdef NOPT_HAS_BLOCK2
+    std::unique_ptr<block2_casci_wrap> DMRG;
+#endif
+
     if(CAS->CI->as_aldet()!=nullptr){
         CAS->CI->as_aldet()->simple_import_data(act_INTS, act_INTS, H_AA, E_core);
     }
     else{
-    
-        DMRG.import_integrals(act_INTS, H_AA, E_core);
-        CAS->CI=&DMRG;
-        // CAS->CI->import_integrals(act_INTS, H_AA, E_core);
+#ifdef NOPT_HAS_BLOCK2
+        DMRG = std::make_unique<block2_casci_wrap>(n_act, M->CI[0].na, M->CI[0].nb, M->CI[0].mult, n_s, M->CI[0].print_number, cdas->cas->dmrg);
+        DMRG->import_integrals(act_INTS, H_AA, E_core);
+        CAS->CI=DMRG.get();
         CAS->CI->solve(1,0,false);
+#else
+        fprintf(out_stream,"ERROR: CISOLVER=dmrg selected, but this build was compiled without block2 (set USE_BLOCK2=yes)\n");
+        exit(EXIT_FAILURE);
+#endif
     }
     
     T.set_par(&R, eps, n_cor, n_act, n_virt, H_AV, H_CA, H_CV, cdas->edshift);
@@ -470,6 +480,8 @@ int CDAS_PT2(molecule * M, cdas_par * cdas, char * job_name){
     delete[] J       ;
     delete[] K       ;
     delete[] act_INTS ;
+
+    CAS->CI = CI_engine;
 
     return 0;
  
