@@ -1377,6 +1377,10 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
         lapack_diag(U_canon, ev_canon, CAS->n_act);
         normalize_rotation_rows(U_canon, CAS->n_act);
         CAS->CI->set_report_rotation(U_canon);
+        // The eigenvalues of the active Fock block are basis-invariant scalars, so a backend that
+        // cannot rotate its CI vector keeps them as its active orbital energies while its orbitals
+        // stay in the solve frame.
+        memcpy(M->orb_energy+CAS->n_core, ev_canon, CAS->n_act*sizeof(double));
     }
     // Only the core and virtual blocks were canonicalized for such a backend, which leaves the active
     // Hamiltonian -- and its solution -- untouched. Re-solving would report determinants, properties
