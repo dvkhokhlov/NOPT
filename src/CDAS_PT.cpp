@@ -176,36 +176,44 @@ int CDAS_PT2(molecule * M, cdas_par * cdas, char * job_name){
     // block2_casci_wrap DMRG(n_act, M->CI[0].na, M->CI[0].nb, M->CI[0].mult, n_s, M->CI[0].print_number, cas->dmrg);
     // DMRG->init_state_storage(n_s,0);
     
-#ifdef LOCALIZE_CDAS
-    pm_localizer localizer(*M);
-    
-    double * U_loc = new double[n_act*n_act];
-    
-    loc_result lr = localizer.localize(ACT_VEC, n_ao, n_act, nullptr, U_loc);
-    double * TMP_MO = new double[M->n_act_orb[0]*M->n_ao];
-    double * ACT_MO = M->MO_VEC+M->n_cor_orb*M->n_ao;
-    nopt_par_dgemm(CblasRowMajor,CblasTrans,CblasNoTrans,
-                   M->n_act_orb[0], M->n_ao, M->n_act_orb[0], 1.0,
-                   U_loc, M->n_act_orb[0],
-                   ACT_MO, n_ao,0.0,
-                   TMP_MO,n_ao);
-    
-    memcpy(ACT_MO, TMP_MO, sizeof(double)*M->n_act_orb[0]*M->n_ao);
-    delete[] TMP_MO;
-    copy_MO_to_CVEC(M->MO_VEC,n_cor,n_act, n_virt,n_ao,COR_VEC,ACT_VEC,VIRT_VEC);
-    CAS->CI->malmqvist(0, U_loc);
-    
-    if(!lr.converged)
-        fprintf(out_stream,"WARNING: active-space localization did not converge; running delocalized\n");
-    else
-        fprintf(out_stream,"WARNING: active-space localization CONVERGED; running localized\n");
-    
-    
-    M->MO_gamess_format();
-    sprintf(name,"%s_DMRG_CDAS_loc.out\0",job_name);
-    M->GAMESS_type_out_print(name,-1);
-    fprintf(out_stream,"visualization file: %s\n",name);
-#endif
+    //active-space localization: the $DMRG localize option, DMRG backend only
+    int localize_act = (cdas->cas->ci_solver==CISOLVER_DMRG)&&(cdas->cas->dmrg.localize==DMRG_LOC_PM);
+    if((cdas->cas->ci_solver!=CISOLVER_DMRG)&&(cdas->cas->dmrg.localize==DMRG_LOC_PM))
+        fprintf(out_stream,"NOTE: active-space localization is a DMRG feature -- ignored for cisolver=aldet\n\n");
+
+    if(localize_act){
+        pm_localizer localizer(*M);
+
+        double * U_loc = new double[n_act*n_act];
+
+        //U=I fallback of a localizer that did not converge or could not be built; the run stays
+        //in the delocalized basis, so nothing is applied
+        loc_result lr = localizer.localize(ACT_VEC, n_ao, n_act, nullptr, U_loc);
+        if(!lr.converged)
+            fprintf(out_stream,"NOTE: active-space localization unavailable; running delocalized\n");
+        else{
+            double * TMP_MO = new double[M->n_act_orb[0]*M->n_ao];
+            double * ACT_MO = M->MO_VEC+M->n_cor_orb*M->n_ao;
+            nopt_par_dgemm(CblasRowMajor,CblasTrans,CblasNoTrans,
+                           M->n_act_orb[0], M->n_ao, M->n_act_orb[0], 1.0,
+                           U_loc, M->n_act_orb[0],
+                           ACT_MO, n_ao,0.0,
+                           TMP_MO,n_ao);
+
+            memcpy(ACT_MO, TMP_MO, sizeof(double)*M->n_act_orb[0]*M->n_ao);
+            delete[] TMP_MO;
+            copy_MO_to_CVEC(M->MO_VEC,n_cor,n_act, n_virt,n_ao,COR_VEC,ACT_VEC,VIRT_VEC);
+
+            fprintf(out_stream,"active-space localization converged; running localized\n");
+
+            M->MO_gamess_format();
+            sprintf(name,"%s_DMRG_CDAS_loc.out\0",job_name);
+            M->GAMESS_type_out_print(name,-1);
+            fprintf(out_stream,"visualization file: %s\n",name);
+        }
+
+        delete[] U_loc;
+    }
     fprintf(out_stream,"vacant   :");fPrintMatr(out_stream,eps_e,1,n_virt,0);
     fprintf(out_stream,"\n\n");
         
