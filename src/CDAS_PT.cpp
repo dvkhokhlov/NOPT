@@ -9,16 +9,12 @@
 # include "inp_out.h"
 # include "XMCQDPT.h"
 # include "CAS.h"
-# include "cdas_sf_tensors.h"
 # include "localizer.h"
+#ifdef NOPT_HAS_BLOCK2
 # include "block2_casci_wrap.h"
+#endif
 
 extern int num_threads;
-
-// SF tensor dump writer (src/cdas_sf_spincase.cpp); the frozen header is untouched.
-void cdas_sf_write_dump(const char* path_prefix, const char* scheme,
-                        const char* basis, double eps_A,
-                        const cdas_sf_tensors& t);
 
 // extern int testing;
 
@@ -150,6 +146,11 @@ int CDAS_PT2(molecule * M, cdas_par * cdas, char * job_name){
     double * eps_a = eps   + n_cor;
     double * eps_e = eps_a + n_act;
 
+    //active-space localization: the $DMRG localize option, DMRG backend only
+    int localize_act = (cdas->cas->ci_solver==CISOLVER_DMRG)&&(cdas->cas->dmrg.localize==DMRG_LOC_PM);
+    if((cdas->cas->ci_solver!=CISOLVER_DMRG)&&(cdas->cas->dmrg.localize==DMRG_LOC_PM))
+        fprintf(out_stream,"NOTE: active-space localization is a DMRG feature -- ignored for cisolver=aldet\n\n");
+
     fprintf(out_stream,"\n");
     fprintf(out_stream,"Orbital energies (3 blocks):\n");
     fprintf(out_stream,"core     :");fPrintMatr(out_stream,eps  ,1,n_cor,0);
@@ -173,37 +174,44 @@ int CDAS_PT2(molecule * M, cdas_par * cdas, char * job_name){
     
     // block2_casci_wrap DMRG(n_act, M->CI[0].na, M->CI[0].nb, M->CI[0].mult, n_s, M->CI[0].print_number, cas->dmrg);
     // DMRG->init_state_storage(n_s,0);
-    
-#ifdef LOCALIZE_CDAS
-    pm_localizer localizer(*M);
-    
-    double * U_loc = new double[n_act*n_act];
-    
-    loc_result lr = localizer.localize(ACT_VEC, n_ao, n_act, nullptr, U_loc);
-    double * TMP_MO = new double[M->n_act_orb[0]*M->n_ao];
-    double * ACT_MO = M->MO_VEC+M->n_cor_orb*M->n_ao;
-    nopt_par_dgemm(CblasRowMajor,CblasTrans,CblasNoTrans,
-                   M->n_act_orb[0], M->n_ao, M->n_act_orb[0], 1.0,
-                   U_loc, M->n_act_orb[0],
-                   ACT_MO, n_ao,0.0,
-                   TMP_MO,n_ao);
-    
-    memcpy(ACT_MO, TMP_MO, sizeof(double)*M->n_act_orb[0]*M->n_ao);
-    delete[] TMP_MO;
-    copy_MO_to_CVEC(M->MO_VEC,n_cor,n_act, n_virt,n_ao,COR_VEC,ACT_VEC,VIRT_VEC);
-    CAS->CI->malmqvist(0, U_loc);
-    
-    if(!lr.converged)
-        fprintf(out_stream,"WARNING: active-space localization did not converge; running delocalized\n");
-    else
-        fprintf(out_stream,"WARNING: active-space localization CONVERGED; running localized\n");
-    
-    
-    M->MO_gamess_format();
-    sprintf(name,"%s_DMRG_CDAS_loc.out\0",job_name);
-    M->GAMESS_type_out_print(name,-1);
-    fprintf(out_stream,"visualization file: %s\n",name);
-#endif
+
+    //the localized actives belong to the PT stage; the molecule gets its own back before return
+    double * ACT_MO_save = nullptr;
+    if(localize_act){
+        pm_localizer localizer(*M);
+
+        double * U_loc = new double[n_act*n_act];
+
+        //U=I fallback of a localizer that did not converge or could not be built; the run stays
+        //in the delocalized basis, so nothing is applied
+        loc_result lr = localizer.localize(ACT_VEC, n_ao, n_act, nullptr, U_loc);
+        if(!lr.converged)
+            fprintf(out_stream,"NOTE: active-space localization unavailable; running delocalized\n");
+        else{
+            double * TMP_MO = new double[M->n_act_orb[0]*M->n_ao];
+            double * ACT_MO = M->MO_VEC+M->n_cor_orb*M->n_ao;
+            ACT_MO_save = new double[M->n_act_orb[0]*M->n_ao];
+            memcpy(ACT_MO_save, ACT_MO, sizeof(double)*M->n_act_orb[0]*M->n_ao);
+            nopt_par_dgemm(CblasRowMajor,CblasTrans,CblasNoTrans,
+                           M->n_act_orb[0], M->n_ao, M->n_act_orb[0], 1.0,
+                           U_loc, M->n_act_orb[0],
+                           ACT_MO, n_ao,0.0,
+                           TMP_MO,n_ao);
+
+            memcpy(ACT_MO, TMP_MO, sizeof(double)*M->n_act_orb[0]*M->n_ao);
+            delete[] TMP_MO;
+            copy_MO_to_CVEC(M->MO_VEC,n_cor,n_act, n_virt,n_ao,COR_VEC,ACT_VEC,VIRT_VEC);
+
+            fprintf(out_stream,"active-space localization converged; running localized\n");
+
+            M->MO_gamess_format();
+            sprintf(name,"%s_DMRG_CDAS_loc.out\0",job_name);
+            M->GAMESS_type_out_print(name,-1);
+            fprintf(out_stream,"visualization file: %s\n",name);
+        }
+
+        delete[] U_loc;
+    }
     fprintf(out_stream,"vacant   :");fPrintMatr(out_stream,eps_e,1,n_virt,0);
     fprintf(out_stream,"\n\n");
         
@@ -268,21 +276,37 @@ int CDAS_PT2(molecule * M, cdas_par * cdas, char * job_name){
     fflush(out_stream);
     
     
-    //PT — declaration only (ctor nulls pointers); set_par (allocation) is
-    //deferred into the stock branch so the SF path never builds the n_a^6 tables.
+    //PT — declaration only (ctor nulls pointers); the n_a^6 tables are
+    //allocated below by set_par.
     PT_tensors T;
 
-    block2_casci_wrap DMRG(n_act, M->CI[0].na, M->CI[0].nb, M->CI[0].mult, n_s, M->CI[0].print_number, cdas->cas->dmrg);
-    
+    //the PT stage may drive its own solver; the engine gets its original back before return
+    casci_solver * CI_engine = CAS->CI;
+#ifdef NOPT_HAS_BLOCK2
+    std::unique_ptr<block2_casci_wrap> DMRG;
+#endif
+
     if(CAS->CI->as_aldet()!=nullptr){
         CAS->CI->as_aldet()->simple_import_data(act_INTS, act_INTS, H_AA, E_core);
     }
     else{
-    
-        DMRG.import_integrals(act_INTS, H_AA, E_core);
-        CAS->CI=&DMRG;
-        // CAS->CI->import_integrals(act_INTS, H_AA, E_core);
-        CAS->CI->solve(1,0,false);
+#ifdef NOPT_HAS_BLOCK2
+        //the PT stage solves in the orbitals rotated above, so the solver keeps that frame
+        dmrg_par pt_dmrg = cdas->cas->dmrg;
+        pt_dmrg.localize = DMRG_LOC_OFF;
+        if(ACT_MO_save!=nullptr)
+            fprintf(out_stream,"NOTE: the PT stage runs in the localized orbitals -- solver-internal localization is off\n\n");
+        DMRG = std::make_unique<block2_casci_wrap>(n_act, M->CI[0].na, M->CI[0].nb, M->CI[0].mult, n_s, M->CI[0].print_number, pt_dmrg);
+        //the weights the internally averaged RDMs carry, the same the driver averages with
+        DMRG->set_state_weights(cdas->cas->w_state.data(), n_s);
+        DMRG->import_integrals(act_INTS, H_AA, E_core);
+        CAS->CI=DMRG.get();
+        //the bare solution is read by the IP/EA construction only
+        if(cdas->IPEA) CAS->CI->solve(1,0,false);
+#else
+        fprintf(out_stream,"ERROR: CISOLVER=dmrg selected, but this build was compiled without block2 (set USE_BLOCK2=yes)\n");
+        exit(EXIT_FAILURE);
+#endif
     }
     
     T.set_par(&R, eps, n_cor, n_act, n_virt, H_AV, H_CA, H_CV, cdas->edshift);
@@ -291,7 +315,11 @@ int CDAS_PT2(molecule * M, cdas_par * cdas, char * job_name){
         T.E2_calc_IPEA();
     }
     else if(cdas->MPPT){
-        T.MPPT(CAS->CI->as_aldet(), 0,cdas->cas->w_state);//to be fixed
+        if(CAS->CI->as_aldet()==nullptr){
+            fprintf(out_stream,"ERROR: MPPT is supported by the aldet solver only; use cisolver=aldet\n\n");
+            exit(1);
+        }
+        T.MPPT(CAS->CI->as_aldet(), 0,cdas->cas->w_state);
         T.E2_calc_EE();
     }
     else{
@@ -316,72 +344,78 @@ int CDAS_PT2(molecule * M, cdas_par * cdas, char * job_name){
     fprintf(out_stream,"\n\nCDAS-PT2 Energy summary:\n");
     PrintEnergy(CAS->CI->E_states_ptr(),CAS->n_s,1);
     
-    if(CAS->CI->as_aldet()==nullptr)exit(1);
-    double * print_d[3];
-    print_d[0]=CAS->Prop_value                  ;
-    print_d[1]=CAS->Prop_value+CAS->n_s*CAS->n_s  ; 
-    print_d[2]=CAS->Prop_value+CAS->n_s*CAS->n_s*2;
-    
-    char * print_n[3];
-    print_n[0]=new char[BUF_LINE_LENGTH];sprintf(print_n[0],"     d_x     ");
-    print_n[1]=new char[BUF_LINE_LENGTH];sprintf(print_n[1],"     d_y     "); 
-    print_n[2]=new char[BUF_LINE_LENGTH];sprintf(print_n[2],"     d_z     ");
-    
-    
-    CAS->Prop_calc();
-    CAS->print_av_table_with_prop("CDAS-PT2 extended results:",3,print_d, print_n);
-    
-//     getchar();
-    fprintf(out_stream,"\n");
-    if(write_ci){
-        fprintf(out_stream,"Writing CDAS-PT2 WaveFunctions:\n");
-        sprintf(name,"%s_CDAS.ci\0",job_name);
-        CAS->CI->as_aldet()->write_civec(0, name);
-        fprintf(out_stream,"data file         : %s\n",name);
+    if(CAS->CI->as_aldet()==nullptr){
+        fprintf(out_stream,"properties are not available with cisolver=dmrg -- skipped\n");
+        if(write_ci)fprintf(out_stream,"CI/MPS wavefunction output not supported by the DMRG backend -- skipped\n");
+        fprintf(out_stream,"\n");
     }
+    else{
+        double * print_d[3];
+        print_d[0]=CAS->Prop_value                  ;
+        print_d[1]=CAS->Prop_value+CAS->n_s*CAS->n_s  ; 
+        print_d[2]=CAS->Prop_value+CAS->n_s*CAS->n_s*2;
+    
+        char * print_n[3];
+        print_n[0]=new char[BUF_LINE_LENGTH];sprintf(print_n[0],"     d_x     ");
+        print_n[1]=new char[BUF_LINE_LENGTH];sprintf(print_n[1],"     d_y     "); 
+        print_n[2]=new char[BUF_LINE_LENGTH];sprintf(print_n[2],"     d_z     ");
+    
+    
+        CAS->Prop_calc();
+        CAS->print_av_table_with_prop("CDAS-PT2 extended results:",3,print_d, print_n);
+    
+    //     getchar();
+        fprintf(out_stream,"\n");
+        if(write_ci){
+            fprintf(out_stream,"Writing CDAS-PT2 WaveFunctions:\n");
+            sprintf(name,"%s_CDAS.ci\0",job_name);
+            CAS->CI->as_aldet()->write_civec(0, name);
+            fprintf(out_stream,"data file         : %s\n",name);
+        }
     
 
-    CAS->print_properties("CDAS-PT(0)");    
+        CAS->print_properties("CDAS-PT(0)");    
     
-    double * d_x = CAS->Prop_value                  ;
-    double * d_y = CAS->Prop_value+CAS->n_s*CAS->n_s  ;
-    double * d_z = CAS->Prop_value+CAS->n_s*CAS->n_s*2;
+        double * d_x = CAS->Prop_value                  ;
+        double * d_y = CAS->Prop_value+CAS->n_s*CAS->n_s  ;
+        double * d_z = CAS->Prop_value+CAS->n_s*CAS->n_s*2;
     
     
-    set_zero_matr(d_x1,n_s*n_s);
-    set_zero_matr(d_y1,n_s*n_s);
-    set_zero_matr(d_z1,n_s*n_s);
+        set_zero_matr(d_x1,n_s*n_s);
+        set_zero_matr(d_y1,n_s*n_s);
+        set_zero_matr(d_z1,n_s*n_s);
     
-    if(cdas->SF_ENGINE && print_dipole && cdas->pt1_d)
-        fprintf(out_stream,"PT1 dipole (d(1)) skipped under SF_ENGINE"
-                           " (the SF engine builds no property tensors)\n");
-    if(!cdas->SF_ENGINE)
-    if(print_dipole)if(cdas->pt1_d){
-        fprintf(out_stream,"PT1 dipole moment - d(1):\n\n");
-        if(cdas->IPEA){
-            T.P1_calc_IPEA(d_x1, CAS->CI->as_aldet(), d_x_AV, d_x_CA, d_x_CV, 1, 1, 1);
-            T.P1_calc_IPEA(d_y1, CAS->CI->as_aldet(), d_y_AV, d_y_CA, d_y_CV, 1, 1, 1);
-            T.P1_calc_IPEA(d_z1, CAS->CI->as_aldet(), d_z_AV, d_z_CA, d_z_CV, 1, 1, 1);
-        }
-        else{
-            T.P1_calc_EE(d_x1, CAS->CI->as_aldet(), d_x_AV, d_x_CA, d_x_CV, 1, 1, 1);
-            T.P1_calc_EE(d_y1, CAS->CI->as_aldet(), d_y_AV, d_y_CA, d_y_CV, 1, 1, 1);
-            T.P1_calc_EE(d_z1, CAS->CI->as_aldet(), d_z_AV, d_z_CA, d_z_CV, 1, 1, 1);
-        }
+        if(print_dipole)if(cdas->pt1_d){
+            fprintf(out_stream,"PT1 dipole moment - d(1):\n\n");
+            if(cdas->IPEA){
+                T.P1_calc_IPEA(d_x1, CAS->CI->as_aldet(), d_x_AV, d_x_CA, d_x_CV, 1, 1, 1);
+                T.P1_calc_IPEA(d_y1, CAS->CI->as_aldet(), d_y_AV, d_y_CA, d_y_CV, 1, 1, 1);
+                T.P1_calc_IPEA(d_z1, CAS->CI->as_aldet(), d_z_AV, d_z_CA, d_z_CV, 1, 1, 1);
+            }
+            else{
+                T.P1_calc_EE(d_x1, CAS->CI->as_aldet(), d_x_AV, d_x_CA, d_x_CV, 1, 1, 1);
+                T.P1_calc_EE(d_y1, CAS->CI->as_aldet(), d_y_AV, d_y_CA, d_y_CV, 1, 1, 1);
+                T.P1_calc_EE(d_z1, CAS->CI->as_aldet(), d_z_AV, d_z_CA, d_z_CV, 1, 1, 1);
+            }
         
-        symmetrization_with_scaling(d_x1,n_s,2.0);
-        symmetrization_with_scaling(d_y1,n_s,2.0);
-        symmetrization_with_scaling(d_z1,n_s,2.0);
+            symmetrization_with_scaling(d_x1,n_s,2.0);
+            symmetrization_with_scaling(d_y1,n_s,2.0);
+            symmetrization_with_scaling(d_z1,n_s,2.0);
         
-        for(int i_s=0;i_s<n_s*n_s;i_s++){
-            d_x[i_s] += d_x1[i_s];
-            d_y[i_s] += d_y1[i_s];
-            d_z[i_s] += d_z1[i_s];
+            for(int i_s=0;i_s<n_s*n_s;i_s++){
+                d_x[i_s] += d_x1[i_s];
+                d_y[i_s] += d_y1[i_s];
+                d_z[i_s] += d_z1[i_s];
+            }
+        
+            fprintf(out_stream,"\n");
+            fprintf(out_stream,"\n\nDipole CDAS(0+1):\n");
+            PrintDipole(d_x,d_y,d_z,n_s);
         }
-        
-        fprintf(out_stream,"\n");
-        fprintf(out_stream,"\n\nDipole CDAS(0+1):\n");
-        PrintDipole(d_x,d_y,d_z,n_s);
+
+        delete[] print_n[0];
+        delete[] print_n[1];
+        delete[] print_n[2];
     }
 
         
@@ -463,11 +497,14 @@ int CDAS_PT2(molecule * M, cdas_par * cdas, char * job_name){
     delete[] J       ;
     delete[] K       ;
     delete[] act_INTS ;
-    
-    delete[] print_n[0];
-    delete[] print_n[1];
-    delete[] print_n[2];    
-    
+
+    CAS->CI = CI_engine;
+
+    if(ACT_MO_save != nullptr){
+        memcpy(M->MO_VEC+M->n_cor_orb*M->n_ao, ACT_MO_save, sizeof(double)*M->n_act_orb[0]*M->n_ao);
+        delete[] ACT_MO_save;
+    }
+
     return 0;
  
 }

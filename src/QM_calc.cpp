@@ -21,7 +21,7 @@ extern coord_list C;
 int single_point_calc( inp_par * P, molecule * Qm){ 
         
     // XMCQDPT needs the determinant CI object the DMRG backend does not provide; the relativistic
-    // (SO) CDAS path is likewise determinant-only. Non-relativistic CDAS routes to CDAS_PT_dmrg
+    // (SO) CDAS path is likewise determinant-only. Non-relativistic CDAS runs through CDAS_PT2
     // below (SO is a global fixed at parse time, so it is already valid here).
     if(P->cas.y && P->cas.ci_solver==CISOLVER_DMRG){
         if(P->xmc.y){
@@ -32,6 +32,14 @@ int single_point_calc( inp_par * P, molecule * Qm){
         if(P->cdas.y && SO==1){
             fprintf(out_stream,"ERROR: CISOLVER=dmrg cannot be combined with relativistic CDAS-PT "
                                "(the SO/GRPP path is determinant-only)\n");
+            exit(EXIT_FAILURE);
+        }
+        // The dmrg backend fills the active orbital energies from a dense diagonalization of the
+        // active Fock block, the aldet one per irrep, so away from C1 the two orderings differ.
+        if(P->cdas.y && IS_SYM && (P->cdas.HOMO || P->cdas.orb_e)){
+            fprintf(out_stream,"ERROR: HOMO and USE_ORB_FOR_ENERGY pick an active orbital by position, and that "
+                               "position is not the same for the dmrg and aldet backends under symmetry\n"
+                               "       (use ENERGY or IPEA)\n");
             exit(EXIT_FAILURE);
         }
     }

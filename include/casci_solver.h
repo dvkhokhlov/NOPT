@@ -40,7 +40,7 @@ public:
     
     virtual int calc_IPEA_single(double * U_IP, double * H_IP, 
                                  double * U_EA, double * H_EA,
-                                 int a, std::vector<double> avecoe) {return 0;}
+                                 int a, std::vector<double> avecoe);
     
 
     // Active-space localizing rotation U (n_act x n_act, [a*n_act+p], C_loc=C*U, U^T U=I). The
@@ -64,7 +64,10 @@ public:
 
     // --- solve ---
     // Encapsulates the full diagonalisation (aldet: copy_coef -> set_par -> H_diag_calc -> run).
-    // use_prev_guess: warm-start from the previous CI vector. Returns an iteration/convergence count.
+    // use_prev_guess: this solve continues from the previous solution -- the backend may snapshot
+    // that solution (state tracking) and/or reuse it as its starting guess. false marks an
+    // independent solve and forces a cold start.
+    // Returns an iteration/convergence count.
     virtual int solve(int primary, int read, bool use_prev_guess) = 0;
     
     

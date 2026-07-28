@@ -1269,6 +1269,7 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
     }
     
     //CAS engine reading from A state 0 fragment 0
+    if(M->CAS!=nullptr)delete [] M->CAS;
     M->CAS = new CAS_engine[1];
     CAS_engine * CAS = M->CAS;
     CAS->init(cas ,M);
@@ -1376,6 +1377,10 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
         lapack_diag(U_canon, ev_canon, CAS->n_act);
         normalize_rotation_rows(U_canon, CAS->n_act);
         CAS->CI->set_report_rotation(U_canon);
+        // The eigenvalues of the active Fock block are basis-invariant scalars, so a backend that
+        // cannot rotate its CI vector keeps them as its active orbital energies while its orbitals
+        // stay in the solve frame.
+        memcpy(M->orb_energy+CAS->n_core, ev_canon, CAS->n_act*sizeof(double));
     }
     // Only the core and virtual blocks were canonicalized for such a backend, which leaves the active
     // Hamiltonian -- and its solution -- untouched. Re-solving would report determinants, properties
@@ -1406,26 +1411,21 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
         fprintf(out_stream,"Writing CAS_SCF canonical orbitals:\n");
 
         // A backend that cannot rotate its CI vector left the active orbitals in the SA-converged
-        // frame while reporting its determinants in the canonical one. Rotate the active orbitals
-        // with that same U_canon (and install its eigenvalues as the active orbital energies) for
-        // the write, then put the solve basis back: the RDMs behind the properties and the natural
-        // orbitals below live in it, and both are basis-invariant anyway.
+        // frame while reporting its determinants in the canonical one. Rotate them with that same
+        // U_canon for the write and put the solve basis back afterwards: the RDMs behind the
+        // properties and the natural orbitals below live in the solve basis.
         double * MO_act_save = nullptr;
-        double * ev_act_save = nullptr;
         if(U_canon!=nullptr){
             const int n_a = CAS->n_act, n_o = M->n_ao, n_0 = CAS->n_core;
             MO_act_save = new double[n_a*n_o];
-            ev_act_save = new double[n_a];
             double * B  = new double[n_a*n_o];
             memcpy(MO_act_save, M->MO_VEC+n_0*n_o    , n_a*n_o*sizeof(double));
-            memcpy(ev_act_save, M->orb_energy+n_0    , n_a    *sizeof(double));
             cblas_dgemm(CblasRowMajor,CblasNoTrans,CblasNoTrans,
                         n_a,n_o,n_a,1.0,
                         U_canon,n_a,
                         M->MO_VEC+n_0*n_o,n_o,0.0,
                         B,n_o);
             memcpy(M->MO_VEC+n_0*n_o , B       , n_a*n_o*sizeof(double));
-            memcpy(M->orb_energy+n_0 , ev_canon, n_a    *sizeof(double));
             delete[] B;
         }
 
@@ -1439,13 +1439,10 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
         fprintf(out_stream,"data file         : %s\n",name);
         fprintf(out_stream,"\n");
         
-        //this must be checked!! 
-        if(false/*MO_act_save!=nullptr*/){
+        if(MO_act_save!=nullptr){
             memcpy(M->MO_VEC+CAS->n_core*M->n_ao, MO_act_save, CAS->n_act*M->n_ao*sizeof(double));
-            memcpy(M->orb_energy+CAS->n_core    , ev_act_save, CAS->n_act        *sizeof(double));
         }
         if(MO_act_save != nullptr) delete[] MO_act_save;
-        if(ev_act_save != nullptr) delete[] ev_act_save;
 
         fprintf(out_stream,"Writing CAS_SCF natural orbitals:\n");
         

@@ -1270,8 +1270,6 @@ cdas_par::cdas_par(){
     fit_e=0;
     rotate_orbs=1;//default - perform rotation
     pt1_d=1;
-    SF_ENGINE=0;
-    DUMP_TENSORS=0;
 
 }
 
@@ -1310,9 +1308,22 @@ int cdas_par::read_group(char * inp, cas_par * ext_cas){
         fprintf(out_stream,"       you must choose only one.\n");
         exit(1);
     }
-        
-    
-    
+
+    if(ext_cas->ci_solver==CISOLVER_DMRG){
+        if(MPPT){
+            fprintf(out_stream,"ERROR: MPPT is supported by the aldet solver only; use cisolver=aldet\n");
+            exit(1);
+        }
+        if(actual||mult_e||fit_e){
+            fprintf(out_stream,"ERROR: per-orbital active energies are not supported with the dmrg solver\n");
+            fprintf(out_stream,"       (active orbitals are not canonical)\n");
+            fprintf(out_stream,"       use HOMO, ENERGY, USE_ORB_FOR_ENERGY or IPEA\n");
+            exit(1);
+        }
+    }
+
+
+
     return 0;
 }
 
@@ -1367,13 +1378,6 @@ int cdas_par::read_line(char * inp){
     
     if(key_word_comp(inp, pt1_dipole_kw))
         pt1_d = kw_to_i(inp, pt1_dipole_kw,1);
-
-    // SF_ENGINE/DUMP_TENSORS are orthogonal engine flags — NOT energy schemes,
-    // so they stay out of the mutually-exclusive scheme sum in read_group.
-    if(key_word_comp(inp, cdas_sf_engine_kw))
-        SF_ENGINE = kw_to_i(inp, cdas_sf_engine_kw,0);
-    if(key_word_comp(inp, cdas_dump_tensors_kw))
-        DUMP_TENSORS = kw_to_i(inp, cdas_dump_tensors_kw,0);
 
     return 0;
 }

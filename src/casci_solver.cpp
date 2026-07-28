@@ -9,6 +9,14 @@
 // exactly one translation unit instead of every includer.
 casci_solver::~casci_solver() {}
 
+// Default: the extended-Koopmans IP/EA blocks have no backend-independent construction, and a
+// backend reaching here would leave all four output buffers untouched.
+int casci_solver::calc_IPEA_single(double *, double *, double *, double *, int, std::vector<double>) {
+    fprintf(out_stream, "ERROR: this CI backend does not implement calc_IPEA_single"
+                        " (extended-Koopmans IP/EA blocks)\n");
+    exit(EXIT_FAILURE);
+}
+
 // Default: only the DMRG/block2 backend encodes a dressed general MPO. Any other backend reaching
 // here is a driver mis-dispatch (our own contract), so abort loudly naming the supported backend.
 void casci_solver::import_dressed_operator(const double*, const double*, const double*, double) {

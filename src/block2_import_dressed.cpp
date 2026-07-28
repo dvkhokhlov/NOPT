@@ -55,6 +55,16 @@ static void add_group(const std::shared_ptr<GeneralFCIDUMP<double>> &gfd, const 
     gfd->add_sum_term(T.data(), s, shape, strides, 0.0, factor, {}, rperm);
 }
 
+// The dressed operator and the IP/EA blocks combine the stored g1/g2 with read-out RDMs. Under
+// internal localization the former are held in the localized basis while the latter come back
+// delocalized (block2_dmrg.cpp), so the mix is uncertified and must refuse.
+static void require_no_internal_localization(const dmrgci_engine &e, const char *what) {
+    if (!e.localize_on) return;
+    fprintf(out_stream, "ERROR: %s is not supported with solver-internal localization"
+                        " (stored integrals and returned RDMs live in different bases)\n", what);
+    exit(EXIT_FAILURE);
+}
+
 // Null or all-zero 3-body tensor => skip the 3-body group.
 static bool all_zero(const double *T, size_t len) {
     if (T == nullptr) return true;
@@ -69,6 +79,8 @@ void block2_casci_wrap::import_dressed_operator(const double *h1_total, const do
                                                 const double *h3_total, double const_total) {
     dmrgci_engine &e = *impl_;
     const int n = e.n_act;
+
+    require_no_internal_localization(e, "dressed-operator import");
 
     // A Fiedler lattice must already be frozen by the bare import; without it the dressed tensors
     // have no site->orbital map to land on.
@@ -190,7 +202,9 @@ int average_DM_aldet_diag(double * G_out, double * G, std::vector<double> avecoe
 int block2_casci_wrap::calc_IPEA_single(double * U_IP, double * H_IP, 
                                         double * U_EA, double * H_EA,
                                         int a, std::vector<double> avecoe) {
-     
+
+    require_no_internal_localization(*impl_, "block2_casci_wrap::calc_IPEA_single");
+
     int n_s = n_states();
     
     //U_IP

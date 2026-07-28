@@ -119,7 +119,7 @@ void ensure_block2_runtime(const std::string &save_dir_root, double memory_gb, i
 // Best-effort removal of every scratch file of one MPS tag; keeps the scratch dir from growing
 // across macro-iterations. block2 embeds the tag, trailing-'.'-delimited, in
 // <prefix>.{MPS,MMPS,MMPS-WFN,MPS.INFO}.<tag>.* and <tag>-mps_info.bin. The trailing '.' keeps tag
-// "work_1" from matching "work_10".
+// "w0_work_1" from matching "w0_work_10".
 void remove_tag_files(const std::string &tag) {
     auto fr = frame_<double>();
     if (fr == nullptr)
@@ -737,7 +737,7 @@ static void recompute_cold_order(dmrgci_engine &e) {
     e.mpo = build_qc_mpo(e.hamil);
 }
 
-int block2_casci_wrap::solve(int, int, bool) {
+int block2_casci_wrap::solve(int, int, bool use_prev_guess) {
     dmrgci_engine &e = *impl_;
     host_threads_guard htg;
     assert_stack_clean("solve entry"); // block2 LIFO stacks must be empty between macro-iterations
@@ -749,8 +749,10 @@ int block2_casci_wrap::solve(int, int, bool) {
     // false) if the basis change is too large, in which case we cold-start this iteration.
     // Same condition import_integrals keyed the frozen lattice order on, before the rotation could decline.
     const bool order_frozen = (e.have_rotation && !e.reorder_perm.empty());
+    // use_prev_guess false forces a cold start; true warms only when the host armed a rotation
+    // and an MPS is retained.
     bool warm = (e.cfg.warm_start == DMRG_WARM_ON && e.have_rotation && e.mps != nullptr &&
-                 e.mps_info != nullptr);
+                 e.mps_info != nullptr && use_prev_guess);
     if (warm) {
         reload_retained_mps(e);        // fresh from disk (the in-memory shell is stale post-solve)
         if (e.cfg.warm_rotate == DMRG_WARM_ON)
@@ -784,7 +786,9 @@ int block2_casci_wrap::solve(int, int, bool) {
         Random::rand_seed(0);
         e.mps_info = std::make_shared<MultiMPSInfo<SU2>>(e.mpo->n_sites, e.hamil->vacuum,
                                                          std::vector<SU2>{e.target}, e.mpo->basis);
-        e.mps_info->tag = "work_" + std::to_string(e.solve_count++); // unique per macro-iteration
+        // unique per engine and macro-iteration
+        e.mps_info->tag = "w" + std::to_string(e.engine_id) + "_work_" +
+                          std::to_string(e.solve_count++);
         // --- initial MPS occupancy (only hf_occ=integral built; others provisioned) ---
         if (e.cfg.hf_occ == DMRG_HF_OCC_INTEGRAL) {
             e.mps_info->set_bond_dimension((ubond_t)e.cfg.m); // full FCI envelope
