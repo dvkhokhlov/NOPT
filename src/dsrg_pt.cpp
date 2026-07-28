@@ -27,6 +27,9 @@
 # include "dsrg_sf_batch.h"
 # include "dsrg_pt.h"
 
+// A relaxed dressed root is assigned to its argmax bare root only above this |CI overlap|.
+static const double DSRG_RELAX_OVERLAP_MIN = 0.9;
+
 // cross = Ul^T (m x m) . X (m x n) . Ur (n x n) -> out (m x n). tmp is m*n scratch.
 static void rot_cross(const double * Ul, const double * X, const double * Ur,
                       int m, int n, double * out, double * tmp){
@@ -361,24 +364,23 @@ int SA_DSRG_PT2(molecule * M, dsrg_par * dsrg, char * job_name){
         std::vector<double> E_dressed(ns);
         for(int r=0;r<ns;r++) E_dressed[r] = CAS.CI->E_state(r);
 
-        // root map by CI-overlap argmax: S[d*ns+b] = <dressed_d | bare_b>. Each dressed root
-        // takes the weight of its best-overlap bare root; root_map[bare]=dressed for the dump.
+        // root map by CI-overlap argmax: S[d*ns+b] = <dressed_d | bare_b>. A dressed root claims
+        // its best bare root only above the threshold; the bare roots are orthonormal, so
+        // sum_d |S[d,b]|^2 <= 1 makes that injective and only leaves roots unassigned (d2b=-1).
         std::vector<double> S((size_t)ns*ns,0.0);
         CAS.CI->calc_S(S.data(), 0, 1);
-        std::vector<int> d2b(ns,0), root_map(ns,-1);
+        std::vector<int> d2b(ns,-1), root_map(ns,-1);
         std::vector<double> ov(ns,0.0);
         for(int d=0;d<ns;d++){
             int best=0; double bmax=-1.0;
             for(int b=0;b<ns;b++){ const double a=std::fabs(S[(size_t)d*ns+b]); if(a>bmax){bmax=a;best=b;} }
-            d2b[d]=best; ov[d]=bmax; root_map[best]=d;
+            ov[d]=bmax;
+            if(bmax>DSRG_RELAX_OVERLAP_MIN){ d2b[d]=best; root_map[best]=d; }
         }
-        bool bijection=true; for(int b=0;b<ns;b++) if(root_map[b]<0) bijection=false;
-        if(!bijection)
-            fprintf(out_stream,"\n  NOTE: DSRG-PT2 relaxation root map is not a bijection "
-                               "(crossed/degenerate roots); relaxed weight assignment may be ambiguous\n");
 
-        double e_relax=0.0;
-        for(int d=0;d<ns;d++) e_relax += wref[d2b[d]]*E_dressed[d];
+        // only assigned dressed roots carry reference weight; w_cov is the weight they cover.
+        double e_relax=0.0, w_cov=0.0;
+        for(int d=0;d<ns;d++) if(d2b[d]>=0){ e_relax += wref[d2b[d]]*E_dressed[d]; w_cov += wref[d2b[d]]; }
 
         T.set_root_data(wref.data(), E_bare.data(), E_dressed.data(), root_map.data(), ns);
 
@@ -387,12 +389,30 @@ int SA_DSRG_PT2(molecule * M, dsrg_par * dsrg, char * job_name){
 
         fprintf(out_stream,"\n");
         fprintf(out_stream,"===================== DSRG-PT2 relaxation (relax = once) =====================\n\n");
-        for(int d=0;d<ns;d++)
-            fprintf(out_stream,"  root %2d : E(dressed) = % .12f   bare root = %2d   |overlap| = %.6f\n",
-                    d, E_dressed[d], d2b[d], ov[d]);
+        for(int d=0;d<ns;d++){
+            char bcol[16];
+            if(d2b[d]>=0) snprintf(bcol,sizeof(bcol),"%d",d2b[d]);
+            else          snprintf(bcol,sizeof(bcol),"ambiguous");
+            fprintf(out_stream,"  root %2d : E(dressed) = % .12f   bare root = %2s   |overlap| = %.6f\n",
+                    d, E_dressed[d], bcol, ov[d]);
+        }
         fprintf(out_stream,"\n");
-        if(sa) fprintf(out_stream,"  Relaxed SA average                 = % .12f\n", e_relax);
-        else   fprintf(out_stream,"  Relaxed DSRG-PT2 energy            = % .12f\n", e_relax);
+        // Partial coverage is renormalized onto the matched subset and labelled as such: an
+        // unnormalized part-weight sum is not an energy. w_cov==0 leaves nothing to report.
+        if(w_cov<=0.0)
+            fprintf(out_stream,"  Relaxed energy                     =  none (no dressed root matched the reference)\n");
+        else if(w_cov < 1.0-1e-12){
+            if(sa) fprintf(out_stream,"  Relaxed SA average (matched)       = % .12f\n", e_relax/w_cov);
+            else   fprintf(out_stream,"  Relaxed energy (matched)           = % .12f\n", e_relax/w_cov);
+        }
+        else if(sa) fprintf(out_stream,"  Relaxed SA average                 = % .12f\n", e_relax);
+        else        fprintf(out_stream,"  Relaxed DSRG-PT2 energy            = % .12f\n", e_relax);
+        if(w_cov < 1.0-1e-12)
+            fprintf(out_stream,"\n  NOTE: some dressed roots fell outside the reference manifold (low CI overlap:\n"
+                               "        an ill-conditioned reference, or a state from outside the window entering\n"
+                               "        after the dressing). The value above averages the matched roots only,\n"
+                               "        covering %.6f of the reference weight -- it is not the reference\n"
+                               "        ensemble's relaxation.\n", w_cov);
         fprintf(out_stream,"============================================================================\n\n");
     }
 
