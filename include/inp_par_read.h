@@ -269,7 +269,7 @@ class cdas_par
 
 };
 
-class dsrg_par            // settings for state-specific unrelaxed DSRG-PT2; see $DSRG group
+class dsrg_par            // settings for DSRG-PT2 (state-specific or SA reference); see $DSRG group
 {
     public:
         int y;

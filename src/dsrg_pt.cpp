@@ -1,9 +1,8 @@
-// State-specific unrelaxed spin-free DSRG-PT2 driver. Structurally modelled on CDAS_PT2
-// (CAS_engine-based, seam-driven): build a CAS_engine on the converged CASSCF orbitals,
-// bare-solve, read the selected root's spin-summed densities through the casci_solver
-// seam, semicanonicalize the state-specific generalized Fock, re-form the RI B-tensors and
-// bare 1-e integrals in that basis, then drive the dsrg_sf_tensors algebra core plus the
-// batched CCVV/CAVV/CCAV terms and print the Forte six-line breakdown.
+// Spin-free DSRG-PT2 driver: state-specific or SA ensemble reference, optional uncontracted
+// relaxation. Structurally modelled on CDAS_PT2 (CAS_engine-based, seam-driven): bare-solve on
+// the converged CASSCF orbitals, read spin-summed densities through the casci_solver seam,
+// semicanonicalize the generalized Fock, re-form the RI B-tensors and bare 1-e integrals in that
+// basis, then drive the dsrg_sf_tensors core plus the batched CCVV/CAVV/CCAV terms.
 
 # include <cstdio>
 # include <cstdlib>
@@ -302,6 +301,10 @@ int SA_DSRG_PT2(molecule * M, dsrg_par * dsrg, char * job_name){
     fprintf(out_stream,"      DF CCAV                        = % .12f\n", E_CCAV);
     fprintf(out_stream,"\n  Correlation energy E(2)            = % .12f\n", E_corr);
     fprintf(out_stream,"  Total DSRG-PT2 energy              = % .12f\n", Eref + E_corr);
+
+    if(sa && dsrg->relax==DSRG_RELAX_NONE)
+        fprintf(out_stream,"\n  NOTE: sa=1 without relax=once reports the ensemble average only; per-state "
+                           "DSRG-PT2 energies need relax=once\n");
 
     if(dsrg->print >= 2){
         fprintf(out_stream,"\n  Per-class in-core [Vr,T2] (L1 / L2):\n");

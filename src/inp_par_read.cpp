@@ -1566,7 +1566,7 @@ int dsrg_par::write_info(int n_a, int n_b, int n_o, int mult){
     fprintf(out_stream,"_____________________Starting_DSRG_PT2_calculation_____________________\n\n");
 
     fprintf(out_stream,"Number of states                  %d\n",cas->n_s);
-    fprintf(out_stream,"Selected root (state-specific)    %d\n",root);
+    if(!sa) fprintf(out_stream,"Selected root (state-specific)    %d\n",root);
     fprintf(out_stream,"State multiplicity                %d\n",mult);
     fprintf(out_stream,"\n");
     fprintf(out_stream,"Active space:\n");
