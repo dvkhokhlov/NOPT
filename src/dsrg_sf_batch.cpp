@@ -44,8 +44,7 @@ double dsrg_sf_E_CCVV(const double* VC_RI_M,
     for(int i=0;i<nc;i++) for(int j=i;j<nc;j++) ij.emplace_back(i,j);
     const long npair = (long)ij.size();
 
-    std::vector<std::vector<double>>  Jab(num_threads, std::vector<double>((size_t)nv*nv));
-    std::vector<std::vector<double>> JKab(num_threads, std::vector<double>((size_t)nv*nv));
+    std::vector<std::vector<double>> Jab(num_threads, std::vector<double>((size_t)nv*nv));
 
     double Eout = 0.0;
 #ifdef _OPENBLAS
@@ -61,8 +60,7 @@ double dsrg_sf_E_CCVV(const double* VC_RI_M,
 #pragma omp parallel for reduction(+:Eout)
     for(long p=0;p<npair;p++){
         int th = omp_get_thread_num();
-        double* J  =  Jab[th].data();
-        double* JK = JKab[th].data();
+        double* J = Jab[th].data();
         int i = ij[p].first, j = ij[p].second;
 
         // J[e,f] = sum_k B(virt e, core i, k) B(virt f, core j, k) = (ie|jf).
@@ -73,18 +71,14 @@ double dsrg_sf_E_CCVV(const double* VC_RI_M,
                     VC_RI_M+(long)j*naux, nc*naux,
                     0.0, J, nv);
 
-        for(long e=0;e<nv;e++)
-        for(long f=0;f<nv;f++)
-            JK[e*nv+f] = 2.0*J[e*nv+f] - J[f*nv+e];
-
-        double loc = 0.0;
+        double loc = 0.0;               // 2J-K formed inline; J stays raw here
         for(long e=0;e<nv;e++)
         for(long f=0;f<nv;f++){
             double D = e_c[i]+e_c[j]-e_v[e]-e_v[f];
             double val = J[e*nv+f];
             if(ccvv_zero) val /= D;
             else          val *= (1.0 + dsrg_renorm(D,s)) * dsrg_renorm_denom(D,s);
-            loc += val * JK[e*nv+f];
+            loc += val * (2.0*J[e*nv+f] - J[f*nv+e]);
         }
         Eout += ((i==j) ? 1.0 : 2.0) * loc;
     }
