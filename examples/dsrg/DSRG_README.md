@@ -26,7 +26,8 @@ $dsrg s=0.5 $end
   and the DIRECT λ3 overlap (`h2caa_overlap`) through the CI seam, and the λ3 term
   additionally needs the CI vector in the semicanonical active basis. `cisolver=dmrg`
   provides the first two but cannot rotate its wavefunction, so it exits with a message
-  naming aldet.
+  naming aldet — unless the semicanonical active rotation is already the identity, the
+  one case where no rotation is owed (see §3).
 - **All occupied orbitals are correlated.** There is no frozen-core option on this path;
   a Forte-style `frozen_docc` has no counterpart here.
 
@@ -106,3 +107,8 @@ off-diagonal exceeds `1e-8`.
   gives a number whose last digits are not meaningful, and the output does not say so.
 - **No DMRG reference yet.** `cisolver=dmrg` is rejected on the λ3 rotation described in
   §1; the DSRG path is aldet-only, which caps the active space at determinant-CI sizes.
+  The identity-rotation escape in §1 assumes the MPS sits in the delocalized active basis,
+  which `$DMRG localize=pm` breaks: the MPS then lives in `C_deloc·U_loc` while the λ3 legs
+  arrive delocalized, and the block2 overlap applies the Fiedler permutation only. A DMRG
+  λ3 path owes those legs the composed `Uaᵀ·U_loc` before `h2caa_overlap`; the 2-RDM
+  read-out already back-transforms and needs nothing.
