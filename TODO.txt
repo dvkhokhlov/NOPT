@@ -1,11 +1,3 @@
-This is a draft version that should not be used. Only for developers' information
-
-"features"
-1) EE   version is correct for the aldet and dmrg solvers, delocalized orbitals
-2) IPEA version is correct for the aldet and dmrg solvers, delocalized orbitals
-3) localization of the active space is dmrg only ($DMRG localize=pm), not tested yet
-
 to be done:
-- test the localization
 - repair CDAS_PT_rel
 - re-pin the dmrg example logs
