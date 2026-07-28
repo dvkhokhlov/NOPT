@@ -22,7 +22,17 @@ block2_casci_wrap::block2_casci_wrap(int n_act, int na, int nb, int mult, int n_
     ensure_block2_runtime(cfg.save_dir, cfg.memory, nthr);
 }
 
-block2_casci_wrap::~block2_casci_wrap() = default;
+// The engine owns its MPS tag namespace, so its final scratch set leaves with it: every other tag
+// (per-root extracts, the read-out copies) is removed where it is made. Best-effort and silent --
+// a destructor must not propagate, and the runtime clears the whole scratch dir at exit anyway.
+block2_casci_wrap::~block2_casci_wrap() {
+    if (impl_ == nullptr || impl_->mps_info == nullptr)
+        return;
+    try {
+        remove_tag_files(impl_->mps_info->tag);
+    } catch (...) {
+    }
+}
 
 // ----------------------- casci_solver contract ----------------------------------------
 void block2_casci_wrap::init_state_storage(int n_s, int) {
@@ -62,8 +72,10 @@ void block2_casci_wrap::set_state_weights(const double *w, int n_s) {
     e.w_state.assign(w, w + n_s);
 }
 
+int    block2_casci_wrap::n_act()         const { return n_act_; }
 int    block2_casci_wrap::n_states()      const { return impl_->n_s; }
 int    block2_casci_wrap::mult()          const { return impl_->mult; }
+double block2_casci_wrap::E_core()        const { return g0; }
 double block2_casci_wrap::E_state(int i)  const { return impl_->E_states[i]; }
 double block2_casci_wrap::S2_state(int)   const { double S = impl_->twos / 2.0; return S * (S + 1.0); }
 double block2_casci_wrap::L2_state(int)   const { return 0.0; } // linear-molecule Lambda: deferred

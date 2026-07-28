@@ -68,7 +68,7 @@ endif
 BLOCK2_DEF:=-D_EXPLICIT_TEMPLATE -D_LARGE_BOND -D_USE_CORE -D_USE_DMRG -D_USE_BIG_SITE -D_USE_SP_DMRG -D_USE_IC -D_USE_SU2SZ $(BLOCK2_BLAS_DEF) -D_USE_GLOBAL_VARIABLE
 BLOCK2_INC:=-I$(BLOCK2_DIR)/include
 BLOCK2_LIB:=-L$(BLOCK2_DIR)/lib -Wl,-rpath,$(BLOCK2_DIR)/lib -lblock2
-BLOCK2_OBJ:=src/block2_dmrg.o src/dmrg_wrap.o src/block2_mps_to_det.o src/mps_rotation.o
+BLOCK2_OBJ:=src/block2_dmrg.o src/dmrg_wrap.o src/block2_mps_to_det.o src/mps_rotation.o src/block2_import_dressed.o
 NOPT_BLOCK2_DEF:=-DNOPT_HAS_BLOCK2
 endif
 
@@ -97,7 +97,7 @@ print:
 	@echo $(progs_cpp)
 	@echo $(progs)
 
-run_%:src/progs/%.o src/molecule.o src/molecule2.o src/chem_data.o src/MO2.o src/matr.o src/timer.o src/etc.o src/doCI_matr.o src/libint_link.o src/SCF.o src/converger_2_1.o src/l-bfgs_2_1.o src/libint_functions.o src/ecp.o src/mol_link.o src/CI.o src/inp_out.o src/keywords.o src/doCI_data.o src/inp_par_read.o src/from_hash.o src/XMCQDPT.o src/res_fit.o src/binary_files.o src/xmc_read.o src/aldet.o src/RI.o src/nopa_pt.o src/CAS.o src/davidson.o src/basis_lib_read.o src/common_vars.o src/CDAS_PT.o src/CDAS_PT_rel.o src/U_CDAS_PT.o src/PT_tensors_IPEA.o src/PT_tensors_EE.o src/PT_tensors_EE_rel.o src/UPT_tensors_EE.o src/geom.o src/symmetry.o src/gv_solver.o src/trcamm.o src/z_matrix.o src/QM_calc.o src/pseudo_potential.o src/complex_diag.o src/CIS.o src/aldet_rel.o src/jacobi.o src/grabbers.o src/casci_solver.o src/aldet_casci_wrap.o src/localizer.o src/localized_dmrg.o $(BLOCK2_OBJ)
+run_%:src/progs/%.o src/molecule.o src/molecule2.o src/chem_data.o src/MO2.o src/matr.o src/timer.o src/etc.o src/doCI_matr.o src/libint_link.o src/SCF.o src/converger_2_1.o src/l-bfgs_2_1.o src/libint_functions.o src/ecp.o src/mol_link.o src/CI.o src/inp_out.o src/keywords.o src/doCI_data.o src/inp_par_read.o src/from_hash.o src/XMCQDPT.o src/res_fit.o src/binary_files.o src/xmc_read.o src/aldet.o src/RI.o src/nopa_pt.o src/CAS.o src/davidson.o src/basis_lib_read.o src/common_vars.o src/CDAS_PT.o src/CDAS_PT_rel.o src/U_CDAS_PT.o src/PT_tensors_IPEA.o src/PT_tensors_EE.o src/PT_tensors_EE_rel.o src/UPT_tensors_EE.o src/geom.o src/symmetry.o src/gv_solver.o src/trcamm.o src/z_matrix.o src/QM_calc.o src/pseudo_potential.o src/complex_diag.o src/CIS.o src/MP2.o src/aldet_rel.o src/jacobi.o src/grabbers.o src/casci_solver.o src/aldet_casci_wrap.o src/localizer.o src/localized_dmrg.o $(BLOCK2_OBJ)
 
 	$(CXX) $^ $(OPT_LEVEL) -fopenmp $(LIB_DIRS) $(LIBS)  -o $@
 
@@ -113,6 +113,9 @@ src/block2_mps_to_det.o:src/block2_mps_to_det.cpp
 	$(CXX) -o $@ -c $< $(OPT_LEVEL) -fopenmp -MMD -MP $(DEFINITIONS) $(INCLUDE_DIRS) $(BLOCK2_DEF) $(BLOCK2_INC) -fmax-errors=5
 
 src/mps_rotation.o:src/mps_rotation.cpp
+	$(CXX) -o $@ -c $< $(OPT_LEVEL) -fopenmp -MMD -MP $(DEFINITIONS) $(INCLUDE_DIRS) $(BLOCK2_DEF) $(BLOCK2_INC) -fmax-errors=5
+
+src/block2_import_dressed.o:src/block2_import_dressed.cpp
 	$(CXX) -o $@ -c $< $(OPT_LEVEL) -fopenmp -MMD -MP $(DEFINITIONS) $(INCLUDE_DIRS) $(BLOCK2_DEF) $(BLOCK2_INC) -fmax-errors=5
 
 %.o:%.cpp

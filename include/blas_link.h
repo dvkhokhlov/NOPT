@@ -15,6 +15,30 @@
 #endif
 
 
+inline void set_blas_non_par(){
+#ifdef _OPENBLAS
+    // int ntb = openblas_get_num_threads();
+    openblas_set_num_threads(1);
+#endif
+#ifdef _MKL
+    // int ntb = mkl_get_max_threads();
+    mkl_set_num_threads(1);
+#endif
+    omp_set_num_threads(num_threads);
+
+}
+
+
+inline void set_blas_par(){
+#ifdef _OPENBLAS
+    openblas_set_num_threads(num_threads);
+#endif
+#ifdef _MKL
+    mkl_set_num_threads(1);
+#endif
+
+}
+
 inline void nopt_par_dgemm(const CBLAS_ORDER Layout, const CBLAS_TRANSPOSE TransA,
                            const CBLAS_TRANSPOSE TransB, const lapack_int M, const lapack_int N,
                            const lapack_int K, const double alpha, const double *A,

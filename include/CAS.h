@@ -1,8 +1,8 @@
 #ifndef __cas
 #define __cas
 
-# include "molecule.h"
-# include "molecule2.h"
+class molecule;
+
 # include "inp_par_read.h"
 # include "davidson.h"
 # include "casci_solver.h"

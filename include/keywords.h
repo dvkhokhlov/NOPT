@@ -31,6 +31,9 @@ extern vector<const char *>nat_orb_kw           ;
 extern vector<const char *>cis_kw               ;
 extern vector<const char *>cis_group_start      ;
 extern vector<const char *>cis_group_end        ;
+extern vector<const char *>mp2_kw               ;
+extern vector<const char *>mp2_group_start      ;
+extern vector<const char *>mp2_group_end        ;
 
 extern vector<const char *>w_state_kw           ;
 extern vector<const char *>w_state_eq_kw        ;

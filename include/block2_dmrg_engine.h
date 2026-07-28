@@ -14,6 +14,7 @@
 #define MKL_Complex16 std::complex<double>
 #endif
 
+#include <atomic>
 #include <cstdint>
 #include <cstdio>
 #include <memory>
@@ -29,6 +30,12 @@
 #include "block2_dmrg.hpp"
 
 using namespace block2;
+
+// Process-wide engine counter. Engines alive at the same time must not share MPS scratch tags.
+inline int next_dmrg_engine_id() {
+    static std::atomic<int> counter{0};
+    return counter++;
+}
 
 // -------------------------- engine: all block2 state ----------------------------------
 struct dmrgci_engine {
@@ -68,6 +75,7 @@ struct dmrgci_engine {
     bool d2_valid = false;                        // are d2_av/d1_states current for this solve?
     std::vector<double> dmfull_cache;             // full n_s x n_s spin-summed 1-RDM (properties), delocalized
     bool dmfull_valid = false;                     // is dmfull_cache current for this solve?
+    const int engine_id = next_dmrg_engine_id(); // MPS tag namespace of this engine
     int solve_count = 0;                        // macro-iteration index -> unique MPS tag
     int last_n_sweeps = 0;                      // sweeps actually run in the last solve
     double last_sweep_dE = 0.0;                 // |dE| between the final two sweeps (achieved convergence)

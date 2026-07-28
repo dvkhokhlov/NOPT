@@ -14,17 +14,34 @@
 # include "defaults.h"
 #include "timer.h"
 # include "grabbers.h"
+# include "mp2.h"
 
 extern coord_list C;
 
 int single_point_calc( inp_par * P, molecule * Qm){ 
         
-    // DMRG exposes no determinant CI object, so the determinant-only PT methods (XMCQDPT, CDAS-PT)
-    // cannot consume it -- reject the combination up front instead of crashing later in as_aldet().
-    if(P->cas.y && P->cas.ci_solver==CISOLVER_DMRG && (P->xmc.y || P->cdas.y)){
-        fprintf(out_stream,"ERROR: CISOLVER=dmrg cannot be combined with XMCQDPT/CDAS-PT "
-                           "(they need the determinant CI object, which the DMRG backend does not provide)\n");
-        exit(EXIT_FAILURE);
+    // XMCQDPT needs the determinant CI object the DMRG backend does not provide; the relativistic
+    // (SO) CDAS path is likewise determinant-only. Non-relativistic CDAS runs through CDAS_PT2
+    // below (SO is a global fixed at parse time, so it is already valid here).
+    if(P->cas.y && P->cas.ci_solver==CISOLVER_DMRG){
+        if(P->xmc.y){
+            fprintf(out_stream,"ERROR: CISOLVER=dmrg cannot be combined with XMCQDPT "
+                               "(it needs the determinant CI object, which the DMRG backend does not provide)\n");
+            exit(EXIT_FAILURE);
+        }
+        if(P->cdas.y && SO==1){
+            fprintf(out_stream,"ERROR: CISOLVER=dmrg cannot be combined with relativistic CDAS-PT "
+                               "(the SO/GRPP path is determinant-only)\n");
+            exit(EXIT_FAILURE);
+        }
+        // The dmrg backend fills the active orbital energies from a dense diagonalization of the
+        // active Fock block, the aldet one per irrep, so away from C1 the two orderings differ.
+        if(P->cdas.y && IS_SYM && (P->cdas.HOMO || P->cdas.orb_e)){
+            fprintf(out_stream,"ERROR: HOMO and USE_ORB_FOR_ENERGY pick an active orbital by position, and that "
+                               "position is not the same for the dmrg and aldet backends under symmetry\n"
+                               "       (use ENERGY or IPEA)\n");
+            exit(EXIT_FAILURE);
+        }
     }
 
     Qm->gen_1el_data();
@@ -39,13 +56,28 @@ int single_point_calc( inp_par * P, molecule * Qm){
     
     if(P->cis.y)CIS      (Qm, &(P->cis), P->job_name);
 
-    
+    // MP2 natural-orbital generation permanently overwrites MO_VEC/orb_energy; the
+    // two-step workflow goes through the written .orb file, so forbid one-shot mixing.
+    if(P->mp2.y && (P->cas.y || P->xmc.y || P->cdas.y || P->cis.y)){
+        fprintf(out_stream,"ERROR: MP2 cannot be combined with CAS/XMCQDPT/CDAS/CIS in one run "
+                           "(natural-orbital generation overwrites the reference orbitals)\n");
+        exit(EXIT_FAILURE);
+    }
+    if(P->mp2.y && !P->rhf.y){
+        fprintf(out_stream,"ERROR: MP2 requires a converged RHF reference (set RHF=1)\n");
+        exit(EXIT_FAILURE);
+    }
+    if(P->mp2.y)MP2      (Qm, &(P->mp2), P->job_name);
+
+
     if(P->cas.y)CAS_SCF  (Qm,&(P->cas), P->job_name);
 //     Qm->MO_backup();
     
     if(P->xmc.y)QDPT2    (Qm,&(P->xmc), P->job_name);
     
-    if(SO==0)if(P->cdas.y)CDAS_PT2    (Qm,&(P->cdas), P->job_name);
+    if(SO==0)if(P->cdas.y){
+        CDAS_PT2    (Qm,&(P->cdas), P->job_name);
+    }
     if(SO==1)if(P->cdas.y)CDAS_PT2_rel(Qm,&(P->cdas), P->job_name);
     
     

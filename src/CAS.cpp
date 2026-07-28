@@ -1269,35 +1269,37 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
     }
     
     //CAS engine reading from A state 0 fragment 0
-    CAS_engine CAS;
-    CAS.init(cas ,M);
-    CAS.SCF_alloc();
+    if(M->CAS!=nullptr)delete [] M->CAS;
+    M->CAS = new CAS_engine[1];
+    CAS_engine * CAS = M->CAS;
+    CAS->init(cas ,M);
+    CAS->SCF_alloc();
     
     //SOSCF engine
     soscf_engine_MCSCF SOSCF;
     SOSCF.N_LBFGS_VECTORS=20;
-    SOSCF.init(std::min(CAS.n_ao,std::min(SOSCF.N_LBFGS_VECTORS,cas->max_it)),CAS.n_core, CAS.n_act,CAS.n_vac,CAS.n_ao,cas->x_max);
+    SOSCF.init(std::min(CAS->n_ao,std::min(SOSCF.N_LBFGS_VECTORS,cas->max_it)),CAS->n_core, CAS->n_act,CAS->n_vac,CAS->n_ao,cas->x_max);
     
     jacobi_mcscf_sd_engine j_sd;
-    j_sd.init(CAS.G,CAS.B,CAS.n_core, CAS.n_act,CAS.n_vac,CAS.n_ao,CAS.n_s_opt,cas->x_max);
+    j_sd.init(CAS->G,CAS->B,CAS->n_core, CAS->n_act,CAS->n_vac,CAS->n_ao,CAS->n_s_opt,cas->x_max);
     
-    n_dav_conv = CAS.CI_calc(1,0,0);
-    CAS.av_DM_and_F_calc(1);
+    n_dav_conv = CAS->CI_calc(1,0,0);
+    CAS->av_DM_and_F_calc(1);
     // The canonicalization above rotates the active orbitals only for a backend that can carry its
     // CI vector along; for one that cannot, the active Hamiltonian is unchanged and the solve just
     // done still holds, so re-solving would only discard it.
-    if(CAS.CI->supports_civec_rotation())
-        n_dav_conv = CAS.CI_calc(0,1,1);
-//     CAS.F_vac();
+    if(CAS->CI->supports_civec_rotation())
+        n_dav_conv = CAS->CI_calc(0,1,1);
+//     CAS->F_vac();
 
-    if(cas->dmrg.dump_loc_orbs && CAS.localizer_){
+    if(cas->dmrg.dump_loc_orbs && CAS->localizer_){
         fprintf(out_stream,"\nDumping localized active orbitals:\n");
-        M->LOC_print(job_name, CAS.U_loc.data());
+        M->LOC_print(job_name, CAS->U_loc.data());
     }
     
     
     
-    CAS.print_av_table("CAS_SCF density averaging:");
+    CAS->print_av_table("CAS_SCF density averaging:");
     fprintf(out_stream,"\n");
     fprintf(out_stream,"Start CAS_SCF iterations\n");
     fprintf(out_stream,"_________________________________________________________________________________\n");
@@ -1309,27 +1311,27 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
         if(n_iter>cas->max_it-1){converged=0; break;}
         
         
-        if(cas->method==1)E = CAS.SA_grad_hess_calc(1);
-        if(cas->method==2)E = CAS.SM_grad_hess_calc(1);
+        if(cas->method==1)E = CAS->SA_grad_hess_calc(1);
+        if(cas->method==2)E = CAS->SM_grad_hess_calc(1);
         
-        if(cas->method==1)max_grad_el = SOSCF.calc(CAS.G,CAS.B);
+        if(cas->method==1)max_grad_el = SOSCF.calc(CAS->G,CAS->B);
         if(cas->method==2)max_grad_el = j_sd.find_max_el();
         
         
-        bool hit_max = CAS.CI->last_solve_hit_max();
+        bool hit_max = CAS->CI->last_solve_hit_max();
         if(hit_max) any_maxed=true;
-        fprintf(out_stream,"%3d |% 18.10f | % .3e | %.3e | %.3e | %3d   | %.3e |%s\n",n_iter,E,E-E_old,max_grad_el, rot_step,n_dav_conv,CAS.CI->last_solve_resid(), hit_max?" *":"");
+        fprintf(out_stream,"%3d |% 18.10f | % .3e | %.3e | %.3e | %3d   | %.3e |%s\n",n_iter,E,E-E_old,max_grad_el, rot_step,n_dav_conv,CAS->CI->last_solve_resid(), hit_max?" *":"");
         fflush(out_stream);
 //         getchar();
 //         exit(0);
         if(fabs(E-E_old)<cas->e_conv){converged=1; break;}
         if(max_grad_el  <cas->g_conv){converged=2; break;}
         
-        if(cas->method==1)rot_step=SOSCF.step(CAS.MO_VEC,CAS.MO_BUF);
-        if(cas->method==2)rot_step=j_sd.step(CAS.MO_VEC,CAS.MO_BUF);
+        if(cas->method==1)rot_step=SOSCF.step(CAS->MO_VEC,CAS->MO_BUF);
+        if(cas->method==2)rot_step=j_sd.step(CAS->MO_VEC,CAS->MO_BUF);
 //         printf_timer("CAS_step");
 //         converged=0; break;
-        n_dav_conv =CAS.CI_calc(0,0,1);
+        n_dav_conv =CAS->CI_calc(0,0,1);
         if(rot_step  <cas->s_conv){converged=3; break;}
                 
 //         printf_timer("CAS-CI");
@@ -1355,7 +1357,7 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
     
     
     //canonical_orbitals
-    CAS.av_DM_and_F_calc(1);
+    CAS->av_DM_and_F_calc(1);
     // A backend that can't rotate its own CI vector (DMRG) does not follow the active-block
     // canonicalization above, so its leading-configuration read-out would sit in the SA-converged
     // frame. Hand it the canonicalization -- eigenvectors of the active Fock block, ascending
@@ -1366,65 +1368,64 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
     // different bases (nullptr for a backend that canonicalizes its own CI vector).
     double * U_canon  = nullptr;
     double * ev_canon = nullptr;
-    if(!CAS.CI->supports_civec_rotation() && CAS.n_act>0){
-        U_canon  = new double[CAS.n_act*CAS.n_act];
-        ev_canon = new double[CAS.n_act];
-        for(int i=0;i<CAS.n_act;i++)
-            for(int j=0;j<CAS.n_act;j++)
-                U_canon[i*CAS.n_act+j]=CAS.F_tot[(i+CAS.n_core)*CAS.n_ao+(j+CAS.n_core)];
-        lapack_diag(U_canon, ev_canon, CAS.n_act);
-        normalize_rotation_rows(U_canon, CAS.n_act);
-        CAS.CI->set_report_rotation(U_canon);
+    if(!CAS->CI->supports_civec_rotation() && CAS->n_act>0){
+        U_canon  = new double[CAS->n_act*CAS->n_act];
+        ev_canon = new double[CAS->n_act];
+        for(int i=0;i<CAS->n_act;i++)
+            for(int j=0;j<CAS->n_act;j++)
+                U_canon[i*CAS->n_act+j]=CAS->F_tot[(i+CAS->n_core)*CAS->n_ao+(j+CAS->n_core)];
+        lapack_diag(U_canon, ev_canon, CAS->n_act);
+        normalize_rotation_rows(U_canon, CAS->n_act);
+        CAS->CI->set_report_rotation(U_canon);
+        // The eigenvalues of the active Fock block are basis-invariant scalars, so a backend that
+        // cannot rotate its CI vector keeps them as its active orbital energies while its orbitals
+        // stay in the solve frame.
+        memcpy(M->orb_energy+CAS->n_core, ev_canon, CAS->n_act*sizeof(double));
     }
     // Only the core and virtual blocks were canonicalized for such a backend, which leaves the active
     // Hamiltonian -- and its solution -- untouched. Re-solving would report determinants, properties
     // and energies from a different wavefunction than the RDMs, Fock matrix, canonical rotation and
     // natural orbitals prepared above.
-    if(CAS.CI->supports_civec_rotation())
-        n_dav_conv =CAS.CI_calc(0,0,1);
-    if(LINEAR)CAS.rotate();
+    if(CAS->CI->supports_civec_rotation())
+        n_dav_conv =CAS->CI_calc(0,0,1);
+    if(LINEAR)CAS->rotate();
     
     printf_timer("Preparation of canonical orbitals");
     
     fprintf(out_stream,"CAS_SCF WaveFunctions:\n\n");
-    CAS.CI->gen_ext_ind();
-    CAS.CI->print_states(0,CAS.n_s,1);
+    CAS->CI->gen_ext_ind();
+    CAS->CI->print_states(0,CAS->n_s,1);
 
-    CAS.print_av_table("CAS_SCF density averaging:");
+    CAS->print_av_table("CAS_SCF density averaging:");
     
-    cas->w_state=CAS.wstate_actual;
+    cas->w_state=CAS->wstate_actual;
         
     
     fprintf(out_stream,"\n\nCAS_SCF Energy summary:\n");
-    PrintEnergy(CAS.CI->E_states_ptr(),CAS.n_s, 1);
+    PrintEnergy(CAS->CI->E_states_ptr(),CAS->n_s, 1);
     
-    CAS.print_properties("CAS_SCF");
+    CAS->print_properties("CAS_SCF");
 
     fprintf(out_stream,"\n\n");
     if(write_orbs){
         fprintf(out_stream,"Writing CAS_SCF canonical orbitals:\n");
 
         // A backend that cannot rotate its CI vector left the active orbitals in the SA-converged
-        // frame while reporting its determinants in the canonical one. Rotate the active orbitals
-        // with that same U_canon (and install its eigenvalues as the active orbital energies) for
-        // the write, then put the solve basis back: the RDMs behind the properties and the natural
-        // orbitals below live in it, and both are basis-invariant anyway.
+        // frame while reporting its determinants in the canonical one. Rotate them with that same
+        // U_canon for the write and put the solve basis back afterwards: the RDMs behind the
+        // properties and the natural orbitals below live in the solve basis.
         double * MO_act_save = nullptr;
-        double * ev_act_save = nullptr;
         if(U_canon!=nullptr){
-            const int n_a = CAS.n_act, n_o = M->n_ao, n_0 = CAS.n_core;
+            const int n_a = CAS->n_act, n_o = M->n_ao, n_0 = CAS->n_core;
             MO_act_save = new double[n_a*n_o];
-            ev_act_save = new double[n_a];
             double * B  = new double[n_a*n_o];
             memcpy(MO_act_save, M->MO_VEC+n_0*n_o    , n_a*n_o*sizeof(double));
-            memcpy(ev_act_save, M->orb_energy+n_0    , n_a    *sizeof(double));
             cblas_dgemm(CblasRowMajor,CblasNoTrans,CblasNoTrans,
                         n_a,n_o,n_a,1.0,
                         U_canon,n_a,
                         M->MO_VEC+n_0*n_o,n_o,0.0,
                         B,n_o);
             memcpy(M->MO_VEC+n_0*n_o , B       , n_a*n_o*sizeof(double));
-            memcpy(M->orb_energy+n_0 , ev_canon, n_a    *sizeof(double));
             delete[] B;
         }
 
@@ -1437,13 +1438,11 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
         M->MO_print(name);
         fprintf(out_stream,"data file         : %s\n",name);
         fprintf(out_stream,"\n");
-
+        
         if(MO_act_save!=nullptr){
-            memcpy(M->MO_VEC+CAS.n_core*M->n_ao, MO_act_save, CAS.n_act*M->n_ao*sizeof(double));
-            memcpy(M->orb_energy+CAS.n_core    , ev_act_save, CAS.n_act        *sizeof(double));
-            delete[] MO_act_save;
-            delete[] ev_act_save;
+            memcpy(M->MO_VEC+CAS->n_core*M->n_ao, MO_act_save, CAS->n_act*M->n_ao*sizeof(double));
         }
+        if(MO_act_save != nullptr) delete[] MO_act_save;
 
         fprintf(out_stream,"Writing CAS_SCF natural orbitals:\n");
         
@@ -1458,7 +1457,7 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
         } else {
             fprintf(out_stream,"Writing CAS_SCF WaveFunctions:\n");
             sprintf(name,"%s_CAS.ci\0",job_name);
-            CAS.CI->write_civec(0, name);
+            CAS->CI->write_civec(0, name);
             fprintf(out_stream,"data file         : %s\n",name);
         }
     }

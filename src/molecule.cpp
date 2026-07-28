@@ -182,7 +182,7 @@ molecule::molecule()
     read_CI                =NULL;
     CI_file_name           =NULL;
     CI                     =NULL;
-        
+    CAS                    =NULL;
     
     nat_orbs_m             =NULL;
     NO_VEC                 =NULL;
@@ -246,6 +246,7 @@ molecule::~molecule()
     
     if(read_CI            != NULL) delete [] read_CI;
     if(CI                 != NULL) delete [] CI;
+    if(CAS                != NULL) delete [] CAS;
     if(        so_name!= NULL) if(        so_name!=   ecp_name)delete []         so_name;
     if(       ecp_name!= NULL) if(       ecp_name!= basis_name)delete []        ecp_name;
     if(read_basis_name!= NULL) if(read_basis_name!= basis_name)delete [] read_basis_name;

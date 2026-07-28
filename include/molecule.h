@@ -12,6 +12,7 @@ using libint2::Shell;
 #include "symmetry.h"
 #include "z_matrix.h"
 
+#include "CAS.h"
 class molecule;
 
 class molecule 
@@ -99,6 +100,7 @@ class molecule
         char ** CI_file_name;
         int n_CI;
         aldet_data * CI;
+        CAS_engine * CAS;
         
         char * source_name;
         int inp_mol_line;
