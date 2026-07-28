@@ -38,12 +38,16 @@ void aldet_casci_wrap::G_calc_full(double* G) {
         for (long j = 0; j < block; j++) Gth[0][j] += Gth[i][j];
 }
 
+namespace {
+
+// One (Tbra, Tket, np) pair of the complementary overlap plus its per-root output.
+struct h2caa_leg { const double* Tbra; const double* Tket; int np; double* omega; };
+
 // Complementary six-operator overlap (3-RDM-free lambda3), per root, overwritten.
 // omega[r] = sum_p sum_{spins} Tbra[p,w,x,y] Tket[p,z,u,v] <r| x+ y+ w z+ v u |r>
 // = sum{ B2 . SF_G2 } - sum{ Tbra . D3 . Tket }, the certified normal-ordered moment.
 // SF_G2 = per-root 2-RDM (GAMMA[x,u,y,v]); SF_D3 is spin-summed from the AAA/AAB workers.
-void aldet_casci_wrap::h2caa_overlap(const double* Tbra, const double* Tket, int np, double* omega) {
-    aldet_data* ci = ci_;
+void h2caa_kernel(aldet_data* ci, const h2caa_leg* leg, int nleg) {
     const int  n_s = ci->n_states[0];
     const int  no  = ci->n_act;
     const int  na2 = no * no;
@@ -51,13 +55,17 @@ void aldet_casci_wrap::h2caa_overlap(const double* Tbra, const double* Tket, int
     const long na4 = (long)na3 * no;
     const long na6 = (long)na3 * na3;
 
-    for (int r = 0; r < n_s; r++) omega[r] = 0.0;
+    for (int l = 0; l < nleg; l++)
+        for (int r = 0; r < n_s; r++) leg[l].omega[r] = 0.0;
 
     // Root-independent 2-body T-fold B2[(x,y),(u,v)] = sum_{p,w} Tbra[p,w,x,y] Tket[p,w,u,v],
     // viewing Tbra/Tket as [np*no x na2] (rows (p,w)); B2 = Tbra^T Tket.
-    std::vector<double> B2((long)na2 * na2, 0.0);
-    nopt_par_dgemm(CblasRowMajor, CblasTrans, CblasNoTrans, na2, na2, np * no,
-                   1.0, Tbra, na2, Tket, na2, 0.0, B2.data(), na2);
+    std::vector<std::vector<double>> B2(nleg);
+    for (int l = 0; l < nleg; l++) {
+        B2[l].assign((long)na2 * na2, 0.0);
+        nopt_par_dgemm(CblasRowMajor, CblasTrans, CblasNoTrans, na2, na2, leg[l].np * no,
+                       1.0, leg[l].Tbra, na2, leg[l].Tket, na2, 0.0, B2[l].data(), na2);
+    }
 
     // Per-root 2-RDM diagonal blocks (n_s blocks of na4) in the NOPT GAMMA convention.
     std::vector<double> G2diag((long)n_s * na4, 0.0);
@@ -90,7 +98,8 @@ void aldet_casci_wrap::h2caa_overlap(const double* Tbra, const double* Tket, int
     // is reused across roots.
     std::vector<double> AAAsum(na6), AABsum(na6);
     std::vector<double> D3M(na6);
-    std::vector<double> Z((long)np * na3);
+    std::vector<std::vector<double>> Z(nleg);
+    for (int l = 0; l < nleg; l++) Z[l].assign((long)leg[l].np * na3, 0.0);
 
     for (int r = 0; r < n_s; r++) {
         set_zero_matr(AAAsum.data(), na6);
@@ -104,15 +113,7 @@ void aldet_casci_wrap::h2caa_overlap(const double* Tbra, const double* Tket, int
         reduce_diag(AABsum, [&](double* o, int it, int nt) {
             aldet_calc_DM_3body_AAB(o, 1, n_s, ci->coef_bas[0] + r, no, ci->nb, ci->na, ci->Nb, ci->Na, ci->fb, ci->fa, ci->vec_b, ci->vec_a, it, nt); });
 
-        // 2-body completion: omega_2 = sum B2[(x,y),(u,v)] * GAMMA_r[x,u,y,v].
         const double* Gr = G2diag.data() + (long)r * na4;
-        double o2 = 0.0;
-        for (int x = 0; x < no; x++)
-        for (int y = 0; y < no; y++)
-        for (int u = 0; u < no; u++)
-        for (int v = 0; v < no; v++)
-            o2 += B2[(long)(x * no + y) * na2 + (u * no + v)]
-                * Gr[(((long)x * no + u) * no + y) * no + v];
 
         // Moment tensor D3M[(w,x,y),(z,u,v)] = SF_D3_r[x,y,z,u,v,w]. The two mixed-spin
         // families reordered into the (a,a,b) worker slots each cross one physical fermion
@@ -131,12 +132,40 @@ void aldet_casci_wrap::h2caa_overlap(const double* Tbra, const double* Tket, int
                 - B3[id6(x, z, y, v, u, w)]
                 + B3[id6(y, z, x, w, v, u)];
 
-        // 3-body contraction: Z = Tket . D3M^T, then omega_3 = -sum Tbra . Z.
-        nopt_par_dgemm(CblasRowMajor, CblasNoTrans, CblasTrans, np, na3, na3,
-                       1.0, Tket, na3, D3M.data(), na3, 0.0, Z.data(), na3);
-        double o3 = 0.0;
-        for (long k = 0; k < (long)np * na3; k++) o3 += Tbra[k] * Z[k];
+        for (int l = 0; l < nleg; l++) {
+            const double* Tbra = leg[l].Tbra;
+            const double* Tket = leg[l].Tket;
+            const int     np   = leg[l].np;
 
-        omega[r] = o2 - o3;
+            // 2-body completion: omega_2 = sum B2[(x,y),(u,v)] * GAMMA_r[x,u,y,v].
+            double o2 = 0.0;
+            for (int x = 0; x < no; x++)
+            for (int y = 0; y < no; y++)
+            for (int u = 0; u < no; u++)
+            for (int v = 0; v < no; v++)
+                o2 += B2[l][(long)(x * no + y) * na2 + (u * no + v)]
+                    * Gr[(((long)x * no + u) * no + y) * no + v];
+
+            // 3-body contraction: Z = Tket . D3M^T, then omega_3 = -sum Tbra . Z.
+            nopt_par_dgemm(CblasRowMajor, CblasNoTrans, CblasTrans, np, na3, na3,
+                           1.0, Tket, na3, D3M.data(), na3, 0.0, Z[l].data(), na3);
+            double o3 = 0.0;
+            for (long k = 0; k < (long)np * na3; k++) o3 += Tbra[k] * Z[l][k];
+
+            leg[l].omega[r] = o2 - o3;
+        }
     }
+}
+
+}   // namespace
+
+void aldet_casci_wrap::h2caa_overlap(const double* Tbra, const double* Tket, int np, double* omega) {
+    const h2caa_leg leg = { Tbra, Tket, np, omega };
+    h2caa_kernel(ci_, &leg, 1);
+}
+
+void aldet_casci_wrap::h2caa_overlap2(const double* Tbra1, const double* Tket1, int np1, double* omega1,
+                                      const double* Tbra2, const double* Tket2, int np2, double* omega2) {
+    const h2caa_leg leg[2] = { { Tbra1, Tket1, np1, omega1 }, { Tbra2, Tket2, np2, omega2 } };
+    h2caa_kernel(ci_, leg, 2);
 }

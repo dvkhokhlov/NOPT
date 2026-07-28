@@ -143,6 +143,14 @@ public:
     // active legs in the frozen lattice basis; unweighted. Default aborts loudly.
     virtual bool supports_h2caa_overlap() const { return false; }
     virtual void h2caa_overlap(const double* Tbra, const double* Tket, int np, double* omega);
+    // Two pairs against the same roots, per-pair semantics exactly as above; gated by the same
+    // query. A backend whose per-root density build dominates overrides this to build that density
+    // once and contract both pairs against it. The default runs the single-pair route twice.
+    virtual void h2caa_overlap2(const double* Tbra1, const double* Tket1, int np1, double* omega1,
+                                const double* Tbra2, const double* Tket2, int np2, double* omega2) {
+        h2caa_overlap(Tbra1, Tket1, np1, omega1);
+        h2caa_overlap(Tbra2, Tket2, np2, omega2);
+    }
 
     // --- IO / diagnostics ---
     virtual void gen_ext_ind() = 0;

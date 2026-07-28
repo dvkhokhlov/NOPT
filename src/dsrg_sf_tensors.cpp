@@ -644,20 +644,18 @@ void dsrg_sf_tensors::compute_e3(casci_solver* CI, int root){
     om_v.assign(ns, 0.0);
     om_c.assign(ns, 0.0);
     {
-        std::vector<double> Tbra((size_t)nv*na3, 0.0), Tket((size_t)nv*na3, 0.0);
+        std::vector<double> Tbra_v((size_t)nv*na3, 0.0), Tket_v((size_t)nv*na3, 0.0);
         for(int e=0;e<nv;e++) for(int w=0;w<na;w++) for(int x=0;x<na;x++) for(int y=0;y<na;y++)
-            Tbra[((size_t)e*na+w)*na2 + x*na+y] = Vt_vaaa[(((size_t)e*na+w)*na+x)*na+y];
+            Tbra_v[((size_t)e*na+w)*na2 + x*na+y] = Vt_vaaa[(((size_t)e*na+w)*na+x)*na+y];
         for(int e=0;e<nv;e++) for(int z=0;z<na;z++) for(int u=0;u<na;u++) for(int v=0;v<na;v++)
-            Tket[((size_t)e*na+z)*na2 + u*na+v] = T2_aava[(((size_t)u*na+v)*nv+e)*na+z];
-        CI->h2caa_overlap(Tbra.data(), Tket.data(), nv, om_v.data());
-    }
-    {
-        std::vector<double> Tbra((size_t)nc*na3, 0.0), Tket((size_t)nc*na3, 0.0);
+            Tket_v[((size_t)e*na+z)*na2 + u*na+v] = T2_aava[(((size_t)u*na+v)*nv+e)*na+z];
+        std::vector<double> Tbra_c((size_t)nc*na3, 0.0), Tket_c((size_t)nc*na3, 0.0);
         for(int m=0;m<nc;m++) for(int w=0;w<na;w++) for(int x=0;x<na;x++) for(int y=0;y<na;y++)
-            Tbra[((size_t)m*na+w)*na2 + x*na+y] = Vt_aaca[(((size_t)x*na+y)*nc+m)*na+w];
+            Tbra_c[((size_t)m*na+w)*na2 + x*na+y] = Vt_aaca[(((size_t)x*na+y)*nc+m)*na+w];
         for(int m=0;m<nc;m++) for(int z=0;z<na;z++) for(int u=0;u<na;u++) for(int v=0;v<na;v++)
-            Tket[((size_t)m*na+z)*na2 + u*na+v] = T2_caaa[(((size_t)m*na+z)*na+u)*na+v];
-        CI->h2caa_overlap(Tbra.data(), Tket.data(), nc, om_c.data());
+            Tket_c[((size_t)m*na+z)*na2 + u*na+v] = T2_caaa[(((size_t)m*na+z)*na+u)*na+v];
+        CI->h2caa_overlap2(Tbra_v.data(), Tket_v.data(), nv, om_v.data(),
+                           Tbra_c.data(), Tket_c.data(), nc, om_c.data());
     }
 
     // S2 blocks needed by the completions: S2[i,j,a,b] = 2 T2[i,j,a,b] - T2[j,i,a,b].

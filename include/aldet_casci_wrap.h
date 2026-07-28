@@ -75,6 +75,8 @@ public:
     void G_calc_full(double* G) override;                                     // full n_s x n_s 2-RDM
     bool supports_h2caa_overlap() const override { return true; }
     void h2caa_overlap(const double* Tbra, const double* Tket, int np, double* omega) override;
+    void h2caa_overlap2(const double* Tbra1, const double* Tket1, int np1, double* omega1,
+                        const double* Tbra2, const double* Tket2, int np2, double* omega2) override;
 
     // --- queries ---
     int    n_act()         const override { return ci_->n_act; }
