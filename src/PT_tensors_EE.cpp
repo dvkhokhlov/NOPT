@@ -1061,9 +1061,9 @@ int PT_tensors::calc_EE_2_CCVV(){
         
     }
     
-    
-    for(int a=0; a<n_v; a++){//fprintf(stderr,"CCVV a=%d\r",a);
+    set_blas_non_par();
 #pragma omp parallel for
+    for(int a=0; a<n_v; a++){//fprintf(stderr,"CCVV a=%d\r",a);
     for(int b=a; b<n_v; b++){/*fprintf(stderr,"CCVV a,b=%d,%d\r",a,b);*/
         
         int th_id = omp_get_thread_num();
@@ -1114,6 +1114,8 @@ int PT_tensors::calc_EE_2_CCVV(){
         }
     }
     }
+    set_blas_par();
+    
     if(RI==0)delete[] IEIE;
     
     for(int i=0;i<num_threads;i++)
@@ -1151,7 +1153,7 @@ int PT_tensors::calc_EE_2_CAVV(){
     }
     
     
-    
+    set_blas_non_par();
     #pragma omp parallel
     {
         int nt = omp_get_thread_num();
@@ -1206,6 +1208,7 @@ int PT_tensors::calc_EE_2_CAVV(){
         delete[] K;
         delete[] J;
     }
+    set_blas_par();
     if(RI==0)delete[] IEIE;
     
     for(long j=0; j<num_threads;j++)
@@ -1248,7 +1251,7 @@ int PT_tensors::calc_EE_2_AAVV(){
         
     }
 
-    
+    set_blas_non_par();
     #pragma omp parallel
     {
         int nt =omp_get_thread_num();
@@ -1297,6 +1300,7 @@ int PT_tensors::calc_EE_2_AAVV(){
     
     
     }
+    set_blas_par();
     if(RI==0)delete[] IEIE;
     
 //     #pragma omp parallel for
@@ -1343,7 +1347,7 @@ int PT_tensors::calc_EE_2_CCAV(){
     }
     
     
-    
+    set_blas_non_par();
     #pragma omp parallel
     {
         int nt =omp_get_thread_num();
@@ -1390,6 +1394,8 @@ int PT_tensors::calc_EE_2_CCAV(){
         delete[] K;
         delete[] J;
     }
+    set_blas_par();
+    
     if(RI==0)delete[] IIIE;
     
     for(long j=1; j<num_threads;j++)
@@ -1437,7 +1443,7 @@ int PT_tensors::calc_EE_2_CCAA(){
     
     
     
-    
+    set_blas_non_par();
     #pragma omp parallel
     {
         int nt =omp_get_thread_num();
@@ -1488,6 +1494,7 @@ int PT_tensors::calc_EE_2_CCAA(){
         
         delete[] Ja;
     }
+    set_blas_par();
     if(RI==0)delete[] ACAC;
     
     for(long j=1; j<num_threads;j++)

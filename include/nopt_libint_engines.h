@@ -5,8 +5,10 @@
 # include <libint2/engine.h>
 
 # include "common_vars.h"
+# include "blas_link.h"
 # include "molecule.h"
 # include "ecp.h"
+
 // extern "C" void libgrpp_init();
 #ifdef _USE_GRPP
 extern "C"{
@@ -113,7 +115,7 @@ inline int nopt_initialize(int ext_num_threads){
     nopt_parallel_init(ext_num_threads);
     //num_threads is set by nopt_parallel_init
     omp_set_num_threads(num_threads);
-    
+    set_blas_par();
     
     nopt_engines_initialize();
     
