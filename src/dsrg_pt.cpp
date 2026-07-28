@@ -31,8 +31,8 @@
 static void rot_cross(const double * Ul, const double * X, const double * Ur,
                       int m, int n, double * out, double * tmp){
     if(m==0 || n==0) return;
-    cblas_dgemm(CblasRowMajor,CblasTrans  ,CblasNoTrans, m,n,m, 1.0, Ul,m, X ,n, 0.0, tmp,n);
-    cblas_dgemm(CblasRowMajor,CblasNoTrans,CblasNoTrans, m,n,n, 1.0, tmp,n, Ur,n, 0.0, out,n);
+    nopt_par_dgemm(CblasRowMajor,CblasTrans  ,CblasNoTrans, m,n,m, 1.0, Ul,m, X ,n, 0.0, tmp,n);
+    nopt_par_dgemm(CblasRowMajor,CblasNoTrans,CblasNoTrans, m,n,n, 1.0, tmp,n, Ur,n, 0.0, out,n);
 }
 
 // Max off-diagonal magnitude of a dim x dim block after rotation to the semicanonical
