@@ -62,8 +62,8 @@ public:
     void set_densities(const double* L1, const double* GAMMA);
 
     // Build pipeline -- call in order.
-    void build_vt();          // 6 renormalized v-tilde blocks from B
-    void build_amplitudes();  // 7 T2 blocks (internal aaaa zeroed), 3 T1 blocks, Ft
+    void build_vt();          // 5 stored renormalized v-tilde blocks from B (vvaa is tiled)
+    void build_amplitudes();  // 5 stored T2 blocks (aavv tiled, aaaa internal), 3 T1, Ft
     void compute_e2();        // Forte [F,T1]/[F,T2]/[V,T1] + certified in-core [V,T2]
     void compute_e3(casci_solver* CI, int root);        // DIRECT lambda3 (cert 2.6)
     // Reference energy (cert 2.7). h_core_diag: bare 1-e h on core (diagonal, n_c).
@@ -124,10 +124,11 @@ private:
     std::vector<double> SF_L2;      // n_a^4, cumulant SF_L2[p][q][r][s]
     const double* GAMMA_in = nullptr;   // seam layout, kept for the dump
 
-    // renormalized v-tilde blocks (physicist [bra1][bra2][ket1][ket2])
-    std::vector<double> Vt_vvaa, Vt_aacc, Vt_avca, Vt_aaca, Vt_avaa, Vt_vaaa;
+    // renormalized v-tilde blocks (physicist [bra1][bra2][ket1][ket2]); the n_v^2 n_a^2
+    // vvaa/aavv pair is not stored -- build_aavv_tile emits it one virtual tile at a time
+    std::vector<double> Vt_aacc, Vt_avca, Vt_aaca, Vt_avaa, Vt_vaaa;
     // bare amplitude blocks (T2[hole1][hole2][part1][part2]); aaaa is internal (zero)
-    std::vector<double> T2_aavv, T2_ccaa, T2_caav, T2_acav, T2_aava, T2_caaa;
+    std::vector<double> T2_ccaa, T2_caav, T2_acav, T2_aava, T2_caaa;
     // singles + renormalized Fock cross blocks
     std::vector<double> T1_cv, T1_ca, T1_av;
     std::vector<double> Ft_cv, Ft_ca, Ft_av;
@@ -148,6 +149,12 @@ private:
     std::vector<double> root_w, root_Ebare, root_Edressed;
     std::vector<int>    root_map;
     bool root_data_set = false;
+
+    // One VA x VA slab for the virtual tile [e0,e1) feeding both AAVV blocks: the
+    // renormalized vt[((el*n_v+f)*n_a+x)*n_a+y] and the amplitudes
+    // t2[(u*n_a+v)*(e1-e0)*n_v + (el*n_v+f)], el = e-e0. raw is scratch; all three resize.
+    void build_aavv_tile(int e0, int e1, std::vector<double>& raw,
+                         std::vector<double>& vt, std::vector<double>& t2) const;
 
     // file-local regularizer (Forte STD source; Taylor guard small=1e-3, order 4)
     double rs(double D) const;      // (1 - e^{-sD^2})/D  with the small-D Taylor branch

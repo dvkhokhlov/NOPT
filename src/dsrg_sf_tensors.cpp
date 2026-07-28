@@ -15,6 +15,7 @@
 #include "casci_solver.h"
 
 #include <vector>
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <cmath>
@@ -22,6 +23,9 @@
 extern int num_threads;
 
 namespace {
+
+// Virtual-tile width of the AAVV blocks (~160 MB per slab at n_v = 780, n_a = 20).
+constexpr int aavv_tile_nv = 64;
 
 // Raw aux contraction raw[(a),(b)] = sum_k A[a*aux+k] B[b*aux+k] over the RI auxiliary
 // index (aux fastest in both slabs). raw is rA x rB row-major (ld = rB).
@@ -34,6 +38,22 @@ void contract_aux(const double* A, int rA, const double* B, int rB, long aux, do
 void contract_ext(const double* A, const double* B, int next, int dp, int dq, double* out){
     nopt_par_dgemm(CblasRowMajor, CblasTrans, CblasNoTrans, dp, dq, next,
                    1.0, A, dp, B, dq, 0.0, out, dq);
+}
+
+// C[na2 x na2] += A[na2 x K] B[K x na2]; the tiled AAVV blocks close one tile per call.
+void accum_aa(const double* A, const double* B, int K, int na2, double* C){
+    nopt_par_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, na2, na2, K,
+                   1.0, A, K, B, na2, 1.0, C, na2);
+}
+
+// s2[(u,v)][k] = 2 t2[(u,v)][k] - t2[(v,u)][k]. On an AAVV tile the S2 fold is this
+// active swap, so the tile's virtual pair (e,f) never leaves the tile.
+void fold_s2_aa(const std::vector<double>& t2, int na, int K, std::vector<double>& s2){
+    s2.assign((size_t)na*na*K, 0.0);
+#pragma omp parallel for collapse(2) schedule(static)
+    for(int u=0;u<na;u++) for(int v=0;v<na;v++)
+        for(int k=0;k<K;k++)
+            s2[(size_t)(u*na+v)*K+k] = 2.0*t2[(size_t)(u*na+v)*K+k] - t2[(size_t)(v*na+u)*K+k];
 }
 
 } // namespace
@@ -103,16 +123,7 @@ void dsrg_sf_tensors::build_vt(){
 
     std::vector<double> raw;
 
-    // vvaa  <e f|x y> = (ex|fy):  slabA=VA(e,x), slabB=VA(f,y)
-    Vt_vvaa.assign((size_t)nv*nv*na*na, 0.0);
-    raw.assign((size_t)nv*na*nv*na, 0.0);
-    contract_aux(VA, nv*na, VA, nv*na, aux, raw.data());
-    for(int e=0;e<nv;e++) for(int f=0;f<nv;f++)
-    for(int x=0;x<na;x++) for(int y=0;y<na;y++){
-        const double D = e_v[e]+e_v[f]-e_a[x]-e_a[y];
-        Vt_vvaa[(((size_t)e*nv+f)*na+x)*na+y] =
-            raw[(size_t)(e*na+x)*(nv*na)+(f*na+y)]*(1.0+rfac(D));
-    }
+    // vvaa is not stored (build_aavv_tile emits it per virtual tile).
 
     // aacc  <w x|i j> = (wi|xj):  slabA=CA(w,i)->row i*na+w, slabB=CA(x,j)->row j*na+x
     Vt_aacc.assign((size_t)na*na*nc*nc, 0.0);
@@ -182,16 +193,7 @@ void dsrg_sf_tensors::build_amplitudes(){
     const double* AA = R->AA_RI_M;
     std::vector<double> raw;
 
-    // aavv  t^{uv}_{ef} = <ef|uv> R,  <ef|uv>=(eu|fv):  VA(e,u), VA(f,v)
-    T2_aavv.assign((size_t)na*na*nv*nv, 0.0);
-    raw.assign((size_t)nv*na*nv*na, 0.0);
-    contract_aux(VA, nv*na, VA, nv*na, aux, raw.data());
-    for(int u=0;u<na;u++) for(int v=0;v<na;v++)
-    for(int e=0;e<nv;e++) for(int f=0;f<nv;f++){
-        const double D = e_a[u]+e_a[v]-e_v[e]-e_v[f];
-        T2_aavv[(((size_t)u*na+v)*nv+e)*nv+f] =
-            raw[(size_t)(e*na+u)*(nv*na)+(f*na+v)]*rs(D);
-    }
+    // aavv is not stored (build_aavv_tile emits it per virtual tile).
 
     // ccaa  t^{ij}_{uv} = <uv|ij> R,  <uv|ij>=(ui|vj):  CA(u,i)->row i*na+u, CA(v,j)->j*na+v
     T2_ccaa.assign((size_t)nc*nc*na*na, 0.0);
@@ -294,6 +296,31 @@ void dsrg_sf_tensors::build_amplitudes(){
     }
 }
 
+// ---- AAVV per virtual tile: one RI slab feeds both the renormalized <ef|xy> block and
+//      the t^{uv}_{ef} amplitudes, in the layouts the untiled blocks had. ----
+
+void dsrg_sf_tensors::build_aavv_tile(int e0, int e1, std::vector<double>& raw,
+                                      std::vector<double>& vt, std::vector<double>& t2) const {
+    const int na=n_a, nv=n_v, ntile=e1-e0;
+    const long aux = R->aux_n_ao;
+    const double* VA = R->VA_RI_M;   // row = v*na + a  (virt,act)
+    const size_t K = (size_t)ntile*nv;
+
+    raw.assign((size_t)ntile*na*nv*na, 0.0);
+    contract_aux(VA + (size_t)e0*na*aux, ntile*na, VA, nv*na, aux, raw.data());
+    vt.assign((size_t)ntile*nv*na*na, 0.0);
+    t2.assign((size_t)na*na*K, 0.0);
+#pragma omp parallel for collapse(2) schedule(static)
+    for(int el=0;el<ntile;el++) for(int f=0;f<nv;f++){
+        const int e = e0+el;
+        for(int x=0;x<na;x++) for(int y=0;y<na;y++){
+            const double g = raw[(size_t)(el*na+x)*(nv*na)+(f*na+y)];   // (ex|fy)
+            vt[(((size_t)el*nv+f)*na+x)*na+y] = g*(1.0+rfac(e_v[e]+e_v[f]-e_a[x]-e_a[y]));
+            t2[(size_t)(x*na+y)*K + (el*nv+f)] = g*rs(e_a[x]+e_a[y]-e_v[e]-e_v[f]);
+        }
+    }
+}
+
 // ---- E(2): Forte [F,T1]/[F,T2]/[V,T1] closures + certified in-core [V,T2] ----
 
 void dsrg_sf_tensors::compute_e2(){
@@ -361,16 +388,19 @@ void dsrg_sf_tensors::compute_e2(){
                        1.0, A.data(), K, B.data(), (int)na2, 0.0, C.data(), (int)na2);
     };
 
-    // AAVV:  0.25 (S2.Vt) L1 L1 + 0.5 (T2.Vt) L2.  Fat index (e,f) over virt^2.
+    // AAVV:  0.25 (S2.Vt) L1 L1 + 0.5 (T2.Vt) L2.  Fat index (e,f) over virt^2, summed
+    // one virtual tile at a time (the two n_v^2 n_a^2 blocks are never materialized).
     {
         std::vector<double> MT(na4, 0.0), MS(na4, 0.0);      // [(u,v)][(w,x)]
-        gemm_aa(T2_aavv, Vt_vvaa, nv*nv, MT);                // sum_ef T2[u,v,e,f] Vt[e,f,w,x]
-        std::vector<double> S2((size_t)na2*nv*nv);           // S2_aavv[u,v,e,f]=2T2-T2(e<->f)
-        for(int u=0;u<na;u++) for(int v=0;v<na;v++)
-        for(int e=0;e<nv;e++) for(int f=0;f<nv;f++)
-            S2[(((size_t)u*na+v)*nv+e)*nv+f] =
-                2.0*T2_aavv[(((size_t)u*na+v)*nv+e)*nv+f] - T2_aavv[(((size_t)u*na+v)*nv+f)*nv+e];
-        gemm_aa(S2, Vt_vvaa, nv*nv, MS);
+        std::vector<double> raw, vt_tile, t2_tile, s2_tile;
+        for(int e_lo=0;e_lo<nv;e_lo+=aavv_tile_nv){
+            const int e_hi = std::min(e_lo+aavv_tile_nv, nv);
+            const int K = (e_hi-e_lo)*nv;
+            build_aavv_tile(e_lo, e_hi, raw, vt_tile, t2_tile);
+            fold_s2_aa(t2_tile, na, K, s2_tile);
+            accum_aa(t2_tile.data(), vt_tile.data(), K, (int)na2, MT.data());  // sum_ef T2[u,v,e,f] Vt[e,f,w,x]
+            accum_aa(s2_tile.data(), vt_tile.data(), K, (int)na2, MS.data());
+        }
         double e1=0.0, e2=0.0;
         for(int u=0;u<na;u++) for(int v=0;v<na;v++)
         for(int w=0;w<na;w++) for(int x=0;x<na;x++){
@@ -1058,7 +1088,6 @@ void dsrg_sf_tensors::build_hbar(){
     };
 
     // renormalized H2 block accessors (physicist <p1 p2|p3 p4>)
-    auto Vvvaa=[&](int e,int f,int x,int y){ return Vt_vvaa[(((size_t)e*nv+f)*na+x)*na+y]; };
     auto Vaacc=[&](int w,int x,int i,int j){ return Vt_aacc[(((size_t)w*na+x)*nc+i)*nc+j]; };
     auto Vavca=[&](int v,int e,int m,int x){ return Vt_avca[(((size_t)v*nv+e)*nc+m)*na+x]; };
     auto Vvaaa=[&](int e,int v,int w,int x){ return Vt_vaaa[(((size_t)e*na+v)*na+w)*na+x]; };
@@ -1080,7 +1109,6 @@ void dsrg_sf_tensors::build_hbar(){
     auto Vavac=[&](int u,int e,int x,int m){ return Vt_avac[(((size_t)u*nv+e)*na+x)*nc+m]; };
 
     // amplitude accessors
-    auto Taavv=[&](int u,int v,int e,int f){ return T2_aavv[(((size_t)u*na+v)*nv+e)*nv+f]; };
     auto Tccaa=[&](int i,int j,int u,int v){ return T2_ccaa[(((size_t)i*nc+j)*na+u)*na+v]; };
     auto Tcaav=[&](int i,int v,int u,int a){ return T2_caav[(((size_t)i*na+v)*na+u)*nv+a]; };
     auto Tacav=[&](int v,int i,int u,int a){ return T2_acav[(((size_t)v*nc+i)*na+u)*nv+a]; };
@@ -1089,10 +1117,8 @@ void dsrg_sf_tensors::build_hbar(){
 
     // S2 = 2J - K (Forte sa_mrpt2.cc:394-397): ijab->ijba is the particle swap, except
     // caav/acav/aava whose swapped partner is the other stored block.
-    std::vector<double> S2_aavv(T2_aavv.size()), S2_ccaa(T2_ccaa.size()), S2_caaa(T2_caaa.size());
+    std::vector<double> S2_ccaa(T2_ccaa.size()), S2_caaa(T2_caaa.size());
     std::vector<double> S2_caav(T2_caav.size()), S2_acav(T2_acav.size()), S2_aava(T2_aava.size());
-    for(int u=0;u<na;u++) for(int v=0;v<na;v++) for(int e=0;e<nv;e++) for(int f=0;f<nv;f++)
-        S2_aavv[(((size_t)u*na+v)*nv+e)*nv+f]=2.0*Taavv(u,v,e,f)-Taavv(u,v,f,e);
     for(int i=0;i<nc;i++) for(int j=0;j<nc;j++) for(int u=0;u<na;u++) for(int v=0;v<na;v++)
         S2_ccaa[(((size_t)i*nc+j)*na+u)*na+v]=2.0*Tccaa(i,j,u,v)-Tccaa(i,j,v,u);
     for(int i=0;i<nc;i++) for(int w=0;w<na;w++) for(int u=0;u<na;u++) for(int v=0;v<na;v++)
@@ -1103,7 +1129,6 @@ void dsrg_sf_tensors::build_hbar(){
         S2_acav[(((size_t)v*nc+i)*na+u)*nv+a]=2.0*Tacav(v,i,u,a)-Tcaav(i,v,u,a);
     for(int u=0;u<na;u++) for(int v=0;v<na;v++) for(int e=0;e<nv;e++) for(int y=0;y<na;y++)
         S2_aava[(((size_t)u*na+v)*nv+e)*na+y]=2.0*Taava(u,v,e,y)-Taava(v,u,e,y);
-    auto Saavv=[&](int u,int v,int e,int f){ return S2_aavv[(((size_t)u*na+v)*nv+e)*nv+f]; };
     auto Sccaa=[&](int i,int j,int u,int v){ return S2_ccaa[(((size_t)i*nc+j)*na+u)*na+v]; };
     auto Scaav=[&](int i,int v,int u,int a){ return S2_caav[(((size_t)i*na+v)*na+u)*nv+a]; };
     auto Sacav=[&](int v,int i,int u,int a){ return S2_acav[(((size_t)v*nc+i)*na+u)*nv+a]; };
@@ -1262,13 +1287,18 @@ void dsrg_sf_tensors::build_hbar(){
         std::vector<double> twz(na4,0.0);
         auto addM_wuvz=[&](double c){ for(int w=0;w<na;w++) for(int u=0;u<na;u++) for(int v=0;v<na;v++) for(int z=0;z<na;z++)
             twz[id4(w,z,u,v)]+=c*M[(size_t)(w*na+u)*na2+(v*na+z)]; };
-        // +0.5 S2[wvef]H2[efzu]  (fat ef): [(w,v)][(z,u)]
-        gA.assign((size_t)nv*nv*na2,0.0); gB.assign((size_t)nv*nv*na2,0.0);
-        for(int e=0;e<nv;e++) for(int f=0;f<nv;f++) for(int w=0;w<na;w++) for(int v=0;v<na;v++)
-            gA[(size_t)(e*nv+f)*na2+(w*na+v)]=Saavv(w,v,e,f);
-        for(int e=0;e<nv;e++) for(int f=0;f<nv;f++) for(int z=0;z<na;z++) for(int u=0;u<na;u++)
-            gB[(size_t)(e*nv+f)*na2+(z*na+u)]=Vvvaa(e,f,z,u);
-        cx(gA,gB,nv*nv,(int)na2,(int)na2,M);
+        // +0.5 S2[wvef]H2[efzu]  (fat ef, one virtual tile at a time): [(w,v)][(z,u)]
+        {
+            std::vector<double> raw, vt_tile, t2_tile, s2_tile;
+            for(size_t i=0;i<na4;i++) M[i]=0.0;
+            for(int e_lo=0;e_lo<nv;e_lo+=aavv_tile_nv){
+                const int e_hi=std::min(e_lo+aavv_tile_nv,nv);
+                const int K=(e_hi-e_lo)*nv;
+                build_aavv_tile(e_lo,e_hi,raw,vt_tile,t2_tile);
+                fold_s2_aa(t2_tile,na,K,s2_tile);
+                accum_aa(s2_tile.data(),vt_tile.data(),K,(int)na2,M.data());
+            }
+        }
         for(int w=0;w<na;w++) for(int v=0;v<na;v++) for(int z=0;z<na;z++) for(int u=0;u<na;u++)
             twz[id4(w,z,u,v)]+=0.5*M[(size_t)(w*na+v)*na2+(z*na+u)];
         // +0.5 S2[wvex]H2[exzu]  (fat e,x): [(w,v)][(z,u)]
@@ -1531,8 +1561,14 @@ void dsrg_sf_tensors::build_hbar(){
     // ================= C2 : H_T_C2a_smallS ladder/ring (direct into C2t) =================
     std::vector<double> C2t(na4,0.0);
     {
-        gemm_aa(T2_aavv, Vt_vvaa, nv*nv, M);            // += H2[efxy]T2[uvef]
-        for(size_t i=0;i<na4;i++) C2t[i]+=M[i];
+        {                                               // += H2[efxy]T2[uvef]  (per virtual tile)
+            std::vector<double> raw, vt_tile, t2_tile;
+            for(int e_lo=0;e_lo<nv;e_lo+=aavv_tile_nv){
+                const int e_hi=std::min(e_lo+aavv_tile_nv,nv);
+                build_aavv_tile(e_lo,e_hi,raw,vt_tile,t2_tile);
+                accum_aa(t2_tile.data(),vt_tile.data(),(e_hi-e_lo)*nv,(int)na2,C2t.data());
+            }
+        }
         gemm_aa(Vt_aacc, T2_ccaa, nc*nc, M);            // += H2[uvmn]T2[mnxy]
         for(size_t i=0;i<na4;i++) C2t[i]+=M[i];
         // += H2[ewxy]T2[uvew] and H2[ewyx]T2[vuew]  (fat e,w) -> [(u,v)][(x,y)]
