@@ -1,5 +1,6 @@
 #ifndef ALDET_REL_H
 #define ALDET_REL_H
+#include "nopt_typedef.h"
 
 class aldet_rel_data 
 {
@@ -74,8 +75,8 @@ class aldet_rel_data
         
         
         int n_e1;
-        int * __restrict__ e1_ind ;  
-        int * __restrict__ e1_orbs;  
+        ci_int * __restrict__ e1_ind ;  
+        ci_int * __restrict__ e1_orbs;  
         
         double * __restrict__ e1_sign;  
                 
@@ -84,14 +85,14 @@ class aldet_rel_data
         double * __restrict__ e1_h_so;  
         
         int n_e2;
-        int * __restrict__ e2_orbs;  
-        int * __restrict__ e2_ind ;  
+        ci_int * __restrict__ e2_orbs;  
+        ci_int * __restrict__ e2_ind ;  
         double * __restrict__ e2_V;  
         double * __restrict__ e2_sign;  
         
         
         int n_e3;
-        int * __restrict__ e3_ind ;  
+        ci_int * __restrict__ e3_ind ;  
         double * __restrict__ e3_V;  
         
         

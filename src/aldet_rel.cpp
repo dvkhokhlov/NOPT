@@ -168,8 +168,8 @@ int aldet_rel_data::get_dim(int ext_n_act, int ext_na, int ext_nb, int ext_n_set
     F_act_i     = new double[n_act*n_act*4          ];
 //     F_act_B     = F_act_r+n_act*n_act;
     
-    e1_ind  = new int[Nd*n_e1];
-    e1_orbs = new int[Nd*n_e1];
+    e1_ind  = new ci_int[Nd*n_e1];
+    e1_orbs = new ci_int[Nd*n_e1];
     e1_sign = new double[Nd*n_e1];
     
 //     e1_asm_ints_b = new int[2*Nb*n_e1_b];
@@ -181,10 +181,10 @@ int aldet_rel_data::get_dim(int ext_n_act, int ext_na, int ext_nb, int ext_n_set
 #endif
     
     
-    e2_ind  = new int   [Nd*n_e2];
+    e2_ind  = new ci_int[Nd*n_e2];
     e2_V    = new double[Nd*n_e2];
     e2_sign = new double[Nd*n_e2];
-    e2_orbs = new int   [Nd*n_e2];
+    e2_orbs = new ci_int[Nd*n_e2];
     
     
 //     a_spin_sign = new double[Na*n_act];
@@ -697,8 +697,8 @@ int aldet_rel_data::gen_ext_ind_PT(){
     if(e1_orbs !=NULL) delete[] e1_orbs;
     if(e1_sign !=NULL) delete[] e1_sign;
     
-    e1_ind  = new int[Nd*n_e1];
-    e1_orbs = new int[Nd*n_e1];
+    e1_ind  = new ci_int[Nd*n_e1];
+    e1_orbs = new ci_int[Nd*n_e1];
     e1_sign = new double[Nd*n_e1];
     
     n_e2 = n_el*(n_el-1)*(2*n_act-n_el+2)*(2*n_act-n_el+1)/4;
@@ -711,8 +711,8 @@ int aldet_rel_data::gen_ext_ind_PT(){
     
     
     e2_sign = new double[Nd*n_e2];
-    e2_orbs = new int[Nd*n_e2];
-    e2_ind  = new int[Nd*n_e2];
+    e2_orbs = new ci_int[Nd*n_e2];
+    e2_ind  = new ci_int[Nd*n_e2];
     e2_V = new double[Nd*n_e2];
     
     n_e3 = n_el*(n_el-1)*(n_el-2)*(2*n_act-n_el+3)*(2*n_act-n_el+2)*(2*n_act-n_el+1)/36;
@@ -721,8 +721,8 @@ int aldet_rel_data::gen_ext_ind_PT(){
     if(e3_V   != NULL) delete[] e3_V  ;
     
     
-    e3_ind  = new int[Nd*n_e3];
-    e3_V = new double[Nd*n_e3];
+    e3_ind  = new ci_int[Nd*n_e3];
+    e3_V    = new double[Nd*n_e3];
     
     //AA
     for(int i_CI =0; i_CI<Nd; i_CI++){

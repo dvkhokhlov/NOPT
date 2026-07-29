@@ -2,13 +2,14 @@
 #define ALDET_H
 // #include "molecule.h"
 #include "CI.h"
+#include "nopt_typedef.h"
 
 class sparsed_CI_vec;
 
 class sparsed_CI_vec{
     public:
         std::vector<double> c;
-        std::vector<int> n;
+        std::vector<ci_int> n;
         
         int decompress(double * C, int a, int n_s);
     
@@ -47,9 +48,9 @@ class aldet_data
         int print_number;
         
         //calculated variables
-        int Na;//number of alpha configurations
-        int Nb;//number of beta configurations
-        long Nd;//number of all configurations
+        ci_int Na;//number of alpha configurations
+        ci_int Nb;//number of beta configurations
+        ci_int Nd;//number of all configurations
         int * fa;
         int * fb;
         int * vec_a;
@@ -115,10 +116,10 @@ class aldet_data
         
         int n_e1_a;
         int n_e1_b;
-        int * __restrict__ e1_ind_a ;  
-        int * __restrict__ e1_ind_b ; 
-        int * __restrict__ e1_orbs_a;  
-        int * __restrict__ e1_orbs_b;  
+        ci_int * __restrict__ e1_ind_a ;  
+        ci_int * __restrict__ e1_ind_b ; 
+        ci_int * __restrict__ e1_orbs_a;  
+        ci_int * __restrict__ e1_orbs_b;  
 //         int * __restrict__ e1_asm_ints_b; //may be not needed  
         
         double * __restrict__ e1_sign_a;  
@@ -126,10 +127,10 @@ class aldet_data
         
         int n_e2_a;
         int n_e2_b;
-        int * __restrict__ e2_orbs_a;  
-        int * __restrict__ e2_orbs_b;  
-        int * __restrict__ e2_ind_a ;  
-        int * __restrict__ e2_ind_b ; 
+        ci_int * __restrict__ e2_orbs_a;  
+        ci_int * __restrict__ e2_orbs_b;  
+        ci_int * __restrict__ e2_ind_a ;  
+        ci_int * __restrict__ e2_ind_b ; 
         double * __restrict__ e2_V_a;  
         double * __restrict__ e2_V_b;  
         double * __restrict__ e2_sign_a;  
@@ -138,8 +139,8 @@ class aldet_data
         
         int n_e3_a;
         int n_e3_b;
-        int * __restrict__ e3_ind_a ;  
-        int * __restrict__ e3_ind_b ; 
+        ci_int * __restrict__ e3_ind_a ;  
+        ci_int * __restrict__ e3_ind_b ; 
         double * __restrict__ e3_V_a;  
         double * __restrict__ e3_V_b;  
         
@@ -247,9 +248,9 @@ class aldet_data
         int PT_update();
         int H_mult(int n0, int n_s);
         
-        int H_mult_sparsed_to_dense(double * ext_Hc, sparsed_CI_vec * c, int n_s);
+        int H_mult_sparsed_to_dense(double * ext_Hc, sparsed_CI_vec * c, ci_int n_s);
         
-        int H_mult_sparsed_to_sparsed(sparsed_CI_vec * ext_Hc, sparsed_CI_vec * c, int n_s);
+        int H_mult_sparsed_to_sparsed(sparsed_CI_vec * ext_Hc, sparsed_CI_vec * c, ci_int n_s);
         
         int H_mult_A(double * __restrict__ ci_O, int n0, int n_s, int ld,
                        double * __restrict__ ci_I,

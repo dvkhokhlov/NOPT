@@ -32,7 +32,7 @@ int sparsed_CI_vec::decompress(double * C, int a, int n_s){
 int CI_sd_mult(double * O, int ld, sparsed_CI_vec * s, int n_s, double * d, int n_d, int ld_d){
     
     double * c;
-    int * a;
+    ci_int * a;
     int l;
     
     for(int i=0; i<n_s;i++){
@@ -52,7 +52,7 @@ int CI_sd_mult(double * O, int ld, sparsed_CI_vec * s, int n_s, double * d, int 
 int CI_sd_mult_tr(double * O, int ld, sparsed_CI_vec * s, int n_s, double * R, int n_d, int ld_d){
     
     double * c;
-    int * a;
+    ci_int * a;
     int l;
     
     for(int i=0; i<n_s;i++){
@@ -74,13 +74,13 @@ int CI_ss_mult(double * O, int ld, sparsed_CI_vec * s1, int n_s1, sparsed_CI_vec
 // #pragma omp parallel for        
     for(int i=0; i<n_s1;i++){
         int       l1=s1[i].n.size();
-        int *     a1=s1[i].n.data();
+        ci_int *     a1=s1[i].n.data();
         double *  c1=s1[i].c.data();
         
         
         for(int j=0; j<n_s2;j++){
             int      l2=s2[j].n.size();
-            int *    a2=s2[j].n.data();
+            ci_int *    a2=s2[j].n.data();
             double * c2=s2[j].c.data();
 
             for(int x=0;x<l1;x++)
@@ -329,21 +329,21 @@ int aldet_data::get_dim(int ext_n_act, int ext_na, int ext_nb, int ext_n_sets, i
     F_act_A     = new double[n_act*n_act            ];
     F_act_B     = new double[n_act*n_act            ];
     
-    e1_ind_a  = new int[Na*n_e1_a];
-    e1_ind_b  = new int[Nb*n_e1_b];
-    e1_orbs_a = new int[Na*n_e1_a];
-    e1_orbs_b = new int[Nb*n_e1_b];
+    e1_ind_a  = new ci_int[Na*n_e1_a];
+    e1_ind_b  = new ci_int[Nb*n_e1_b];
+    e1_orbs_a = new ci_int[Na*n_e1_a];
+    e1_orbs_b = new ci_int[Nb*n_e1_b];
     e1_sign_a = new double[Na*n_e1_a];
     e1_sign_b = new double[Nb*n_e1_b];
 //     e1_asm_ints_b = new int[2*Nb*n_e1_b];
-    e2_ind_a  = new int   [Na*n_e2_a];
-    e2_ind_b  = new int   [Nb*n_e2_b];
+    e2_ind_a  = new ci_int[Na*n_e2_a];
+    e2_ind_b  = new ci_int[Nb*n_e2_b];
     e2_V_a    = new double[Na*n_e2_a];
     e2_V_b    = new double[Nb*n_e2_b];
     e2_sign_a = new double[Na*n_e2_a];
     e2_sign_b = new double[Nb*n_e2_b];
-    e2_orbs_a = new int   [Na*n_e2_a];
-    e2_orbs_b = new int   [Nb*n_e2_b];
+    e2_orbs_a = new ci_int[Na*n_e2_a];
+    e2_orbs_b = new ci_int[Nb*n_e2_b];
     
     
     a_spin_sign = new double[Na*n_act];
@@ -781,10 +781,10 @@ int aldet_data::gen_ext_ind_PT(){
     if(e1_sign_a !=NULL) delete[] e1_sign_a;
     if(e1_sign_b !=NULL) delete[] e1_sign_b;
     
-    e1_ind_a  = new int[Na*n_e1_a];
-    e1_ind_b  = new int[Nb*n_e1_b];
-    e1_orbs_a = new int[Na*n_e1_a];
-    e1_orbs_b = new int[Nb*n_e1_b];
+    e1_ind_a  = new ci_int[Na*n_e1_a];
+    e1_ind_b  = new ci_int[Nb*n_e1_b];
+    e1_orbs_a = new ci_int[Na*n_e1_a];
+    e1_orbs_b = new ci_int[Nb*n_e1_b];
     e1_sign_a = new double[Na*n_e1_a];
     e1_sign_b = new double[Nb*n_e1_b];
 //     e1_asm_ints_b = new int[2*Nb*n_e1_b];
@@ -806,12 +806,12 @@ int aldet_data::gen_ext_ind_PT(){
     
     e2_sign_a = new double[Na*n_e2_a];
     e2_sign_b = new double[Nb*n_e2_b];
-    e2_orbs_a = new int[Na*n_e2_a];
-    e2_orbs_b = new int[Nb*n_e2_b];
-    e2_ind_a  = new int[Na*n_e2_a];
-    e2_ind_b  = new int[Nb*n_e2_b];
-    e2_V_a = new double[Na*n_e2_a];
-    e2_V_b = new double[Nb*n_e2_b];
+    e2_orbs_a = new ci_int[Na*n_e2_a];
+    e2_orbs_b = new ci_int[Nb*n_e2_b];
+    e2_ind_a  = new ci_int[Na*n_e2_a];
+    e2_ind_b  = new ci_int[Nb*n_e2_b];
+    e2_V_a    = new double[Na*n_e2_a];
+    e2_V_b    = new double[Nb*n_e2_b];
     
     n_e3_a = na*(na-1)*(na-2)*(n_act-na+3)*(n_act-na+2)*(n_act-na+1)/36;
     n_e3_b = nb*(nb-1)*(nb-2)*(n_act-nb+3)*(n_act-nb+2)*(n_act-nb+1)/36;
@@ -822,10 +822,10 @@ int aldet_data::gen_ext_ind_PT(){
     if(e3_V_b   != NULL) delete[] e3_V_b  ;
     
     
-    e3_ind_a  = new int[Na*n_e3_a];
-    e3_ind_b  = new int[Nb*n_e3_b];
-    e3_V_a = new double[Na*n_e3_a];
-    e3_V_b = new double[Nb*n_e3_b];
+    e3_ind_a  = new ci_int[Na*n_e3_a];
+    e3_ind_b  = new ci_int[Nb*n_e3_b];
+    e3_V_a    = new double[Na*n_e3_a];
+    e3_V_b    = new double[Nb*n_e3_b];
     
     //AA
     for(int i_CI =0; i_CI<Na; i_CI++){
@@ -2728,18 +2728,18 @@ int aldet_data::H_mult(int n0, int n_s){
 }
 
 
-int aldet_data::H_mult_sparsed_to_dense(double * ext_Hc, sparsed_CI_vec * c, int n_s){
+int aldet_data::H_mult_sparsed_to_dense(double * ext_Hc, sparsed_CI_vec * c, ci_int n_s){
     
-    set_zero_matr(ext_Hc,n_s*Na*Nb);
+    set_zero_matr(ext_Hc,1LL*n_s*Na*Nb);
     
-    int l,i,j,i1,k1,ind;
+    ci_int l,i,j,i1,k1,ind;
     double * K;
     double   h,s,coef;
     
-    for(int i_s=0; i_s<n_s; i_s++){
+    for(ci_int i_s=0; i_s<n_s; i_s++){
         
         l=c[i_s].c.size();
-        for(int a=0; a<l;a++){
+        for(ci_int a=0; a<l;a++){
             ind = c[i_s].n[a];
 #ifdef TEST_ALDET
             ext_Hc[ind*n_s+i_s]+=/*H_diag[ind]*/E_core*c[i_s].c[a];
@@ -2749,47 +2749,47 @@ int aldet_data::H_mult_sparsed_to_dense(double * ext_Hc, sparsed_CI_vec * c, int
 #endif
             i=ind/Nb;
             j=ind%Nb;
-            for(int k = 0;k<n_e1_a;k++){
+            for(ci_int k = 0;k<n_e1_a;k++){
                 s = e1_sign_a[i*n_e1_a+k];
                 h = (F_act_A[e1_orbs_a[i*n_e1_a+k]]/*+J_act_a[i*n_act*n_act+e1_orbs_a[i*n_e1_a+k]]*/)*s;
 //                 K = K_act_b+e1_orbs_a[i*n_e1_a+k]*Nb;
                 
                 ext_Hc[(e1_ind_a[i*n_e1_a+k]*Nb+j)*n_s+i_s]+=(h/*+s*K[j]*/)*c[i_s].c[a];
             }
-            for(int k = 0;k<n_e2_a;k++){
+            for(ci_int k = 0;k<n_e2_a;k++){
                 h = e2_V_a[i*n_e2_a+k];
                 ext_Hc[(e2_ind_a[i*n_e2_a+k]*Nb+j)*n_s+i_s]+=h*c[i_s].c[a];
                 
             }
             if(do_PT)
-            for(int k = 0;k<n_e3_a;k++){
+            for(ci_int k = 0;k<n_e3_a;k++){
                 h = e3_V_a[i*n_e3_a+k];
                 ext_Hc[(e3_ind_a[i*n_e3_a+k]*Nb+j)*n_s+i_s]+=h*c[i_s].c[a];
                 
             }
-            for(int k = 0;k<n_e1_b;k++){
+            for(ci_int k = 0;k<n_e1_b;k++){
                 s = e1_sign_b[j*n_e1_b+k];
                 h = (F_act_B[e1_orbs_b[j*n_e1_b+k]]/*+J_act_b[j*n_act*n_act+e1_orbs_b[j*n_e1_b+k]]*/)*s;
 //                 K = K_act_b+e1_orbs_b[j*n_e1_b+k]*Nb;
                 
                 ext_Hc[(i*Nb+e1_ind_b[j*n_e1_b+k])*n_s+i_s]+=(h/*+s*K[i]*/)*c[i_s].c[a];
             }
-            for(int k = 0;k<n_e2_b;k++){
+            for(ci_int k = 0;k<n_e2_b;k++){
                 h = e2_V_b[j*n_e2_b+k];
                 ext_Hc[(i*Nb+e2_ind_b[j*n_e2_b+k])*n_s+i_s]+=h*c[i_s].c[a];
                 
             }
             if(do_PT)
-            for(int k = 0;k<n_e3_b;k++){
+            for(ci_int k = 0;k<n_e3_b;k++){
                 h = e3_V_b[j*n_e3_b+k];
                 ext_Hc[(i*Nb+e3_ind_b[j*n_e3_b+k])*n_s+i_s]+=h*c[i_s].c[a];
                 
             }
-            for(int k = 0;k<n_e1_a;k++){
+            for(ci_int k = 0;k<n_e1_a;k++){
                 k1 = e1_orbs_a[i*n_e1_a+k]*n_act*n_act;
                 s = e1_sign_a[i*n_e1_a+k];
                 i1 = e1_ind_a[i*n_e1_a+k]*Nb;
-                for(int l = 0;l<n_e1_b;l++){
+                for(ci_int l = 0;l<n_e1_b;l++){
                     h = act_INTS_AB[k1+e1_orbs_b[j*n_e1_b+l]]*
                         e1_sign_b[j*n_e1_b+l]*s;
             
@@ -2797,11 +2797,11 @@ int aldet_data::H_mult_sparsed_to_dense(double * ext_Hc, sparsed_CI_vec * c, int
                 }
             }
             if(do_PT)
-            for(int k = 0;k<n_e2_a;k++){
+            for(ci_int k = 0;k<n_e2_a;k++){
                 k1 = e2_orbs_a[i*n_e2_a+k]*n_act*n_act;
                 s  = e2_sign_a[i*n_e2_a+k];
                 i1 = e2_ind_a [i*n_e2_a+k]*Nb;
-                for(int l = 0;l<n_e1_b;l++){
+                for(ci_int l = 0;l<n_e1_b;l++){
                     h = T3_AAB[k1+e1_orbs_b[j*n_e1_b+l]]*
                         e1_sign_b[j*n_e1_b+l]*s;
             
@@ -2809,11 +2809,11 @@ int aldet_data::H_mult_sparsed_to_dense(double * ext_Hc, sparsed_CI_vec * c, int
                 }
             }
             if(do_PT)
-            for(int k = 0;k<n_e2_b;k++){
+            for(ci_int k = 0;k<n_e2_b;k++){
                 k1 = e2_orbs_b[j*n_e2_b+k]*n_act*n_act;
                 s  = e2_sign_b[j*n_e2_b+k];
                 i1 = e2_ind_b [j*n_e2_b+k];
-                for(int l = 0;l<n_e1_a;l++){
+                for(ci_int l = 0;l<n_e1_a;l++){
                     h = T3_BBA[k1+e1_orbs_a[i*n_e1_a+l]]*
                         e1_sign_a[i*n_e1_a+l]*s;
             
@@ -2833,21 +2833,21 @@ int aldet_data::H_mult_sparsed_to_dense(double * ext_Hc, sparsed_CI_vec * c, int
     
 }
 
-int aldet_data::H_mult_sparsed_to_sparsed(sparsed_CI_vec * ext_Hc, sparsed_CI_vec * c, int n_s){
+int aldet_data::H_mult_sparsed_to_sparsed(sparsed_CI_vec * ext_Hc, sparsed_CI_vec * c, ci_int n_s){
     
-    int l,i,j,i1,k1,ind;
+    ci_int l,i,j,i1,k1,ind;
     double * K;
     double   h,s,coef;
     
-    for(int i_s=0; i_s<n_s; i_s++){
+    for(ci_int i_s=0; i_s<n_s; i_s++){
         
         l=c[i_s].c.size();
         ext_Hc[i_s].c.resize((n_e1_a+n_e2_a+n_e1_b+n_e2_b+n_e1_a*n_e1_b+1)*l);
         ext_Hc[i_s].n.resize((n_e1_a+n_e2_a+n_e1_b+n_e2_b+n_e1_a*n_e1_b+1)*l);
 //         fprintf(out_stream,"%d (%d)\n",ext_Hc[i_s].c.size(),l);
 //         getchar();
-        int Hi=0;
-        for(int a=0; a<l;a++){
+        ci_int Hi=0;
+        for(ci_int a=0; a<l;a++){
             ind = c[i_s].n[a];
             ext_Hc[i_s].n[Hi]=ind;
 #ifndef TEST_ALDET
@@ -2859,7 +2859,7 @@ int aldet_data::H_mult_sparsed_to_sparsed(sparsed_CI_vec * ext_Hc, sparsed_CI_ve
             Hi++;
             i=ind/Nb;
             j=ind%Nb;
-            for(int k = 0;k<n_e1_a;k++){
+            for(ci_int k = 0;k<n_e1_a;k++){
                 s = e1_sign_a[i*n_e1_a+k];
                 h = (F_act_A[e1_orbs_a[i*n_e1_a+k]]
 #ifndef TEST_ALDET
@@ -2879,7 +2879,7 @@ int aldet_data::H_mult_sparsed_to_sparsed(sparsed_CI_vec * ext_Hc, sparsed_CI_ve
             
                 
             }
-            for(int k = 0;k<n_e2_a;k++){
+            for(ci_int k = 0;k<n_e2_a;k++){
                 h = e2_V_a[i*n_e2_a+k];
                 ext_Hc[i_s].n[Hi]=e2_ind_a[i*n_e2_a+k]*Nb+j;
                 ext_Hc[i_s].c[Hi]=h*c[i_s].c[a];
@@ -2888,7 +2888,7 @@ int aldet_data::H_mult_sparsed_to_sparsed(sparsed_CI_vec * ext_Hc, sparsed_CI_ve
             
                 
             }
-            for(int k = 0;k<n_e1_b;k++){
+            for(ci_int k = 0;k<n_e1_b;k++){
                 s = e1_sign_b[j*n_e1_b+k];
                 h = (F_act_B[e1_orbs_b[j*n_e1_b+k]]
 #ifndef TEST_ALDET
@@ -2907,7 +2907,7 @@ int aldet_data::H_mult_sparsed_to_sparsed(sparsed_CI_vec * ext_Hc, sparsed_CI_ve
                 Hi++;
             
             }
-            for(int k = 0;k<n_e2_b;k++){
+            for(ci_int k = 0;k<n_e2_b;k++){
                 h = e2_V_b[j*n_e2_b+k];
                 ext_Hc[i_s].n[Hi]=i*Nb+e2_ind_b[j*n_e2_b+k];
                 ext_Hc[i_s].c[Hi]=h*c[i_s].c[a];
@@ -2916,11 +2916,11 @@ int aldet_data::H_mult_sparsed_to_sparsed(sparsed_CI_vec * ext_Hc, sparsed_CI_ve
             
                 
             }
-            for(int k = 0;k<n_e1_a;k++){
+            for(ci_int k = 0;k<n_e1_a;k++){
                 k1 = e1_orbs_a[i*n_e1_a+k]*n_act*n_act;
                 s = e1_sign_a[i*n_e1_a+k];
                 i1 = e1_ind_a[i*n_e1_a+k]*Nb;
-                for(int l = 0;l<n_e1_b;l++){
+                for(ci_int l = 0;l<n_e1_b;l++){
                     h = act_INTS_AB[k1+e1_orbs_b[j*n_e1_b+l]]*
                         e1_sign_b[j*n_e1_b+l]*s;
                     ext_Hc[i_s].n[Hi]=i1+e1_ind_b[j*n_e1_b+l];
