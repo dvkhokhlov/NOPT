@@ -344,38 +344,41 @@ int CDAS_PT2(molecule * M, cdas_par * cdas, char * job_name){
     fprintf(out_stream,"\n\nCDAS-PT2 Energy summary:\n");
     PrintEnergy(CAS->CI->E_states_ptr(),CAS->n_s,1);
     
+    double * print_d[3];
+    print_d[0]=CAS->Prop_value                  ;
+    print_d[1]=CAS->Prop_value+CAS->n_s*CAS->n_s  ; 
+    print_d[2]=CAS->Prop_value+CAS->n_s*CAS->n_s*2;
+    
+    char * print_n[3];
+    print_n[0]=new char[BUF_LINE_LENGTH];sprintf(print_n[0],"     d_x     ");
+    print_n[1]=new char[BUF_LINE_LENGTH];sprintf(print_n[1],"     d_y     "); 
+    print_n[2]=new char[BUF_LINE_LENGTH];sprintf(print_n[2],"     d_z     ");
+    
+    
+    CAS->Prop_calc();
+    CAS->print_av_table_with_prop("CDAS-PT2 extended results:",3,print_d, print_n);
+    
+    fprintf(out_stream,"\n");
+    if(write_ci){
+         if(CAS->CI->as_aldet()==nullptr){
+             fprintf(out_stream,"CI/MPS wavefunction output not supported by the DMRG backend -- skipped\n");
+         } else {
+             fprintf(out_stream,"Writing CDAS-PT2 WaveFunctions:\n");
+             sprintf(name,"%s_CDAS.ci\0",job_name);
+             CAS->CI->as_aldet()->write_civec(0, name);
+             fprintf(out_stream,"data file         : %s\n",name);
+         }
+    }
+    
+
+    CAS->print_properties("CDAS-PT(0)");    
+    
     if(CAS->CI->as_aldet()==nullptr){
-        fprintf(out_stream,"properties are not available with cisolver=dmrg -- skipped\n");
+        fprintf(out_stream,"first-order properties are not available with cisolver=dmrg -- skipped\n");
         if(write_ci)fprintf(out_stream,"CI/MPS wavefunction output not supported by the DMRG backend -- skipped\n");
         fprintf(out_stream,"\n");
     }
     else{
-        double * print_d[3];
-        print_d[0]=CAS->Prop_value                  ;
-        print_d[1]=CAS->Prop_value+CAS->n_s*CAS->n_s  ; 
-        print_d[2]=CAS->Prop_value+CAS->n_s*CAS->n_s*2;
-    
-        char * print_n[3];
-        print_n[0]=new char[BUF_LINE_LENGTH];sprintf(print_n[0],"     d_x     ");
-        print_n[1]=new char[BUF_LINE_LENGTH];sprintf(print_n[1],"     d_y     "); 
-        print_n[2]=new char[BUF_LINE_LENGTH];sprintf(print_n[2],"     d_z     ");
-    
-    
-        CAS->Prop_calc();
-        CAS->print_av_table_with_prop("CDAS-PT2 extended results:",3,print_d, print_n);
-    
-    //     getchar();
-        fprintf(out_stream,"\n");
-        if(write_ci){
-            fprintf(out_stream,"Writing CDAS-PT2 WaveFunctions:\n");
-            sprintf(name,"%s_CDAS.ci\0",job_name);
-            CAS->CI->as_aldet()->write_civec(0, name);
-            fprintf(out_stream,"data file         : %s\n",name);
-        }
-    
-
-        CAS->print_properties("CDAS-PT(0)");    
-    
         double * d_x = CAS->Prop_value                  ;
         double * d_y = CAS->Prop_value+CAS->n_s*CAS->n_s  ;
         double * d_z = CAS->Prop_value+CAS->n_s*CAS->n_s*2;
