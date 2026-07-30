@@ -21,8 +21,7 @@
 # include "RI.h"
 # include "CAS.h"
 # include "casci_solver.h"
-# include "aldet.h"            // aldet_data: copy_coef snapshot for the dressed re-solve overlap
-# include "localized_dmrg.h"   // rotate1 / rotate2 (active-basis density rotation)
+# include "localized_dmrg.h"   // rotate1 / rotate2 / rotate3 (active-basis density rotation)
 # include "dsrg_sf_tensors.h"
 # include "dsrg_sf_batch.h"
 # include "dsrg_pt.h"
@@ -78,6 +77,7 @@ int SA_DSRG_PT2(molecule * M, dsrg_par * dsrg, char * job_name){
     const int root  = dsrg->root;
     const size_t na2 = (size_t)n_act*n_act;
     const size_t na4 = na2*na2;
+    const size_t na6 = na4*na2;
 
     // ---- guards (our-contract; loud, naming the supported alternative) ----
     if(root<0 || root>=ns){
@@ -85,14 +85,14 @@ int SA_DSRG_PT2(molecule * M, dsrg_par * dsrg, char * job_name){
                 root, ns, ns-1);
         exit(EXIT_FAILURE);
     }
-    if(!CAS.CI->supports_g2_full()){
-        fprintf(out_stream,"ERROR: DSRG-PT2 needs the per-state spin-summed 2-RDM via G_calc_full, which this "
+    if(!CAS.CI->supports_g2_diag()){
+        fprintf(out_stream,"ERROR: DSRG-PT2 needs the per-state spin-summed 2-RDM via G2_calc_diag, which this "
                            "CI backend does not provide; use cisolver=aldet\n");
         exit(EXIT_FAILURE);
     }
-    if(!CAS.CI->supports_h2caa_overlap()){
-        fprintf(out_stream,"ERROR: DSRG-PT2 needs the DIRECT lambda3 overlap via h2caa_overlap, which this "
-                           "CI backend does not provide; use cisolver=aldet\n");
+    if(!CAS.CI->supports_g3_diag()){
+        fprintf(out_stream,"ERROR: DSRG-PT2 needs the per-state spin-summed 3-body moment via G3_calc_diag for the "
+                           "lambda3 (E3) term, which this CI backend does not provide; use cisolver=aldet\n");
         exit(EXIT_FAILURE);
     }
 
@@ -107,19 +107,19 @@ int SA_DSRG_PT2(molecule * M, dsrg_par * dsrg, char * job_name){
     for(int r=0;r<ns;r++) E_bare[r] = CAS.CI->E_state(r);
 
     // ---- selected root's spin-summed densities in the converged (original) active basis ----
-    // Certified read-out (dsrg_prim_check): transition blocks via calc_DMA/DMB and G_calc_full;
-    // the (root,root) diagonal block is the per-state density for either backend.
-    std::vector<double> D1((size_t)ns*ns*na2, 0.0), G2full((size_t)ns*ns*na4, 0.0);
+    // Certified read-out (dsrg_prim_check): 1-RDM blocks via calc_DMA/DMB (ns x ns), 2-RDMs via
+    // G2_calc_diag (ns consecutive per-state blocks); either backend reports the native basis.
+    std::vector<double> D1((size_t)ns*ns*na2, 0.0), G2diag((size_t)ns*na4, 0.0);
     CAS.CI->calc_DMA(D1.data(),0,0);
     if(CAS.ci_solver==CISOLVER_ALDET) CAS.CI->calc_DMB(D1.data(),0,0);   // sum alpha+beta (DMRG: DMA is spin-summed)
-    CAS.CI->G_calc_full(G2full.data());
+    CAS.CI->G2_calc_diag(G2diag.data());
 
     std::vector<double> L1_orig(na2,0.0), GAMMA_orig(na4,0.0);
     if(!sa){
         const size_t od1 = ((size_t)root*ns+root)*na2;
-        const size_t og2 = ((size_t)root*ns+root)*na4;
+        const size_t og2 = (size_t)root*na4;
         for(size_t i=0;i<na2;i++) L1_orig[i]    = D1[od1+i];
-        for(size_t i=0;i<na4;i++) GAMMA_orig[i] = G2full[og2+i];
+        for(size_t i=0;i<na4;i++) GAMMA_orig[i] = G2diag[og2+i];
     }
     else{
         // SA ensemble: weighted sum of the per-root (s,s) diagonal blocks, normalized by the
@@ -128,9 +128,9 @@ int SA_DSRG_PT2(molecule * M, dsrg_par * dsrg, char * job_name){
         if(wsum<=0.0){ fprintf(out_stream,"ERROR: DSRG-PT2 sa=1 has zero total reference weight\n"); exit(EXIT_FAILURE); }
         for(int t=0;t<ns;t++){
             const double w = CAS.wstate_actual[t]/wsum;
-            const size_t od1=((size_t)t*ns+t)*na2, og2=((size_t)t*ns+t)*na4;
+            const size_t od1=((size_t)t*ns+t)*na2, og2=(size_t)t*na4;
             for(size_t i=0;i<na2;i++) L1_orig[i]    += w*D1[od1+i];
-            for(size_t i=0;i<na4;i++) GAMMA_orig[i] += w*G2full[og2+i];
+            for(size_t i=0;i<na4;i++) GAMMA_orig[i] += w*G2diag[og2+i];
         }
     }
 
@@ -226,6 +226,26 @@ int SA_DSRG_PT2(molecule * M, dsrg_par * dsrg, char * job_name){
     T.build_amplitudes();
     T.compute_e2();
 
+    // ---- lambda3: per-state 3-body moments in the native active basis (the CI vector is never
+    //      rotated, all basis motion is tensor-side), weight-averaged before the cumulant for
+    //      sa=1 (cumulant of the average). Two n_act^6 buffers here plus two inside compute_e3
+    //      -- 512 MB each at n_act=20, 2 MB at the examples' n_act=8. ----
+    std::vector<double> G3_avg(na6,0.0), G3_semi(na6,0.0);
+    if(!sa)
+        CAS.CI->G3_calc_diag(G3_avg.data(), root);
+    else{
+        // G3_semi is the per-root read buffer here; the rotation below overwrites it.
+        double wsum=0.0; for(int t=0;t<ns;t++) wsum += CAS.wstate_actual[t];
+        for(int t=0;t<ns;t++){
+            const double w = CAS.wstate_actual[t]/wsum;
+            CAS.CI->G3_calc_diag(G3_semi.data(), t);
+            for(size_t i=0;i<na6;i++) G3_avg[i] += w*G3_semi[i];
+        }
+    }
+    rotate3(G3_avg.data(), Ua.data(), n_act, G3_semi.data(), /*forward=*/true);
+    T.compute_e3(G3_semi.data());   // G3_semi becomes SF_L3 and is read again by pilot_dump
+
+#if 0  // DIRECT lambda3 path (superseded by the explicit lattice-3RDM route; revive for nact >~ 30)
     // compute_e3 evaluates the DIRECT lambda3 via CI->h2caa_overlap with semicanonical
     // active-leg T tensors, so the CI vector must sit in the same basis. aldet rotates it
     // (malmqvist); a backend that cannot (DMRG) passes only if the rotation is ~identity --
@@ -253,6 +273,7 @@ int SA_DSRG_PT2(molecule * M, dsrg_par * dsrg, char * job_name){
         T.ledger.E3v += mv/wsum - T.omega_v()[root];
         T.ledger.E3c += T.omega_c()[root] - mc/wsum;
     }
+#endif
 
     const double Eref = T.compute_eref(h_core_diag.data(), h_active.data(), e_scalar);
 
@@ -322,16 +343,17 @@ int SA_DSRG_PT2(molecule * M, dsrg_par * dsrg, char * job_name){
     fprintf(out_stream,"============================================================================\n\n");
 
     // ---- reference relaxation (relax = once): fold the DSRG dressing into a bare active
-    //      0/1/2-body operator and re-diagonalize it in the CAS determinant space, then map
-    //      dressed roots to bare roots by CI-vector overlap and permute the reference weights
-    //      onto the dressed roots (states are NOT reordered). Unrelaxed output is unchanged. ----
+    //      0/1/2-body operator and re-solve it in the active space, then map dressed roots to
+    //      bare roots by wavefunction overlap and permute the reference weights onto the dressed
+    //      roots (states are NOT reordered). Unrelaxed output is unchanged. ----
     if(dsrg->relax==DSRG_RELAX_ONCE){
-        if(CAS.ci_solver!=CISOLVER_ALDET){
-            fprintf(out_stream,"ERROR: DSRG-PT2 relax=once needs the aldet determinant CI (the dressed re-solve "
-                               "snapshots and overlaps CI vectors); use cisolver=aldet\n");
+        // aldet re-diagonalizes the dressed integrals directly; a backend that encodes a dressed
+        // operator (DMRG/block2) re-solves it on its frozen lattice. Anything else has neither.
+        if(CAS.ci_solver!=CISOLVER_ALDET && !CAS.CI->supports_dressed_import()){
+            fprintf(out_stream,"ERROR: DSRG-PT2 relax=once needs a CI backend that can re-solve a dressed active "
+                               "operator; use cisolver=aldet or cisolver=dmrg\n");
             exit(EXIT_FAILURE);
         }
-        aldet_data * ald = CAS.CI->as_aldet();
 
         // reference weights: normalized ensemble weights (sa=1) or one-hot on the state-specific
         // root (sa=0). The relaxed average uses these, permuted to the matched dressed roots.
@@ -342,9 +364,15 @@ int SA_DSRG_PT2(molecule * M, dsrg_par * dsrg, char * job_name){
             else   wref[root]=1.0;
         }
 
-        // snapshot the semicanonical bare CI vectors into storage set 1 before the dressed
-        // solve overwrites set 0 coef/E_states; E_bare was captured before any RDM read.
-        ald->copy_coef(1, ald, ns, 0, 0);
+        // aldet compares CI coefficients index by index, so its bare vectors must sit in the
+        // dressed operator's semicanonical basis; the MPS backend never rotates its wavefunction
+        // and takes the dressed operator back to the native basis below instead.
+        if(CAS.ci_solver==CISOLVER_ALDET)
+            CAS.CI->malmqvist(0, Ua.data());
+
+        // snapshot the bare states into storage set 1 before the dressed solve overwrites set 0
+        // (aldet coef/E_states, DMRG the retained MPS); E_bare was captured before any RDM read.
+        CAS.CI->snapshot_states(1);
 
         // dressed active operator: Hbar = seed + 1/2[H~1,A] + the two batched CAVV/CCAV Hbar1
         // corrections, de-normal-ordered to a bare 0/1/2-body operator (e0_d, h1_d, h2_d_chem).
@@ -355,16 +383,32 @@ int SA_DSRG_PT2(molecule * M, dsrg_par * dsrg, char * job_name){
                            eps_c, eps_a, eps_v, s, T.hbar1_ref().data());
         T.degno();
 
-        // DIRECT seam re-solve on the dressed operator (never CI_calc: it re-imports the bare
-        // integrals and clobbers the dressing). e0_d is the total-energy scalar, passed as-is.
+        // Seam re-solve on the dressed operator (never CI_calc: it re-imports the bare integrals
+        // and clobbers the dressing). e0_d is the total-energy scalar, passed as-is.
         std::vector<double> h2d(T.dressed_h2_chem()), h1d(T.dressed_h1());
-        CAS.CI->import_integrals(h2d.data(), h1d.data(), T.dressed_e0());
-        CAS.CI->solve(1, 0, false);
+        if(CAS.ci_solver==CISOLVER_ALDET){
+            CAS.CI->import_integrals(h2d.data(), h1d.data(), T.dressed_e0());
+            CAS.CI->solve(1, 0, false);   // cold: a warm guess would overwrite the snapshot
+        }
+        else if(CAS.ci_solver==CISOLVER_DMRG){
+            // The MPS is never rotated, so the dressed operator goes to it in the native active
+            // basis: undo the semicanonicalization on both tensors (Ua columns are eigenvectors,
+            // so native <- semi is forward=false). The lattice and the localization are frozen.
+            std::vector<double> h1n(na2), h2n(na4);
+            rotate1(h1d.data(), Ua.data(), n_act, h1n.data(), /*forward=*/false);
+            rotate2(h2d.data(), Ua.data(), n_act, h2n.data(), /*forward=*/false);
+            CAS.CI->import_dressed_operator(h1n.data(), h2n.data(), nullptr, T.dressed_e0());
+            CAS.CI->solve(1, 0, true);    // warm off the converged bare MPS, same lattice
+        }
+        else{
+            fprintf(out_stream,"ERROR: unknown CISOLVER (%d); accepted: aldet, dmrg\n",CAS.ci_solver);
+            exit(EXIT_FAILURE);
+        }
 
         std::vector<double> E_dressed(ns);
         for(int r=0;r<ns;r++) E_dressed[r] = CAS.CI->E_state(r);
 
-        // root map by CI-overlap argmax: S[d*ns+b] = <dressed_d | bare_b>. A dressed root claims
+        // root map by overlap argmax: S[d*ns+b] = <dressed_d | bare_b>. A dressed root claims
         // its best bare root only above the threshold; the bare roots are orthonormal, so
         // sum_d |S[d,b]|^2 <= 1 makes that injective and only leaves roots unassigned (d2b=-1).
         std::vector<double> S((size_t)ns*ns,0.0);

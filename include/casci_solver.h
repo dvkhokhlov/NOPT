@@ -143,6 +143,17 @@ public:
     // Delocalized basis. Accumulates into G (caller zeroes it). Default aborts loudly.
     virtual bool supports_g2_full() const { return false; }
     virtual void G_calc_full(double* G);
+    // Per-state spin-summed 3-body moment, native active basis, caller buffer n_act^6,
+    // overwritten; layout G3[p,q,r,i,j,k] = <a+_p a+_q a+_r a_k a_j a_i>, spin-summed,
+    // flat row-major over the six active axes. Default aborts loudly.
+    virtual bool supports_g3_diag() const { return false; }
+    virtual void G3_calc_diag(double* G3, int state);
+    // Diagonal per-state spin-summed 2-RDMs: n_s consecutive n_act^4 blocks, native basis,
+    // same element convention as G_calc_full's (s,s) blocks. Overwritten, not accumulated
+    // (unlike G_calc_full). Default aborts loudly.
+    virtual bool supports_g2_diag() const { return false; }
+    virtual void G2_calc_diag(double* G);
+#if 0  // DIRECT lambda3 path (superseded by the explicit lattice-3RDM route; revive for nact >~ 30)
     // Complementary six-operator overlap (3-RDM-free lambda3): per root r, overwritten,
     //   omega[r] = sum_{p,spins} Tbra[p,w,x,y] Tket[p,z,u,v] <r| x+_s y+_t w_t z+_q v_q u_s |r>.
     // Tensors [np][n_act^3], axes (external p, creation, free-spin annih., paired annih.),
@@ -157,6 +168,7 @@ public:
         h2caa_overlap(Tbra1, Tket1, np1, omega1);
         h2caa_overlap(Tbra2, Tket2, np2, omega2);
     }
+#endif
 
     // --- IO / diagnostics ---
     virtual void gen_ext_ind() = 0;

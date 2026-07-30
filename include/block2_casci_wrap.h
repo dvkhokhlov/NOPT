@@ -68,8 +68,17 @@ public:
     // --- transition-density read-outs ---
     bool supports_g2_full() const override { return true; }
     void G_calc_full(double* G) override;
+    // Diagonal per-state read-outs, native (delocalized) active basis; both OVERWRITE the caller's
+    // buffer: G2_calc_diag n_s consecutive n_act^4 GAMMA blocks, G3_calc_diag one n_act^6 moment
+    // G3[p,q,r,i,j,k] = <a+_p a+_q a+_r a_k a_j a_i> spin-summed.
+    bool supports_g2_diag() const override { return true; }
+    void G2_calc_diag(double* G) override;
+    bool supports_g3_diag() const override { return true; }
+    void G3_calc_diag(double* G3, int state) override;
+#if 0  // DIRECT lambda3 path (superseded by the explicit lattice-3RDM route; revive for nact >~ 30)
     bool supports_h2caa_overlap() const override { return true; }
     void h2caa_overlap(const double* Tbra, const double* Tket, int np, double* omega) override;
+#endif
 
     // --- queries ---
     int    n_act()            const override;

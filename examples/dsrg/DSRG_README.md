@@ -22,12 +22,11 @@ $dsrg s=0.5 $end
 - **`RI=1` is mandatory.** The amplitudes and the batched CCVV/CAVV/CCAV terms are built
   from RI B-tensors; the driver exits if RI is off. Supply `_RI_BASIS` in `$MOL` (a
   `-jkfit` set for the orbital basis).
-- **`cisolver=aldet`.** The engine needs the per-state spin-summed 2-RDM (`G_calc_full`)
-  and the DIRECT λ3 overlap (`h2caa_overlap`) through the CI seam, and the λ3 term
-  additionally needs the CI vector in the semicanonical active basis. `cisolver=dmrg`
-  provides the first two but cannot rotate its wavefunction, so it exits with a message
-  naming aldet — unless the semicanonical active rotation is already the identity, the
-  one case where no rotation is owed (see §3).
+- **Either CI backend, energies and `relax=once` alike.** The engine reads the per-state
+  spin-summed 2-RDM (`G2_calc_diag`) and 3-body moment (`G3_calc_diag`) through the CI seam,
+  and both aldet and `cisolver=dmrg` provide them. The λ3 term rotates those tensors into the
+  semicanonical active basis rather than the wavefunction, so nothing is asked of the solver's
+  own basis; the relaxation step likewise moves the dressed *operator* to the solver (see §3).
 - **All occupied orbitals are correlated.** There is no frozen-core option on this path;
   a Forte-style `frozen_docc` has no counterpart here.
 
@@ -105,10 +104,13 @@ off-diagonal exceeds `1e-8`.
   looks reasonable. The documented `[0.1, 1.0]` zone sits four decades inside this, so
   ordinary calculations are unaffected — but "turn the regularizer off by cranking `s`"
   gives a number whose last digits are not meaningful, and the output does not say so.
-- **No DMRG reference yet.** `cisolver=dmrg` is rejected on the λ3 rotation described in
-  §1; the DSRG path is aldet-only, which caps the active space at determinant-CI sizes.
-  The identity-rotation escape in §1 assumes the MPS sits in the delocalized active basis,
-  which `$DMRG localize=pm` breaks: the MPS then lives in `C_deloc·U_loc` while the λ3 legs
-  arrive delocalized, and the block2 overlap applies the Fiedler permutation only. A DMRG
-  λ3 path owes those legs the composed `Uaᵀ·U_loc` before `h2caa_overlap`; the 2-RDM
-  read-out already back-transforms and needs nothing.
+- **`relax=once` on a DMRG reference re-solves on the frozen lattice.** The bare states are
+  snapshotted, the dressed operator is rotated to the solver's native basis and imported as a
+  general MPO, and the re-solve warm-starts from the converged bare MPS; dressed roots are
+  matched back by MPS overlap with the same `|overlap| > 0.9` ambiguity rule as aldet.
+  `$DMRG warm_start=off` makes the dressed re-solve cold by design. `$DMRG localize=pm` needs
+  no special handling anywhere on this path.
+- **The λ3 term holds the 3-body moment explicitly.** Two `n_act⁶` buffers (the averaged
+  moment and its semicanonical rotation) plus two more inside the contraction: 2 MB each at
+  `n_act = 8`, 512 MB each at `n_act = 20`. On a DMRG reference that, and not the determinant
+  space, is what caps the active space on this path.

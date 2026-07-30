@@ -1,7 +1,7 @@
 // State-specific unrelaxed spin-free DSRG-PT2 algebra core. Assembles the v-tilde
 // integral blocks and T1/T2 amplitudes from the RI B-tensors, then the per-class
 // <0|[Hbar1,T]|0> energy: Forte's spin-adapted [F,T1]/[F,T2]/[V,T1] closures
-// (sadsrg_comm.cc) plus the certified in-core [V,T2] einsum (cert D1) and the DIRECT
+// (sadsrg_comm.cc) plus the certified in-core [V,T2] einsum (cert D1) and the explicit
 // lambda3 assembly (cert D3). Plain integrals, Eta1 = 2I-gamma, S2 = 2T-K.
 //
 // Block storage is physicist row-major: a 2-body block <p1 p2|p3 p4> is [p1][p2][p3][p4]
@@ -54,6 +54,14 @@ void fold_s2_aa(const std::vector<double>& t2, int na, int K, std::vector<double
     for(int u=0;u<na;u++) for(int v=0;v<na;v++)
         for(int k=0;k<K;k++)
             s2[(size_t)(u*na+v)*K+k] = 2.0*t2[(size_t)(u*na+v)*K+k] - t2[(size_t)(v*na+u)*K+k];
+}
+
+// Full dot over n elements (the n_a^6 lambda3 close), OMP reduction over the flat buffer.
+double dot_all(const double* A, const double* B, size_t n){
+    double acc = 0.0;
+#pragma omp parallel for reduction(+:acc) schedule(static)
+    for(long i=0;i<(long)n;i++) acc += A[i]*B[i];
+    return acc;
 }
 
 } // namespace
@@ -657,6 +665,78 @@ void dsrg_sf_tensors::compute_e2(){
     }
 }
 
+// ---- explicit lambda3 (cert 2.6). The caller's semicanonical 3-body moment becomes the
+//      SF_L3 cumulant in place, then the two branches close it against H2*T2:
+//        E3v_expl = einsum('ewxy,uvez,xyzuwv->', Vt_vaaa, T2_aava, SF_L3)
+//        E3c_expl = einsum('uvmz,mwxy,xyzuwv->', Vt_aaca, T2_caaa, SF_L3)
+//      Ledger: E3v = +E3v_expl, E3c = -E3c_expl (the printed L3 is E3v+E3c). ----
+
+void dsrg_sf_tensors::compute_e3(double* G3_semi){
+    const int na=n_a, nc=n_c, nv=n_v;
+    const size_t na2=(size_t)na*na, na3=na2*na, na6=na3*na3;
+    auto id6 = [na](int a,int b,int c,int d,int e,int f){
+        return (((((size_t)a*na+b)*na+c)*na+d)*na+e)*na+f; };
+    SF_L3_in = G3_semi;
+
+    // SF_L3 in place: 9 L1xG2 terms + 6 L1xL1xL1 terms subtracted from the moment. Slots
+    // (p,q,r) creation, (s,t,u) annihilation; G2 is the physicist <p+ q+ s r> block.
+    {
+        const double* g1 = L1.data();
+        const double* g2 = G2.data();
+        auto id4 = [na](int a,int b,int c,int d){ return (((size_t)a*na+b)*na+c)*na+d; };
+#pragma omp parallel for collapse(3) schedule(static)
+        for(int p=0;p<na;p++) for(int q=0;q<na;q++) for(int r=0;r<na;r++)
+        for(int s=0;s<na;s++) for(int t=0;t<na;t++) for(int u=0;u<na;u++){
+            double c = 0.0;
+            c -= g1[p*na+s]*g2[id4(q,r,t,u)];
+            c -= g1[q*na+t]*g2[id4(p,r,s,u)];
+            c -= g1[r*na+u]*g2[id4(p,q,s,t)];
+            c += 0.5*g1[p*na+t]*g2[id4(q,r,s,u)];
+            c += 0.5*g1[p*na+u]*g2[id4(q,r,t,s)];
+            c += 0.5*g1[q*na+s]*g2[id4(p,r,t,u)];
+            c += 0.5*g1[q*na+u]*g2[id4(p,r,s,t)];
+            c += 0.5*g1[r*na+s]*g2[id4(p,q,u,t)];
+            c += 0.5*g1[r*na+t]*g2[id4(p,q,s,u)];
+            c += 2.0*g1[p*na+s]*g1[q*na+t]*g1[r*na+u];
+            c -=     g1[p*na+s]*g1[q*na+u]*g1[r*na+t];
+            c -=     g1[p*na+u]*g1[q*na+t]*g1[r*na+s];
+            c -=     g1[p*na+t]*g1[q*na+s]*g1[r*na+u];
+            c += 0.5*g1[p*na+t]*g1[q*na+u]*g1[r*na+s];
+            c += 0.5*g1[p*na+u]*g1[q*na+s]*g1[r*na+t];
+            G3_semi[id6(p,q,r,s,t,u)] += c;
+        }
+    }
+
+    // Both branches contract their external index into the same slot order [(w,x,y)][(u,v,z)],
+    // so one permutation of SF_L3 serves both: P[(w,x,y),(u,v,z)] = SF_L3[x,y,z,u,w,v].
+    std::vector<double> P(na6, 0.0);
+#pragma omp parallel for collapse(3) schedule(static)
+    for(int w=0;w<na;w++) for(int x=0;x<na;x++) for(int y=0;y<na;y++)
+    for(int u=0;u<na;u++) for(int v=0;v<na;v++) for(int z=0;z<na;z++)
+        P[id6(w,x,y,u,v,z)] = G3_semi[id6(x,y,z,u,w,v)];
+
+    // virtual branch: Vt_vaaa is already [e][(w,x,y)]; T2_aava is permuted to [e][(u,v,z)].
+    {
+        std::vector<double> Bp((size_t)nv*na3, 0.0);
+        for(int u=0;u<na;u++) for(int v=0;v<na;v++) for(int e=0;e<nv;e++) for(int z=0;z<na;z++)
+            Bp[(size_t)e*na3 + ((u*na+v)*na+z)] = T2_aava[(((size_t)u*na+v)*nv+e)*na+z];
+        std::vector<double> M(na6, 0.0);
+        contract_ext(Vt_vaaa.data(), Bp.data(), nv, (int)na3, (int)na3, M.data());
+        ledger.E3v = dot_all(M.data(), P.data(), na6);
+    }
+    // core branch: T2_caaa is already [m][(w,x,y)]; Vt_aaca is permuted to [m][(u,v,z)].
+    {
+        std::vector<double> Ap((size_t)nc*na3, 0.0);
+        for(int u=0;u<na;u++) for(int v=0;v<na;v++) for(int m=0;m<nc;m++) for(int z=0;z<na;z++)
+            Ap[(size_t)m*na3 + ((u*na+v)*na+z)] = Vt_aaca[(((size_t)u*na+v)*nc+m)*na+z];
+        std::vector<double> M(na6, 0.0);
+        contract_ext(T2_caaa.data(), Ap.data(), nc, (int)na3, (int)na3, M.data());
+        ledger.E3c = -dot_all(M.data(), P.data(), na6);
+    }
+}
+
+#if 0  // DIRECT lambda3 path (superseded by the explicit lattice-3RDM route; revive for nact >~ 30)
+
 // ---- DIRECT lambda3 (cert 2.6). E3v (virtual) / E3c (core) as separate ledger
 //      entries. Solver overlap Omega via the h2caa seam; the remaining pieces are
 //      -t*v*D2 plus <=2-body cumulant completions. Hazard H1: one E3c completion
@@ -1023,6 +1103,8 @@ void dsrg_sf_tensors::compute_e3(casci_solver* CI, int root){
     }
     ledger.E3c = E3c;
 }
+
+#endif
 
 // ---- reference energy (cert 2.7): bare (non-antisymmetrized) active integrals (H3) ----
 
@@ -1881,14 +1963,14 @@ void dsrg_sf_tensors::set_root_data(const double* w, const double* E_bare,
     root_data_set = true;
 }
 
-// ---- DSRG_PILOT_DUMP: extends the DSRG_PRIM_DUMP whitespace-token grammar (cert 4.2).
-//      One %.17e token per line; a stream error aborts (a truncated dump silently
-//      poisons the pilot gate). ----
+// ---- DSRG_PILOT_DUMP: extends the DSRG_PRIM_DUMP whitespace-token grammar (cert 4.2), with
+//      the semicanonical SF_L3 in place of the solver-overlap tokens. One %.17e token per
+//      line; a stream error aborts (a truncated dump silently poisons the pilot gate). ----
 
 void dsrg_sf_tensors::pilot_dump(const char* path, int na_el, int nb_el, int ns, int root) const {
     const int na=n_a, nc=n_c, nv=n_v;
     const long aux = R->aux_n_ao;
-    const size_t na2=(size_t)na*na, na4=na2*na2;
+    const size_t na2=(size_t)na*na, na4=na2*na2, na6=na4*na2;
 
     FILE* f = fopen(path, "w");
     if(!f){ fprintf(out_stream, "ERROR: DSRG_PILOT_DUMP cannot open %s\n", path); abort(); }
@@ -1915,8 +1997,8 @@ void dsrg_sf_tensors::pilot_dump(const char* path, int na_el, int nb_el, int ns,
     for(size_t i=0;i<na2;i++)  fprintf(f, "%.17e\n", L1[i]);
     for(size_t i=0;i<na4;i++)  fprintf(f, "%.17e\n", SF_L2[i]);
     for(size_t i=0;i<na4;i++)  fprintf(f, "%.17e\n", GAMMA_in[i]);
-    for(int r=0;r<ns;r++) fprintf(f, "%.17e\n", om_v.empty()?0.0:om_v[r]);
-    for(int r=0;r<ns;r++) fprintf(f, "%.17e\n", om_c.empty()?0.0:om_c[r]);
+    // the contracted cumulant itself: SF_L3[p,q,r,s,t,u], (p,q,r) creation, semicanonical
+    for(size_t i=0;i<na6;i++) fprintf(f, "%.17e\n", SF_L3_in?SF_L3_in[i]:0.0);
     // per-class energy ledger (Layer-A/Forte cross-check line)
     fprintf(f, "%.17e %.17e %.17e\n", ledger.E_FT1, ledger.E_FT2, ledger.E_VT1);
     fprintf(f, "%.17e %.17e %.17e %.17e %.17e\n",

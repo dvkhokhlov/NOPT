@@ -40,7 +40,21 @@ void casci_solver::G_calc_full(double*) {
     exit(EXIT_FAILURE);
 }
 
+void casci_solver::G3_calc_diag(double*, int) {
+    fprintf(out_stream, "ERROR: this CI backend does not provide the per-state 3-body moment"
+                        " read-out (aldet and DMRG/block2 backends only)\n");
+    exit(EXIT_FAILURE);
+}
+
+void casci_solver::G2_calc_diag(double*) {
+    fprintf(out_stream, "ERROR: this CI backend does not provide the per-state 2-RDM"
+                        " read-out (aldet and DMRG/block2 backends only)\n");
+    exit(EXIT_FAILURE);
+}
+
+#if 0  // DIRECT lambda3 path (superseded by the explicit lattice-3RDM route; revive for nact >~ 30)
 void casci_solver::h2caa_overlap(const double*, const double*, int, double*) {
     fprintf(out_stream, "ERROR: this CI backend does not provide the complementary-overlap read-out\n");
     exit(EXIT_FAILURE);
 }
+#endif

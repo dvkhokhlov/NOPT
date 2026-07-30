@@ -40,6 +40,28 @@ void aldet_casci_wrap::G_calc_full(double* G) {
 
 namespace {
 
+// 6-index flat address inside one na6 block.
+inline long id6(int no, int a, int b, int c, int d, int e, int f) {
+    return (((((long)a * no + b) * no + c) * no + d) * no + e) * no + f; }
+
+// Per-thread private-buffer reduction accumulating ONE worker's diagonal (r,r) block into dst
+// (size na6); dst is NOT zeroed here -- the caller zeroes it once, then sums the two spin copies.
+void reduce_diag(std::vector<double>& dst, long na6, const std::function<void(double*, int, int)>& w) {
+    std::vector<std::vector<double>> priv(num_threads > 1 ? num_threads - 1 : 0);
+    std::vector<double*> th(num_threads);
+    th[0] = dst.data();
+    for (int i = 1; i < num_threads; i++) { priv[i - 1].assign(na6, 0.0); th[i] = priv[i - 1].data(); }
+    #pragma omp parallel num_threads(num_threads)
+    {
+        int nt = omp_get_thread_num();
+        w(th[nt], nt, num_threads);
+    }
+    for (int i = 1; i < num_threads; i++)
+        for (long j = 0; j < na6; j++) th[0][j] += th[i][j];
+}
+
+#if 0  // DIRECT lambda3 path (superseded by the explicit lattice-3RDM route; revive for nact >~ 30)
+
 // One (Tbra, Tket, np) pair of the complementary overlap plus its per-root output.
 struct h2caa_leg { const double* Tbra; const double* Tket; int np; double* omega; };
 
@@ -71,26 +93,6 @@ void h2caa_kernel(aldet_data* ci, const h2caa_leg* leg, int nleg) {
     std::vector<double> G2diag((long)n_s * na4, 0.0);
     ci->G_calc(G2diag.data());
 
-    // Per-thread private-buffer reduction accumulating ONE worker's diagonal (r,r) block into dst
-    // (size na6); dst is NOT zeroed here -- the caller zeroes it once, then sums the two spin copies.
-    auto reduce_diag = [&](std::vector<double>& dst, const std::function<void(double*, int, int)>& w) {
-        std::vector<std::vector<double>> priv(num_threads > 1 ? num_threads - 1 : 0);
-        std::vector<double*> th(num_threads);
-        th[0] = dst.data();
-        for (int i = 1; i < num_threads; i++) { priv[i - 1].assign(na6, 0.0); th[i] = priv[i - 1].data(); }
-        #pragma omp parallel num_threads(num_threads)
-        {
-            int nt = omp_get_thread_num();
-            w(th[nt], nt, num_threads);
-        }
-        for (int i = 1; i < num_threads; i++)
-            for (long j = 0; j < na6; j++) th[0][j] += th[i][j];
-    };
-
-    // 6-index flat address inside one na6 block.
-    auto id6 = [no](int a, int b, int c, int d, int e, int f) -> long {
-        return (((((long)a * no + b) * no + c) * no + d) * no + e) * no + f; };
-
     // Only diagonal (r,r) blocks are needed, so the roots loop OUTSIDE: each worker is invoked with
     // n_s=1, ld=n_states[0], base = coef[0]+r, which selects state r as element 0 of every
     // determinant's coefficient stride and writes just that block. Peak per-thread storage is na6,
@@ -103,14 +105,14 @@ void h2caa_kernel(aldet_data* ci, const h2caa_leg* leg, int nleg) {
 
     for (int r = 0; r < n_s; r++) {
         set_zero_matr(AAAsum.data(), na6);
-        reduce_diag(AAAsum, [&](double* o, int it, int nt) {
+        reduce_diag(AAAsum, na6, [&](double* o, int it, int nt) {
             aldet_calc_DM_3body_AAA(o, 1, n_s, ci->coef[0]     + r, no, ci->na, ci->Na, ci->Nb, ci->fa, ci->vec_a, it, nt); });
-        reduce_diag(AAAsum, [&](double* o, int it, int nt) {
+        reduce_diag(AAAsum, na6, [&](double* o, int it, int nt) {
             aldet_calc_DM_3body_AAA(o, 1, n_s, ci->coef_bas[0] + r, no, ci->nb, ci->Nb, ci->Na, ci->fb, ci->vec_b, it, nt); });
         set_zero_matr(AABsum.data(), na6);
-        reduce_diag(AABsum, [&](double* o, int it, int nt) {
+        reduce_diag(AABsum, na6, [&](double* o, int it, int nt) {
             aldet_calc_DM_3body_AAB(o, 1, n_s, ci->coef[0]     + r, no, ci->na, ci->nb, ci->Na, ci->Nb, ci->fa, ci->fb, ci->vec_a, ci->vec_b, it, nt); });
-        reduce_diag(AABsum, [&](double* o, int it, int nt) {
+        reduce_diag(AABsum, na6, [&](double* o, int it, int nt) {
             aldet_calc_DM_3body_AAB(o, 1, n_s, ci->coef_bas[0] + r, no, ci->nb, ci->na, ci->Nb, ci->Na, ci->fb, ci->fa, ci->vec_b, ci->vec_a, it, nt); });
 
         const double* Gr = G2diag.data() + (long)r * na4;
@@ -127,10 +129,10 @@ void h2caa_kernel(aldet_data* ci, const h2caa_leg* leg, int nleg) {
         for (int u = 0; u < no; u++)
         for (int v = 0; v < no; v++)
             D3M[(long)((w * no + x) * no + y) * na3 + ((z * no + u) * no + v)] =
-                  A3[id6(x, y, z, w, v, u)]
-                - B3[id6(x, y, z, w, u, v)]
-                - B3[id6(x, z, y, v, u, w)]
-                + B3[id6(y, z, x, w, v, u)];
+                  A3[id6(no, x, y, z, w, v, u)]
+                - B3[id6(no, x, y, z, w, u, v)]
+                - B3[id6(no, x, z, y, v, u, w)]
+                + B3[id6(no, y, z, x, w, v, u)];
 
         for (int l = 0; l < nleg; l++) {
             const double* Tbra = leg[l].Tbra;
@@ -157,7 +159,49 @@ void h2caa_kernel(aldet_data* ci, const h2caa_leg* leg, int nleg) {
     }
 }
 
+#endif
+
 }   // namespace
+
+// Per-state spin-summed 3-body moment G3[p,q,r,i,j,k] = <a+_p a+_q a+_r a_k a_j a_i>, flat
+// row-major over the six active axes, overwritten. A3 collects the same-spin (aaa+bbb)
+// workers, B3 the mixed-spin (aab+bba) ones; the three B3 slot maps are the pair-exchange
+// images of the minority-spin pair, so all four terms enter with a plus.
+void aldet_casci_wrap::G3_calc_diag(double* G3, int state) {
+    aldet_data* ci = ci_;
+    const int  n_s = ci->n_states[0];
+    const int  no  = ci->n_act;
+    const long na6 = (long)no * no * no * no * no * no;
+
+    // Roots enter one at a time: each worker is invoked with n_s=1, ld=n_states[0],
+    // base = coef[0]+state, which selects that state as element 0 of every determinant's
+    // coefficient stride. Peak storage is na6 per thread, not n_s^2*na6.
+    std::vector<double> AAAsum(na6, 0.0), AABsum(na6, 0.0);
+    reduce_diag(AAAsum, na6, [&](double* o, int it, int nt) {
+        aldet_calc_DM_3body_AAA(o, 1, n_s, ci->coef[0]     + state, no, ci->na, ci->Na, ci->Nb, ci->fa, ci->vec_a, it, nt); });
+    reduce_diag(AAAsum, na6, [&](double* o, int it, int nt) {
+        aldet_calc_DM_3body_AAA(o, 1, n_s, ci->coef_bas[0] + state, no, ci->nb, ci->Nb, ci->Na, ci->fb, ci->vec_b, it, nt); });
+    reduce_diag(AABsum, na6, [&](double* o, int it, int nt) {
+        aldet_calc_DM_3body_AAB(o, 1, n_s, ci->coef[0]     + state, no, ci->na, ci->nb, ci->Na, ci->Nb, ci->fa, ci->fb, ci->vec_a, ci->vec_b, it, nt); });
+    reduce_diag(AABsum, na6, [&](double* o, int it, int nt) {
+        aldet_calc_DM_3body_AAB(o, 1, n_s, ci->coef_bas[0] + state, no, ci->nb, ci->na, ci->Nb, ci->Na, ci->fb, ci->fa, ci->vec_b, ci->vec_a, it, nt); });
+
+    const double* A3 = AAAsum.data();
+    const double* B3 = AABsum.data();
+    #pragma omp parallel for num_threads(num_threads) collapse(2)
+    for (int p = 0; p < no; p++)
+    for (int q = 0; q < no; q++)
+    for (int r = 0; r < no; r++)
+    for (int i = 0; i < no; i++)
+    for (int j = 0; j < no; j++)
+    for (int k = 0; k < no; k++)
+        G3[id6(no, p, q, r, i, j, k)] = A3[id6(no, i, j, k, r, q, p)]
+                                      + B3[id6(no, j, k, i, r, q, p)]
+                                      + B3[id6(no, i, k, j, r, p, q)]
+                                      + B3[id6(no, j, i, k, p, q, r)];
+}
+
+#if 0  // DIRECT lambda3 path (superseded by the explicit lattice-3RDM route; revive for nact >~ 30)
 
 void aldet_casci_wrap::h2caa_overlap(const double* Tbra, const double* Tket, int np, double* omega) {
     const h2caa_leg leg = { Tbra, Tket, np, omega };
@@ -169,3 +213,5 @@ void aldet_casci_wrap::h2caa_overlap2(const double* Tbra1, const double* Tket1, 
     const h2caa_leg leg[2] = { { Tbra1, Tket1, np1, omega1 }, { Tbra2, Tket2, np2, omega2 } };
     h2caa_kernel(ci_, leg, 2);
 }
+
+#endif

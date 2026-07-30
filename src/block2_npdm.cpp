@@ -1,7 +1,7 @@
-// block2_casci_wrap transition-density read-outs over the external block2 DMRG library:
-// the full n_s x n_s spin-summed transition 2-RDM (G_calc_full) and the 3-RDM-free
-// complementary six-operator overlap (h2caa_overlap). Both port Forte's block2 primitives
-// onto NOPT's own scaffolds; split from block2_dmrg.cpp, same author idiom.
+// block2_casci_wrap density read-outs over the external block2 DMRG library: the full n_s x n_s
+// spin-summed transition 2-RDM (G_calc_full), its per-state diagonal (G2_calc_diag) and the
+// per-state spin-summed 3-body moment (G3_calc_diag). All port Forte's block2 primitives onto
+// NOPT's own scaffolds; split from block2_dmrg.cpp, same author idiom.
 
 #include "block2_dmrg_engine.h"   // block2 headers + dmrgci_engine + shared helpers
 
@@ -9,12 +9,14 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
 #include <memory>
 #include <string>
+#include <system_error>
 #include <vector>
 
 #include "common_vars.h"      // out_stream
-#include "localized_dmrg.h"   // rotate2 (active-space basis back-transform)
+#include "localized_dmrg.h"   // rotate2/rotate3 (active-space basis back-transform)
 
 using namespace block2;
 using namespace nopt_block2;
@@ -142,6 +144,198 @@ void block2_casci_wrap::G_calc_full(double *G) {
     for (size_t k = 0; k < nel; k++)
         G[k] += e.dg2full[k];
 }
+
+// The lattice -> input orbital map of every read-out: inverse of reorder_perm, empty when the
+// solve ran in the input order.
+static std::vector<int> lattice_iperm(const dmrgci_engine &e) {
+    std::vector<int> iperm;
+    if (!e.reorder_perm.empty()) {
+        iperm.resize(e.n_act);
+        for (int i = 0; i < e.n_act; i++) iperm[e.reorder_perm[i]] = i;
+    }
+    return iperm;
+}
+
+// A converged MPS is the precondition of every read-out below.
+static void require_solved(const dmrgci_engine &e, const char *what) {
+    if (e.mps == nullptr || e.mps_info == nullptr) {
+        fprintf(out_stream, "ERROR: DMRG %s needs a converged MPS (call solve first)\n", what);
+        exit(EXIT_FAILURE);
+    }
+}
+
+// ---- per-state 2-RDM (diagonal blocks) -----------------------------------------------------
+
+// The n_s diagonal blocks of the state matrix, one Expect sweep per root, in the same GAMMA
+// convention and delocalized basis as G_calc_full's (s,s) blocks. Overwrites the caller's n_s
+// consecutive n_act^4 blocks (aldet's G_calc convention).
+void block2_casci_wrap::G2_calc_diag(double *G) {
+    dmrgci_engine &e = *impl_;
+    const int n = e.n_act;
+    const size_t blk = (size_t)n * n * n * n;
+    if (e.g2full_valid) { // the full state matrix is already cached: read its diagonal
+        for (int s = 0; s < e.n_s; s++)
+            std::copy(e.dg2full.begin() + (size_t)(s * e.n_s + s) * blk,
+                      e.dg2full.begin() + (size_t)(s * e.n_s + s + 1) * blk, G + (size_t)s * blk);
+        return;
+    }
+    require_solved(e, "G2_calc_diag");
+    host_threads_guard htg;
+
+    const std::vector<int> iperm = lattice_iperm(e);
+    std::vector<double> perm_scr, rot_scr; // un-permute / back-transform targets (no aliasing)
+    if (!iperm.empty()) perm_scr.resize(blk);
+    if (e.localize_on) rot_scr.resize(blk);
+
+    // bra == ket throughout, so RuleQC's transpose-symmetry simplification is valid (the full
+    // state matrix has to fall back on NoTransposeRule for its off-diagonal blocks).
+    std::shared_ptr<MPO<SU2, double>> p2mpo = std::make_shared<PDM2MPOQC<SU2, double>>(e.hamil);
+    p2mpo = std::make_shared<SimplifiedMPO<SU2, double>>(
+        p2mpo, std::make_shared<RuleQC<SU2, double>>(), true, true,
+        OpNamesSet({OpNames::R, OpNames::RD}));
+
+    for (int s = 0; s < e.n_s; s++) {
+        const std::string xtag = e.mps_info->tag + "-d" + std::to_string(s);
+        const std::string stag = xtag + "-s";
+        std::shared_ptr<MPS<SU2, double>> smps = extract_root_single(e, s, xtag, stag);
+
+        auto p2me = std::make_shared<MovingEnvironment<SU2, double, double>>(p2mpo, smps, smps,
+                                                                            "D2PDM");
+        p2me->init_environments(false);
+        auto ex2 = std::make_shared<Expect<SU2, double, double>>(p2me, (ubond_t)e.cfg.m,
+                                                                 (ubond_t)e.cfg.m);
+        ex2->iprint = 0; // silence the per-site Expect sweep log
+        ex2->solve(true, smps->center == 0);
+        std::shared_ptr<GTensor<double>> d2 = ex2->get_2pdm_spatial(); // {n,n,n,n}
+        g2full_finish_block(e, d2->data->data(), iperm, perm_scr.data(), rot_scr.data(),
+                            G + (size_t)s * blk);
+
+        p2me->remove_partition_files();
+        remove_tag_files(xtag); // the per-root extract and its single-MPS copy are transient
+        remove_tag_files(stag);
+    }
+    p2mpo->deallocate();
+    assert_stack_clean("per-state 2-RDM read");
+}
+
+// ---- per-state 3-body moment (spin-summed 3-RDM) -------------------------------------------
+
+// SU2 recoupling string of the spin-summed 3-body density. block2 returns the singlet-coupled
+// raw[x0,x1,x2,y0,y1,y2] = sum_spins <a+_x0 a+_x1 a+_x2 a_y0 a_y1 a_y2> scaled by 2^{-n_cds/4},
+// n_cds = 6 operators.
+static const char *const npdm3_expr = "((C+((C+(C+D)0)1+D)0)1+D)0";
+
+// block2 streams the NPDM middle intermediates to <save_dir>/*.NPDM.FRAG.* and leaves them there;
+// the Compressed algorithm writes the .fpc spelling, the plain one .npy.
+static void remove_npdm_fragments(const MovingEnvironment<SU2, double, double> &me) {
+    std::error_code ec;
+    for (int i = 0; i < me.n_sites; i++) {
+        const std::string base = me.get_npdm_fragment_filename(i);
+        std::filesystem::remove(base + ".fpc", ec);
+        std::filesystem::remove(base + ".npy", ec);
+    }
+}
+
+// Raw lattice-ordered 3-body moment -> NOPT layout G3[p,q,r,i,j,k] = <a+_p a+_q a+_r a_k a_j a_i>
+// = scale * raw[p,q,r,k,j,i]: the three annihilation axes reverse. Reversing axis positions and
+// relabelling indices (lattice -> input, iperm; empty => lattice is the input order) commute, so
+// both happen in this one gather. raw and out must not alias.
+static void npdm3_gather(const double *raw, int n, const std::vector<int> &iperm, double scale,
+                         double *out) {
+    std::vector<int> ix(n);
+    for (int a = 0; a < n; a++) ix[a] = iperm.empty() ? a : iperm[a];
+    const size_t n2 = (size_t)n * n, n3 = n2 * n;
+#pragma omp parallel for schedule(static) collapse(3)
+    for (int p = 0; p < n; p++)
+        for (int q = 0; q < n; q++)
+            for (int r = 0; r < n; r++) {
+                const size_t sa = ((size_t)ix[p] * n + ix[q]) * n + ix[r];
+                const size_t da = ((size_t)p * n + q) * n + r;
+                for (int i = 0; i < n; i++)
+                    for (int j = 0; j < n; j++) {
+                        const double *s = raw + sa * n3 + (size_t)ix[j] * n + ix[i];
+                        double *d = out + da * n3 + ((size_t)i * n + j) * n;
+                        for (int k = 0; k < n; k++)
+                            d[k] = scale * s[(size_t)ix[k] * n2];
+                    }
+            }
+}
+
+// One root's spin-summed 3-body moment in the native (delocalized) active basis, NOPT layout.
+// A single NPDM Expect sweep on a transient extract of the root: the stored MultiMPS is only read.
+// Overwrites the caller's n_act^6 buffer.
+void block2_casci_wrap::G3_calc_diag(double *G3, int state) {
+    dmrgci_engine &e = *impl_;
+    require_solved(e, "G3_calc_diag");
+    if (state < 0 || state >= e.n_s) {
+        fprintf(out_stream, "ERROR: DMRG G3_calc_diag root %d out of range (n_s = %d)\n", state,
+                e.n_s);
+        exit(EXIT_FAILURE);
+    }
+    host_threads_guard htg;
+    const int n = e.n_act;
+    const size_t blk6 = (size_t)n * n * n * n * n * n;
+
+    // The GeneralHamiltonian is built fresh for each MPO: its on-site operator tables are populated
+    // on first use, and reusing one instance corrupts every operator carrying coincident legs.
+    SU2 vacuum(0);
+    std::vector<typename SU2::pg_t> gorbsym(n, 0); // C1 site irreps
+    auto ghamil = std::make_shared<GeneralHamiltonian<SU2, double>>(vacuum, n, gorbsym);
+
+    auto perm = std::make_shared<SpinPermScheme>(
+        SpinPermScheme::initialize_su2(6, npdm3_expr, /*is_npdm=*/true));
+    auto ppmpo = std::make_shared<GeneralNPDMMPO<SU2, double>>(
+        ghamil, std::make_shared<NPDMScheme>(perm), /*symbol_free=*/true, 0.0, 0);
+    ppmpo->delta_quantum = SU2(0, SpinPermRecoupling::get_target_twos(npdm3_expr), 0);
+    ppmpo->build();
+    std::shared_ptr<MPO<SU2, double>> pmpo = std::make_shared<SimplifiedMPO<SU2, double>>(
+        ppmpo, std::make_shared<Rule<SU2, double>>(), false, false);
+
+    const std::string xtag = e.mps_info->tag + "-p3" + std::to_string(state);
+    const std::string stag = xtag + "-s";
+
+    std::vector<std::shared_ptr<GTensor<double>>> npdm; // {n,n,n,n,n,n}, lattice order
+    {
+        std::shared_ptr<MPS<SU2, double>> psi = extract_root_single(e, state, xtag, stag);
+        auto pme = std::make_shared<MovingEnvironment<SU2, double, double>>(pmpo, psi, psi,
+                                                                           "NPDM3");
+        pme->cached_contraction = false; // conflicts with the fused zero-dot contraction
+        pme->fused_contraction_rotation = true;
+        pme->init_environments(false);
+        auto ex = std::make_shared<Expect<SU2, double, double>>(pme, (ubond_t)e.cfg.m,
+                                                                (ubond_t)e.cfg.m);
+        ex->algo_type =
+            ExpectationAlgorithmTypes::SymbolFree | ExpectationAlgorithmTypes::Compressed;
+        ex->zero_dot_algo = true; // extract_root_single leaves the one-dot end-center form
+        ex->iprint = 0;
+        ex->cutoff = 1e-24;
+        ex->solve(true, psi->center == 0);
+        npdm = ex->get_npdm();
+        remove_npdm_fragments(*pme);
+        pme->remove_partition_files();
+    }
+    // No pmpo->deallocate(): the NPDM MPO's numeric legs are heap-owned site operators cached in
+    // ghamil and several MPO entries alias the same one, so a tensor-wise deallocate double-frees.
+    // block2's own npdm driver drops the MPO the same way; assert_stack_clean is the leak check.
+    remove_tag_files(xtag); // the per-root extract and its single-MPS copy are transient
+    remove_tag_files(stag);
+    assert_stack_clean("3-body moment read");
+
+    if (npdm.size() != 1 || npdm[0] == nullptr || npdm[0]->size() != blk6) {
+        fprintf(out_stream, "ERROR: DMRG 3-body npdm shape mismatch (expected one n_act^6 = %zu"
+                            " element tensor)\n", blk6);
+        exit(EXIT_FAILURE);
+    }
+    npdm3_gather(npdm[0]->data->data(), n, lattice_iperm(e), 2.0 * std::sqrt(2.0), G3);
+    npdm[0] = nullptr; // drop the raw n_act^6 tensor before the back-transform allocates
+    if (e.localize_on) { // rotate back to the delocalized basis
+        std::vector<double> rot(blk6);
+        rotate3(G3, e.U_loc.data(), n, rot.data(), /*forward=*/false);
+        std::copy(rot.begin(), rot.end(), G3);
+    }
+}
+
+#if 0  // DIRECT lambda3 path (superseded by the explicit lattice-3RDM route; revive for nact >~ 30)
 
 // ---- complementary six-operator overlap (3-RDM-free lambda3) -------------------------------
 
@@ -330,3 +524,5 @@ void block2_casci_wrap::h2caa_overlap(const double *Tbra, const double *Tket, in
     }
     assert_stack_clean("h2caa overlap");
 }
+
+#endif

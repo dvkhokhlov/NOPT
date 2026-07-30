@@ -65,7 +65,11 @@ public:
     void build_vt();          // 5 stored renormalized v-tilde blocks from B (vvaa is tiled)
     void build_amplitudes();  // 5 stored T2 blocks (aavv tiled, aaaa internal), 3 T1, Ft
     void compute_e2();        // Forte [F,T1]/[F,T2]/[V,T1] + certified in-core [V,T2]
-    void compute_e3(casci_solver* CI, int root);        // DIRECT lambda3 (cert 2.6)
+    // Explicit lambda3 (cert 2.6). G3_semi: the matched-averaging spin-summed 3-body moment
+    // in the semicanonical active basis, G3[p,q,r,i,j,k] = <a+_p a+_q a+_r a_k a_j a_i>, n_a^6.
+    // Overwritten in place with the SF_L3 cumulant; the caller's buffer is kept for the dump,
+    // so it must outlive pilot_dump.
+    void compute_e3(double* G3_semi);
     // Reference energy (cert 2.7). h_core_diag: bare 1-e h on core (diagonal, n_c).
     // h_active: bare 1-e h active block, n_a*n_a. e_scalar: frozen-core + nuclear.
     double compute_eref(const double* h_core_diag, const double* h_active, double e_scalar);
@@ -103,8 +107,10 @@ public:
     void pilot_dump(const char* path, int na_el, int nb_el, int ns, int root) const;
 
     dsrg_pt2_ledger ledger;
+#if 0  // DIRECT lambda3 path (superseded by the explicit lattice-3RDM route; revive for nact >~ 30)
     const std::vector<double>& omega_v() const { return om_v; }
     const std::vector<double>& omega_c() const { return om_c; }
+#endif
 
 private:
     int n_c = 0, n_a = 0, n_v = 0;
@@ -123,6 +129,7 @@ private:
     std::vector<double> G2;         // n_a^4, physicist G2[p][q][r][s]
     std::vector<double> SF_L2;      // n_a^4, cumulant SF_L2[p][q][r][s]
     const double* GAMMA_in = nullptr;   // seam layout, kept for the dump
+    const double* SF_L3_in = nullptr;   // compute_e3's caller buffer (cumulant), kept for the dump
 
     // renormalized v-tilde blocks (physicist [bra1][bra2][ket1][ket2]); the n_v^2 n_a^2
     // vvaa/aavv pair is not stored -- build_aavv_tile emits it one virtual tile at a time
@@ -132,8 +139,10 @@ private:
     // singles + renormalized Fock cross blocks
     std::vector<double> T1_cv, T1_ca, T1_av;
     std::vector<double> Ft_cv, Ft_ca, Ft_av;
+#if 0  // DIRECT lambda3 path (superseded by the explicit lattice-3RDM route; revive for nact >~ 30)
     // lambda3 solver overlaps per root (virtual/core branch)
     std::vector<double> om_v, om_c;
+#endif
 
     // stashed for the dump (bare 1-e + scalar, from compute_eref)
     std::vector<double> dump_h_core, dump_h_act;

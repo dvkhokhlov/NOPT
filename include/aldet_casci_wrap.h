@@ -72,13 +72,19 @@ public:
     void calc_DMA(double* g, int a, int b) override { ci_->calc_DMA(g, a, b); }
     void calc_DMB(double* g, int a, int b) override { ci_->calc_DMB(g, a, b); }
 
-    // --- transition-density read-outs (the determinant CI supplies both natively) ---
+    // --- transition-density read-outs (the determinant CI supplies all of them natively) ---
     bool supports_g2_full() const override { return true; }
     void G_calc_full(double* G) override;                                     // full n_s x n_s 2-RDM
+    bool supports_g3_diag() const override { return true; }
+    void G3_calc_diag(double* G3, int state) override;                        // per-state 3-body moment
+    bool supports_g2_diag() const override { return true; }
+    void G2_calc_diag(double* G) override { ci_->G_calc(G); }                 // n_s per-state blocks
+#if 0  // DIRECT lambda3 path (superseded by the explicit lattice-3RDM route; revive for nact >~ 30)
     bool supports_h2caa_overlap() const override { return true; }
     void h2caa_overlap(const double* Tbra, const double* Tket, int np, double* omega) override;
     void h2caa_overlap2(const double* Tbra1, const double* Tket1, int np1, double* omega1,
                         const double* Tbra2, const double* Tket2, int np2, double* omega2) override;
+#endif
 
     // --- queries ---
     int    n_act()         const override { return ci_->n_act; }
