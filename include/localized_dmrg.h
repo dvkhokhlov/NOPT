@@ -12,6 +12,10 @@ void rotate1(const double* X, const double* U, int n, double* out, bool forward)
 // scratch, so G and out must not alias.
 void rotate2(const double* G, const double* U, int n, double* out, bool forward);
 
+// Six-index transform of G[(((((a*n+b)*n+c)*n+d)*n+e)*n+f]: six quarter-transforms, O(n^7). out
+// doubles as scratch, so G and out must not alias.
+void rotate3(const double* G, const double* U, int n, double* out, bool forward);
+
 // Build the localized active orbitals C_loc = C_act * U for the diagnostic orbital dump.
 // C_act, C_loc: n_ao x n_act, [ao*n_act+orb] (== CAS_engine::ACT_CVEC). They must not alias.
 void build_loc_orbitals(const double* C_act, const double* U, int n_ao, int n_act, double* C_loc);

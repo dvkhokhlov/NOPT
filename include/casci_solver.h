@@ -25,6 +25,10 @@ public:
     // --- configuration / lifecycle ---
     virtual void init_state_storage(int n_s, int i_set) = 0;   // allocate coef/E_states/... (aldet: init_zero_vec)
     virtual bool has_coef(int i_set) const = 0;                // is the CI vector storage allocated?
+    // Snapshot the current wavefunction set into storage slot i_set, so a later solve on a dressed
+    // operator can be overlapped against it through calc_S(S, 0, i_set). aldet copies its CI
+    // vectors; an MPS backend persists a tagged copy of its state set. Default aborts loudly.
+    virtual void snapshot_states(int i_set);
     virtual void set_act_rep_num(int* rep_num) = 0;            // per-active-orbital irrep numbers
     virtual void import_integrals(double* aaaa,                // active 2-e (tu|vw), chemist, n_act^4
                                   double* f_act,               // embedded 1-e h_tu (core folded in), n_act^2
@@ -112,13 +116,14 @@ public:
     // bases via exp(kappa) time evolution (logm(U) -> anti-Hermitian 1-body MPO -> td_dmrg;
     // see block2-preview docs/.../orbital-rotation.rst), and cross-basis overlap then needs
     // that rotation plus an identity-MPO sweep. Cheap for small near-converged steps, costly
-    // for large rotations (e.g. localization). So such a backend typically advertises false
-    // and skips all three -- re-solving from a warm-started MPS instead -- but may opt in.
+    // for large rotations (e.g. localization). So such a backend typically advertises false and
+    // re-solves from a warm-started MPS instead. calc_S across an UNCHANGED basis needs no
+    // rotation, so a backend may implement that one alone (block2 does).
     virtual bool supports_civec_rotation() const { return false; }
     virtual void malmqvist(int i_set, double* U) {}                          // rotate CI vector by active-block U
     virtual void rotate_pi_pair(int i_set, double s, double c,               // linear-molecule pi-pair rotation
                                 int pair, int* ind_pi) {}
-    virtual void calc_S(double* S_track, int a, int b) {}                    // overlap vs previous iter's CI vectors
+    virtual void calc_S(double* S_track, int a, int b) {}                    // S[i*n_s+j] = <set a state i|set b state j>
     
         
     
@@ -126,7 +131,8 @@ public:
     // A backend that can encode a TOTAL dressed operator (F_act+g1, (tu|vw)+g2, g3, E_core+E0) as
     // its own eigenproblem and re-solve it advertises true; the DMRG/block2 backend does. Default is
     // a loud out-of-line abort (our contract, not a physics choice) so no backend silently drops the
-    // dressing. h3_total may be null (no 3-body group); tensors are in the frozen lattice basis.
+    // dressing. h3_total may be null (no 3-body group); tensors are in the native active basis
+    // (h2 chemist (tu|vw)), and the backend maps them onto its own lattice.
     virtual bool supports_dressed_import() const { return false; }
     virtual void import_dressed_operator(const double* h1_total, const double* h2_total,
                                          const double* h3_total, double const_total);

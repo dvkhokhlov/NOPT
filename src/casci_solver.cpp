@@ -17,6 +17,14 @@ int casci_solver::calc_IPEA_single(double *, double *, double *, double *, int, 
     exit(EXIT_FAILURE);
 }
 
+// Default: both shipped backends snapshot their state set for the dressed re-solve overlap, so
+// reaching here is a driver mis-dispatch (our own contract) -- abort loudly.
+void casci_solver::snapshot_states(int) {
+    fprintf(out_stream, "ERROR: this CI backend cannot snapshot its wavefunction set for the"
+                        " dressed re-solve overlap (aldet and DMRG/block2 backends only)\n");
+    exit(EXIT_FAILURE);
+}
+
 // Default: only the DMRG/block2 backend encodes a dressed general MPO. Any other backend reaching
 // here is a driver mis-dispatch (our own contract), so abort loudly naming the supported backend.
 void casci_solver::import_dressed_operator(const double*, const double*, const double*, double) {

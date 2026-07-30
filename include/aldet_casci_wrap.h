@@ -28,6 +28,8 @@ public:
     // --- configuration / lifecycle ---
     void init_state_storage(int n_s, int i_set) override { ci_->init_zero_vec(n_s, i_set); }
     bool has_coef(int i_set) const override { return ci_->coef[i_set] != nullptr; }
+    // Same copy the warm-guess solve makes, into the caller's slot (calc_S then reads set i_set).
+    void snapshot_states(int i_set) override { ci_->copy_coef(i_set, ci_, n_s_, 0, 0); }
     void set_act_rep_num(int* rep_num) override { ci_->act_rep_num = rep_num; }
     void import_integrals(double* aaaa, double* f_act, double e_core) override {
         ci_->simple_import_data(aaaa, aaaa, f_act, e_core);   // aaaa is both the AA and AB block

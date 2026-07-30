@@ -669,6 +669,7 @@ void block2_casci_wrap::import_integrals(double *aaaa, double *f_act, double e_c
     e.hamil = std::make_shared<HamiltonianQC<SU2, double>>(vacuum, n, e.orbsym, e.fcidump);
     e.hamil->opf->seq->mode = SeqTypes::Tasked;
     e.mpo = build_qc_mpo(e.hamil);
+    e.dressed_mpo = false; // any previous dressing leaves with the rebuilt bare MPO
 }
 
 // One-site sweeps closing every solve. Mirrors block2's default schedule, which ends two sweeps
@@ -750,20 +751,28 @@ int block2_casci_wrap::solve(int, int, bool use_prev_guess) {
     // false) if the basis change is too large, in which case we cold-start this iteration.
     // Same condition import_integrals keyed the frozen lattice order on, before the rotation could decline.
     const bool order_frozen = (e.have_rotation && !e.reorder_perm.empty());
+    // A dressed re-solve stays on the frozen lattice in the same basis, so the retained MPS is the
+    // guess with no rotation at all. Gated on the snapshot: warming overwrites the retained tag, so
+    // without it the bare states the dressed roots are mapped against would be gone.
+    const bool dressed_warm = (e.dressed_mpo && e.snap_set >= 0 && use_prev_guess &&
+                               e.cfg.warm_start == DMRG_WARM_ON && e.mps != nullptr &&
+                               e.mps_info != nullptr);
     // use_prev_guess false forces a cold start; true warms only when the host armed a rotation
     // and an MPS is retained.
-    bool warm = (e.cfg.warm_start == DMRG_WARM_ON && e.have_rotation && e.mps != nullptr &&
+    bool warm = dressed_warm ||
+                (e.cfg.warm_start == DMRG_WARM_ON && e.have_rotation && e.mps != nullptr &&
                  e.mps_info != nullptr && use_prev_guess);
     if (warm) {
         reload_retained_mps(e);        // fresh from disk (the in-memory shell is stale post-solve)
-        if (e.cfg.warm_rotate == DMRG_WARM_ON)
+        if (!dressed_warm && e.cfg.warm_rotate == DMRG_WARM_ON)
             warm = rotate_retained_mps(e); // rotate into the current basis; false => cold fallback
         // else reuse-only: the reloaded MPS is the (unrotated) warm guess; the short re-solve corrects
         // the basis change. Proven crash-free and == cold; the safe fallback if rotation is declined.
     }
     e.have_rotation = false; // consumed; the host supplies a fresh R each warm iteration
-    if (!warm && order_frozen)
-        recompute_cold_order(e); // the order was pinned to a basis we are no longer in
+    if (!warm && order_frozen && !e.dressed_mpo)
+        recompute_cold_order(e); // the order was pinned to a basis we are no longer in; never over a
+                                 // dressing, where it would rebuild the MPO from the bare FCIDUMP
 
     // --- sweep schedule: short warm re-solve vs full cold ramp ---
     dmrg_schedule sch;
