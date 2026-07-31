@@ -771,7 +771,7 @@ int CAS_engine::calc_hess(double * B_state, double * gamma_state, double * F_sta
     return 0;
 }
 
-double CAS_engine::av_DM_and_F_calc(int perform_diag){
+int CAS_engine::av_DM_and_F_calc(){
     
     //transposition of VEC to CVEC
     copy_to_CVEC(GEN_CVEC,MO_VEC,n_ao);
@@ -782,32 +782,62 @@ double CAS_engine::av_DM_and_F_calc(int perform_diag){
     average_DM(gamma, wstate_actual,n_act*n_act,n_s);
     
     calc_F(F_tot,gamma);
-        
-    if(perform_diag){
-        double * U =new double[n_act*n_act];
-        M->diag_X_MO_block(F_tot, 0           , n_core, nullptr);
-        M->diag_X_MO_block(F_tot, n_core+n_act, n_vac , nullptr);
-        // Active-block canonicalization rotates the active orbitals, so the CI vector must
-        // follow via malmqvist. A backend that can't rotate its CI vector (e.g. DMRG) skips
-        // it and keeps the current active basis (cold-start re-solves the next macro-iter);
-        if(CI->supports_civec_rotation()){
-            M->diag_X_MO_block(F_tot, n_core   , n_act , U);
-            CI->malmqvist(0, U);
-        }
+    
+    return 0;
+    
+}
+    
+    
+int CAS_engine::make_canonical(){
+    
+    av_DM_and_F_calc();
+    
+    double * U =new double[n_act*n_act];
+    
+    M->diag_X_MO_block(F_tot, 0           , n_core, nullptr);
+    M->diag_X_MO_block(F_tot, n_core+n_act, n_vac , nullptr);
+    // Active-block canonicalization rotates the active orbitals, so the CI vector must
+    // follow via malmqvist. A backend that can't rotate its CI vector (e.g. DMRG) skips
+    // it and keeps the current active basis (cold-start re-solves the next macro-iter);
+    if(CI->supports_civec_rotation()){
+        M->diag_X_MO_block(F_tot, n_core   , n_act , U);
+        CI->malmqvist(0, U);
+        CI_calc(0,1,1);
     }
+    if(!CI->supports_civec_rotation() && n_act>0){
+        double * U_canon  = nullptr;//to be move to molecule
+        U_canon  = new double[n_act*n_act];
+        
+        for(int i=0;i<n_act;i++)
+            for(int j=0;j<n_act;j++)
+                U_canon[i*n_act+j]=F_tot[(i+n_core)*n_ao+(j+n_core)];
+        lapack_diag(U_canon, M->orb_energy+n_core, n_act);//ir.rep can be broken -- must be rewritten in the "diag_X_MO_block"-style
+        normalize_rotation_rows(U_canon, n_act);
+        CI->set_report_rotation(U_canon);
+        
+        double * B  = new double[n_act*n_ao];
+        cblas_dgemm(CblasRowMajor,CblasNoTrans,CblasNoTrans,
+                    n_act,n_ao,n_act,1.0,
+                    U_canon,n_act,
+                    M->MO_VEC+n_core*n_ao,n_ao,0.0,
+                    B,n_ao);
+        memcpy(M->MO_VEC+n_core*n_ao, B, n_act*n_ao*sizeof(double));
+        M->check_orb_symmetry();
+        delete[] B;
+        
+    }
+    
+    
     
     
     return 0;
 }
 
-double CAS_engine::SA_grad_hess_calc(int no_rot_v){
+double CAS_engine::SA_grad_hess_calc(){
     
     int n_s=CI->n_states();
     
-
-    if(no_rot_v==0)if(rotate_orbs==1)av_DM_and_F_calc(1);
-    
-    av_DM_and_F_calc(0);
+    av_DM_and_F_calc();
     
     AO_to_MO(F_core_MO,F_core_AO);
     
@@ -843,7 +873,7 @@ double CAS_engine::SA_grad_hess_calc(int no_rot_v){
     
 }
 
-double CAS_engine::SM_grad_hess_calc(int no_rot_v){
+double CAS_engine::SM_grad_hess_calc(){
     
     int n_s=CI->n_states();
     
@@ -871,12 +901,12 @@ double CAS_engine::SM_grad_hess_calc(int no_rot_v){
     
     for(int i=0;i<n_s_opt;i++)calc_F(F_state[i],gamma_state[i]);
     
-    if(no_rot_v==0)if(rotate_orbs==1){
-        average(F_tot,n_ao*n_ao,n_s_opt);
-        M->diag_X_MO_block(F_tot, n_core+n_act,n_vac, nullptr);
-        no_rot_v++;
-        goto step_start;
-    }
+    // if(no_rot_v==0)if(rotate_orbs==1){
+        // average(F_tot,n_ao*n_ao,n_s_opt);
+        // M->diag_X_MO_block(F_tot, n_core+n_act,n_vac, nullptr);
+        // no_rot_v++;
+        // goto step_start;
+    // }
     
     AO_to_MO(F_core_MO,F_core_AO);
     
@@ -1284,14 +1314,21 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
     j_sd.init(CAS->G,CAS->B,CAS->n_core, CAS->n_act,CAS->n_vac,CAS->n_ao,CAS->n_s_opt,cas->x_max);
     
     n_dav_conv = CAS->CI_calc(1,0,0);
-    CAS->av_DM_and_F_calc(1);
-    // The canonicalization above rotates the active orbitals only for a backend that can carry its
-    // CI vector along; for one that cannot, the active Hamiltonian is unchanged and the solve just
-    // done still holds, so re-solving would only discard it.
-    if(CAS->CI->supports_civec_rotation())
-        n_dav_conv = CAS->CI_calc(0,1,1);
-//     CAS->F_vac();
-
+    CAS->make_canonical();
+    printf_timer("Primary CI and calculation canonical orbitals");
+    //reload DMRG-CAS engine after calculation canonical orbitals
+    if(CAS->CI->supports_civec_rotation()==0){
+        delete [] M->CAS;
+        M->CAS = new CAS_engine[1];
+        CAS = M->CAS;
+        CAS->init(cas ,M);
+        CAS->SCF_alloc();
+        n_dav_conv = CAS->CI_calc(1,0,0);
+        printf_timer("Recalculation of DMRG with canonical orbitals");
+    }
+    
+    
+    
     if(cas->dmrg.dump_loc_orbs && CAS->localizer_){
         fprintf(out_stream,"\nDumping localized active orbitals:\n");
         M->LOC_print(job_name, CAS->U_loc.data());
@@ -1307,12 +1344,12 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
     fprintf(out_stream,"____|___________________|____________|___________|___________|_______|___________|\n");
     disable_print_timers();
     
-   while(true){
+    while(true){
         if(n_iter>cas->max_it-1){converged=0; break;}
         
         
-        if(cas->method==1)E = CAS->SA_grad_hess_calc(1);
-        if(cas->method==2)E = CAS->SM_grad_hess_calc(1);
+        if(cas->method==1)E = CAS->SA_grad_hess_calc();
+        if(cas->method==2)E = CAS->SM_grad_hess_calc();
         
         if(cas->method==1)max_grad_el = SOSCF.calc(CAS->G,CAS->B);
         if(cas->method==2)max_grad_el = j_sd.find_max_el();
@@ -1356,38 +1393,19 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
     printf_timer("CAS_SCF iterations");
     
     
-    //canonical_orbitals
-    CAS->av_DM_and_F_calc(1);
-    // A backend that can't rotate its own CI vector (DMRG) does not follow the active-block
-    // canonicalization above, so its leading-configuration read-out would sit in the SA-converged
-    // frame. Hand it the canonicalization -- eigenvectors of the active Fock block, ascending
-    // eigenvalue, the same convention as diag_X_MO_block but without rotating the orbitals -- so it
-    // can report its determinants in the canonical basis.
-    // Kept alive to the orbital write: the file has to carry the very same rotation the read-out
-    // reports its determinants in, or the coefficients and the orbitals they refer to are
-    // different bases (nullptr for a backend that canonicalizes its own CI vector).
-    double * U_canon  = nullptr;
-    double * ev_canon = nullptr;
-    if(!CAS->CI->supports_civec_rotation() && CAS->n_act>0){
-        U_canon  = new double[CAS->n_act*CAS->n_act];
-        ev_canon = new double[CAS->n_act];
-        for(int i=0;i<CAS->n_act;i++)
-            for(int j=0;j<CAS->n_act;j++)
-                U_canon[i*CAS->n_act+j]=CAS->F_tot[(i+CAS->n_core)*CAS->n_ao+(j+CAS->n_core)];
-        lapack_diag(U_canon, ev_canon, CAS->n_act);
-        normalize_rotation_rows(U_canon, CAS->n_act);
-        CAS->CI->set_report_rotation(U_canon);
-        // The eigenvalues of the active Fock block are basis-invariant scalars, so a backend that
-        // cannot rotate its CI vector keeps them as its active orbital energies while its orbitals
-        // stay in the solve frame.
-        memcpy(M->orb_energy+CAS->n_core, ev_canon, CAS->n_act*sizeof(double));
+    //calculate canonical orbitals
+    CAS->make_canonical();
+    //reload DMRG-CAS engine after calculation canonical orbitals
+    if(CAS->CI->supports_civec_rotation()==0){
+        delete [] M->CAS;
+        M->CAS = new CAS_engine[1];
+        CAS = M->CAS;
+        CAS->init(cas ,M);
+        CAS->SCF_alloc();
+        n_dav_conv = CAS->CI_calc(1,0,0);
+        printf_timer("Recalculation of DMRG with canonical orbitals");
     }
-    // Only the core and virtual blocks were canonicalized for such a backend, which leaves the active
-    // Hamiltonian -- and its solution -- untouched. Re-solving would report determinants, properties
-    // and energies from a different wavefunction than the RDMs, Fock matrix, canonical rotation and
-    // natural orbitals prepared above.
-    if(CAS->CI->supports_civec_rotation())
-        n_dav_conv =CAS->CI_calc(0,0,1);
+    
     if(LINEAR)CAS->rotate();
     
     printf_timer("Preparation of canonical orbitals");
@@ -1410,25 +1428,6 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
     if(write_orbs){
         fprintf(out_stream,"Writing CAS_SCF canonical orbitals:\n");
 
-        // A backend that cannot rotate its CI vector left the active orbitals in the SA-converged
-        // frame while reporting its determinants in the canonical one. Rotate them with that same
-        // U_canon for the write and put the solve basis back afterwards: the RDMs behind the
-        // properties and the natural orbitals below live in the solve basis.
-        double * MO_act_save = nullptr;
-        if(U_canon!=nullptr){
-            const int n_a = CAS->n_act, n_o = M->n_ao, n_0 = CAS->n_core;
-            MO_act_save = new double[n_a*n_o];
-            double * B  = new double[n_a*n_o];
-            memcpy(MO_act_save, M->MO_VEC+n_0*n_o    , n_a*n_o*sizeof(double));
-            cblas_dgemm(CblasRowMajor,CblasNoTrans,CblasNoTrans,
-                        n_a,n_o,n_a,1.0,
-                        U_canon,n_a,
-                        M->MO_VEC+n_0*n_o,n_o,0.0,
-                        B,n_o);
-            memcpy(M->MO_VEC+n_0*n_o , B       , n_a*n_o*sizeof(double));
-            delete[] B;
-        }
-
         M->MO_gamess_format();
         sprintf(name,"%s_CAS.out\0",job_name);
         M->GAMESS_type_out_print(name,-1);
@@ -1439,11 +1438,6 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
         fprintf(out_stream,"data file         : %s\n",name);
         fprintf(out_stream,"\n");
         
-        if(MO_act_save!=nullptr){
-            memcpy(M->MO_VEC+CAS->n_core*M->n_ao, MO_act_save, CAS->n_act*M->n_ao*sizeof(double));
-        }
-        if(MO_act_save != nullptr) delete[] MO_act_save;
-
         fprintf(out_stream,"Writing CAS_SCF natural orbitals:\n");
         
         sprintf(name,"%s_CAS\0",job_name);
@@ -1470,8 +1464,6 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
     printf_timer("CAS_SCF");
 
     delete[] name;
-    delete[] U_canon;
-    delete[] ev_canon;
 //     delete[] S_track;
     
 //     libint2::finalize();

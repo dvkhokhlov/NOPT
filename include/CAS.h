@@ -134,9 +134,10 @@ class CAS_engine{
         int scale_grad(double * G_state, double * gamma_state);
         int calc_hess(double * B_state, double * gamma_state, double * F_state, double * G_ga_state);
         
-        double av_DM_and_F_calc(int perform_diag);
-        double SA_grad_hess_calc(int no_rot_v);
-        double SM_grad_hess_calc(int no_rot_v);
+        int make_canonical();
+        int av_DM_and_F_calc();
+        double SA_grad_hess_calc();
+        double SM_grad_hess_calc();
         
 //         int F_vac();
         int Prop_calc();
