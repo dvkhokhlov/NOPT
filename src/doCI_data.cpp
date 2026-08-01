@@ -94,7 +94,7 @@ int doCI_data::first_alloc(molecule * ext_A, molecule * ext_B){
     S_DD = new double[n_cor[0]*n_cor[1]];
     L_MO = new double[n_cor[0]*n_svd];
     R_MO = new double[n_cor[1]*n_svd];
-    SVD  = new double[n_svd];
+    SVD  = new double[max(n_cor[0],n_act[0])];
     L_COR= new double[(n_cor[0]/*+n_act[0]*/)*n_ao[0]];
     R_COR= new double[(n_cor[1]/*+n_act[1]*/)*n_ao[1]];
     
