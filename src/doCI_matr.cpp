@@ -61,7 +61,7 @@ double E_1el_calc_2(double * H, double * DM, int n1, int n2){
 
 double E_1el_2MO_calc(double * P, double * B, double * K, double * BUF, int n){
      
-    cblas_dgemm(CblasRowMajor,CblasNoTrans,CblasTrans,
+    nopt_par_dgemm(CblasRowMajor,CblasNoTrans,CblasTrans,
                     n,1,n,1.0,
                     P,n,
                     K,n,0.0,
@@ -82,7 +82,9 @@ int gen_S_DD(double *D, double *S, int n_1, int d_1, int n_2, int d_2){
 }
 
 int act_to_cor_ort(double * O,double * S,int d_o,int d_n, int v, int n, double * T,double * V, double * L, double * D,int trans){
+    
     if(v==0) return 1;
+    
     double * TMP;
     TMP = new double[v*d_n];
     
@@ -104,7 +106,7 @@ int act_to_cor_ort(double * O,double * S,int d_o,int d_n, int v, int n, double *
         Trans2=CblasTrans;
             
     }    
-    cblas_dgemm(CblasRowMajor,Trans1,Trans2,
+    nopt_par_dgemm(CblasRowMajor,Trans1,Trans2,
                 v,d_n,d_o,1.0,
                 S,n,
                 T,d_o,0.0,
@@ -119,7 +121,7 @@ int act_to_cor_ort(double * O,double * S,int d_o,int d_n, int v, int n, double *
     for(int j=0;j<n;j++)
             O[j*v+i]=V[i*n+j];
         
-    cblas_dgemm(CblasRowMajor,CblasTrans,CblasTrans,
+    nopt_par_dgemm(CblasRowMajor,CblasTrans,CblasTrans,
                 n,v,d_n,-1.0,
                 D,n,
                 TMP,d_n,1.0,
@@ -231,13 +233,13 @@ int d_o_DMV_gen(double * DM,
     
 //     double * B= new double[dim_l*n_v];
         
-    cblas_dgemm(CblasRowMajor,CblasNoTrans,CblasNoTrans,
+    nopt_par_dgemm(CblasRowMajor,CblasNoTrans,CblasNoTrans,
                 dim_l,n_v,n_v,1.0,
                 L ,n_v,
                 TH,n_v,0.0,
                 B ,n_v);
         
-    cblas_dgemm(CblasRowMajor,CblasNoTrans,CblasTrans,
+    nopt_par_dgemm(CblasRowMajor,CblasNoTrans,CblasTrans,
                 dim_l,dim_r,n_v,1.0,
                 B ,n_v,
                 R ,n_v,0.0,
@@ -634,7 +636,7 @@ int Sorb_calc(molecule * A, molecule * Ap){
 //             PrintMatr(S_ORB+i*A->n_act_orb[0],1,A->n_act_orb[0],0);
         
         
-        cblas_dgemm(CblasRowMajor,CblasNoTrans,CblasTrans,
+        nopt_par_dgemm(CblasRowMajor,CblasNoTrans,CblasTrans,
                      n_smo,A->n_ao,A->n_act_orb[0],1.0,
                      S_ORB,A->n_act_orb[0],
                      D.L_ACT,A->n_act_orb[0],0.0,
@@ -659,13 +661,13 @@ int Sorb_calc(molecule * A, molecule * Ap){
 //     printf("S_AO:\n");
 //     PrintMatr(A->S_AO,A->basis[0].n_ao,A->basis[0].n_ao,1);
     
-    cblas_dgemm(CblasRowMajor,CblasNoTrans,CblasTrans,
+    nopt_par_dgemm(CblasRowMajor,CblasNoTrans,CblasTrans,
                         A->n_ao,n_smo,A->n_ao,1.0,
                         A->S_AO,A->n_ao,
                         A->MO_VEC,A->n_ao,0.0,
                         BUF,n_smo);
     
-    cblas_dgemm(CblasRowMajor,CblasNoTrans,CblasNoTrans,
+    nopt_par_dgemm(CblasRowMajor,CblasNoTrans,CblasNoTrans,
                         n_smo,n_smo,A->n_ao,1.0,
                         A->MO_VEC,A->n_ao,
                         BUF,n_smo,0.0,

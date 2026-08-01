@@ -4091,6 +4091,8 @@ int molecule::diag_X_AO_in_MO(double * X){
 
 int molecule::diag_X_MO_block(double * X, int n0, int dim, double * U){
     
+    if(dim==0)return 0;
+    
     if(IS_SYM==0){
         double * F;
         if(U==nullptr)F = new double[dim*dim];

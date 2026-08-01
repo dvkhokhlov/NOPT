@@ -11,7 +11,7 @@
 #include <bitset>
 // #include "molecule.h"
 
-#define CI_MAX_SPACE 25
+#define CI_MAX_SPACE 35
 
 using ci_key = std::bitset<2*CI_MAX_SPACE>;
 using ci_key_long = std::bitset<4*CI_MAX_SPACE>;

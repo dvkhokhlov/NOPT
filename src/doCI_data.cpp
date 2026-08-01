@@ -13,6 +13,8 @@
 # include "from_hash.h"
 # include "defaults.h"
 
+# define max(a,b)  (((a)<(b))?(b):(a))
+
 int doCI_data::first_alloc(molecule * ext_A, molecule * ext_B){
     
     two_charge_states=0;
@@ -386,8 +388,8 @@ int doCI_data::cor_svd_PT(molecule * M){
 //         A->add_cor_2_AS(1,0,n_zero_svd);
     }
     
-    p_SVD=SVD[0]*SVD[0];
-        for(int i_d=1;i_d<n_cor[0];i_d++)p_SVD=p_SVD*SVD[i_d]*SVD[i_d];
+    p_SVD=1.0;
+        for(int i_d=0;i_d<n_cor[0];i_d++)p_SVD=p_SVD*SVD[i_d]*SVD[i_d];
     
     DM_C_F = new double *[2];
     

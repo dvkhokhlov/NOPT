@@ -31,6 +31,21 @@ double full_cpu_time;
 double wall_time;
 double cpu_time;
 
+inline int check_n_act(int N){
+    
+    if(N>CI_MAX_SPACE){
+        printf("ERROR: active space size (%d) is larger then\n", N);
+        printf("       maximum doCI size (CI_MAX_SPACE = %d)\n", CI_MAX_SPACE);
+        printf("       change CI_MAX_SPACE in CI.h and recomplie NOPT:\n");
+        printf("       make clean & make\n");
+        exit(0);
+    }
+    
+    return 0;
+}
+    
+
+
 // Считает необходимые вспомогательные факториалы. Заносит в переменную f
 
 
@@ -60,6 +75,9 @@ void get_vec(const int& n, const int& N, const int& size, int * v){
 
 
 void hash_from_ci(const int& N, int n_empty, const int& na, const int& nb, ci_map & ci_hash, const int& i_state, double *& ci){
+    
+    check_n_act(N);
+    
     int Na = (int) std::lround(tgammal(N+1) / tgammal(na+1) / tgammal(N-na+1));
     int Nb = (int) std::lround(tgammal(N+1) / tgammal(nb+1) / tgammal(N-nb+1)); 
 //     int * fa = new int [na * N];
@@ -178,6 +196,9 @@ void occ_from_ci_ba(const int& N, const int& na, const int& nb, std::vector<std:
 
 
 void ci_from_hash(const int& N, const int& na, const int& nb, ci_map_arr& ci_hash, const int& i_state, double *& ci){
+    
+    check_n_act(N);
+    
     int Na = (int) std::lround(tgammal(N+1) / tgammal(na+1) / tgammal(N-na+1));
     int Nb = (int) std::lround(tgammal(N+1) / tgammal(nb+1) / tgammal(N-nb+1)); 
     int * fa = new int [na * N];
