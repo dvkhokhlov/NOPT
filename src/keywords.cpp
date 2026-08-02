@@ -23,6 +23,12 @@ vector<const char *>rhf_read{{"read"},
                              {"readmo"},
                              {"read_orb"},
                              {"read_orbs"}};
+
+vector<const char *>guess_kw{{"guess"}};
+
+vector<const char *>guess_huckel_kw{{"huckel"}};
+
+vector<const char *>guess_sad_kw{{"sad"}};
                          
 vector<const char *>max_it_kw{{"maxit"},
                               {"max_iter"},

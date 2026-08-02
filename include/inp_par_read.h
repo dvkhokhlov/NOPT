@@ -25,6 +25,7 @@ class rhf_par
     public:
         int y;
         //guess
+        int guess;     // guess_kind: HUCKEL (default) | SAD
 //         int huckel_guess;
 //         int h_core_guess;
 //         int read_guess;
@@ -63,6 +64,9 @@ class dav_par
     
 };
 
+
+// Starting orbitals when the input carries no $VEC group.
+enum guess_kind { GUESS_HUCKEL = 0, GUESS_SAD = 1 };
 
 // CI backend driving the CAS-SCF active-space solve.
 enum cisolver_kind { CISOLVER_ALDET = 0, CISOLVER_DMRG = 1 };
