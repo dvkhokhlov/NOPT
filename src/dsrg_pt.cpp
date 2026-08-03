@@ -239,7 +239,8 @@ int SA_DSRG_PT2(molecule * M, dsrg_par * dsrg, char * job_name){
         for(int t=0;t<ns;t++){
             const double w = CAS.wstate_actual[t]/wsum;
             CAS.CI->G3_calc_diag(G3_semi.data(), t);
-            for(size_t i=0;i<na6;i++) G3_avg[i] += w*G3_semi[i];
+#pragma omp parallel for schedule(static)
+            for(long i=0;i<(long)na6;i++) G3_avg[i] += w*G3_semi[i];
         }
     }
     rotate3(G3_avg.data(), Ua.data(), n_act, G3_semi.data(), /*forward=*/true);
