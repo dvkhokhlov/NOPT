@@ -21,7 +21,7 @@
 #include <omp.h>
 
 #include "common_vars.h"      // out_stream
-#include "localized_dmrg.h"   // rotate1/rotate2 (active-space basis transforms)
+#include "tensor_rotate.h"    // rotate1/rotate2 (active-space basis transforms)
 #include "blas_link.h"        // cblas_dgemm (warm-start rotation regularization)
 #include "mps_rotation.h"     // evolve_sa_multimps (multi-root SA MPS rotation)
 

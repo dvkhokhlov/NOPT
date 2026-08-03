@@ -15,7 +15,7 @@
 #include <vector>
 
 #include "common_vars.h"      // out_stream
-#include "localized_dmrg.h"   // rotate2/rotate3 (active-space basis back-transform)
+#include "tensor_rotate.h"    // rotate2/rotate3 (active-space basis back-transform)
 
 using namespace block2;
 using namespace nopt_block2;

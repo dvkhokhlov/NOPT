@@ -13,7 +13,7 @@
 #include <vector>
 
 #include "common_vars.h"          // out_stream
-#include "localized_dmrg.h"       // rotate1/rotate2/rotate3 (active-space basis transforms)
+#include "tensor_rotate.h"        // rotate1/rotate2/rotate3 (active-space basis transforms)
 #include "matr.h"
 #include "timer.h"
 

@@ -21,7 +21,7 @@
 # include "RI.h"
 # include "CAS.h"
 # include "casci_solver.h"
-# include "localized_dmrg.h"   // rotate1 / rotate2 / rotate3 (active-basis density rotation)
+# include "tensor_rotate.h"    // rotate1 / rotate2 / rotate3 (active-basis density rotation)
 # include "dsrg_sf_tensors.h"
 # include "dsrg_sf_batch.h"
 # include "dsrg_pt.h"
