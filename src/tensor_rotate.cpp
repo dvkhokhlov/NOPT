@@ -3,15 +3,15 @@
 
 #include "tensor_rotate.h"
 
-#include "blas_link.h"   // cblas_dgemm
+#include "blas_link.h"   // cblas_dgemm, nopt_par_dgemm
 
 #include <algorithm>
 #include <vector>
 
 namespace {
 
-// Quarter-transform scratch of rotate2/rotate3, grown on demand and kept across calls: the caller's
-// out is the other half of a two-buffer ping-pong, so no n^4 (n^6) buffer is allocated per call.
+// Quarter-transform scratch of rotate2, grown on demand and kept across calls: the caller's out is
+// the other half of a two-buffer ping-pong, so no n^4 buffer is allocated per call.
 thread_local std::vector<double> qt_scratch;
 
 // Cyclic index move on a tensor laid out [first][rest], rest = ncols contiguous: transpose the
@@ -75,16 +75,18 @@ void rotate2(const double* G, const double* U, int n, double* out, bool forward)
 }
 
 void rotate3(const double* G, const double* U, int n, double* out, bool forward) {
-    const size_t n5 = (size_t)n * n * n * n * n, n6 = n5 * n;
-    if (qt_scratch.size() < n6) qt_scratch.resize(n6);
-    double* b = qt_scratch.data();
+    const size_t n5 = (size_t)n * n * n * n * n;
+    // Own scratch rather than the shared qt_scratch: this one is n^6 (512 MB at n = 20) and must
+    // not stay resident behind the caller, where it would sit alongside the lambda3 tensors.
+    std::vector<double> scratch(n5 * n);
+    double* b = scratch.data();
     const double* src = G; // pass 0 reads the input directly (no initial copy)
     for (int pass = 0; pass < 6; ++pass) {
         // Quarter-transform the leading index of the (n x n^5) view.
         //   forward : b = U^T src  -> contracts U's first (deloc) index
         //   backward: b = U   src  -> contracts U's second (loc) index
-        cblas_dgemm(CblasRowMajor, forward ? CblasTrans : CblasNoTrans, CblasNoTrans, n, (int)n5,
-                    n, 1.0, U, n, src, (int)n5, 0.0, b, (int)n5);
+        nopt_par_dgemm(CblasRowMajor, forward ? CblasTrans : CblasNoTrans, CblasNoTrans, n,
+                       (int)n5, n, 1.0, U, n, src, (int)n5, 0.0, b, (int)n5);
         // Move the just-transformed index to the back; after 6 passes order is restored. out is the
         // scratch's ping-pong partner, so the last pass lands the result in place.
         cycle_first_to_last(b, out, n, n5);
