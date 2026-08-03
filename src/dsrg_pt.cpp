@@ -62,7 +62,7 @@ int SA_DSRG_PT2(molecule * M, dsrg_par * dsrg, char * job_name){
     dsrg->write_info(M->n_act_el_alp[0], M->n_act_el_bet[0],
                      M->n_act_orb[0],    M->CI[0].mult);
 
-    // ---- CAS_engine on the converged orbitals; bare SA solve (recon / dsrg_prim_check pattern) ----
+    // ---- CAS_engine on the converged orbitals; bare SA solve ----
     CAS_engine CAS;
     CAS.init(dsrg->cas, M);
     CAS.SCF_alloc();
@@ -107,8 +107,8 @@ int SA_DSRG_PT2(molecule * M, dsrg_par * dsrg, char * job_name){
     for(int r=0;r<ns;r++) E_bare[r] = CAS.CI->E_state(r);
 
     // ---- selected root's spin-summed densities in the converged (original) active basis ----
-    // Certified read-out (dsrg_prim_check): 1-RDM blocks via calc_DMA/DMB (ns x ns), 2-RDMs via
-    // G2_calc_diag (ns consecutive per-state blocks); either backend reports the native basis.
+    // 1-RDM blocks via calc_DMA/DMB (ns x ns), 2-RDMs via G2_calc_diag (ns consecutive
+    // per-state blocks); either backend reports the native basis.
     std::vector<double> D1((size_t)ns*ns*na2, 0.0), G2diag((size_t)ns*na4, 0.0);
     CAS.CI->calc_DMA(D1.data(),0,0);
     if(CAS.ci_solver==CISOLVER_ALDET) CAS.CI->calc_DMB(D1.data(),0,0);   // sum alpha+beta (DMRG: DMA is spin-summed)
@@ -422,9 +422,22 @@ int SA_DSRG_PT2(molecule * M, dsrg_par * dsrg, char * job_name){
             if(bmax>DSRG_RELAX_OVERLAP_MIN){ d2b[d]=best; root_map[best]=d; }
         }
 
-        // only assigned dressed roots carry reference weight; w_cov is the weight they cover.
+        // Every dressed root carries weight: a matched one takes its bare root's, the rest take the
+        // unclaimed weights in order (the map is injective, so the two counts agree). The SA average
+        // is a summary number and spans the whole manifold. sa=0 keeps its one-hot weight, so an
+        // unmatched target root still reports nothing.
+        std::vector<double> wd(ns,0.0);
+        {
+            std::vector<int> spare;
+            for(int b=0;b<ns;b++) if(root_map[b]<0) spare.push_back(b);
+            size_t k=0;
+            for(int d=0;d<ns;d++){
+                if(d2b[d]>=0)                 wd[d]=wref[d2b[d]];
+                else if(sa && k<spare.size()) wd[d]=wref[spare[k++]];
+            }
+        }
         double e_relax=0.0, w_cov=0.0;
-        for(int d=0;d<ns;d++) if(d2b[d]>=0){ e_relax += wref[d2b[d]]*E_dressed[d]; w_cov += wref[d2b[d]]; }
+        for(int d=0;d<ns;d++){ e_relax += wd[d]*E_dressed[d]; w_cov += wd[d]; }
 
         T.set_root_data(wref.data(), E_bare.data(), E_dressed.data(), root_map.data(), ns);
 
@@ -436,27 +449,20 @@ int SA_DSRG_PT2(molecule * M, dsrg_par * dsrg, char * job_name){
         for(int d=0;d<ns;d++){
             char bcol[16];
             if(d2b[d]>=0) snprintf(bcol,sizeof(bcol),"%d",d2b[d]);
-            else          snprintf(bcol,sizeof(bcol),"ambiguous");
+            else          snprintf(bcol,sizeof(bcol),"?");
             fprintf(out_stream,"  root %2d : E(dressed) = % .12f   bare root = %2s   |overlap| = %.6f\n",
                     d, E_dressed[d], bcol, ov[d]);
         }
         fprintf(out_stream,"\n");
-        // Partial coverage is renormalized onto the matched subset and labelled as such: an
-        // unnormalized part-weight sum is not an energy. w_cov==0 leaves nothing to report.
+        // w_cov==0 is the state-specific case whose target root matched nothing: no energy to report.
         if(w_cov<=0.0)
             fprintf(out_stream,"  Relaxed energy                     =  none (no dressed root matched the reference)\n");
-        else if(w_cov < 1.0-1e-12){
-            if(sa) fprintf(out_stream,"  Relaxed SA average (matched)       = % .12f\n", e_relax/w_cov);
-            else   fprintf(out_stream,"  Relaxed energy (matched)           = % .12f\n", e_relax/w_cov);
-        }
         else if(sa) fprintf(out_stream,"  Relaxed SA average                 = % .12f\n", e_relax);
         else        fprintf(out_stream,"  Relaxed DSRG-PT2 energy            = % .12f\n", e_relax);
-        if(w_cov < 1.0-1e-12)
-            fprintf(out_stream,"\n  NOTE: some dressed roots fell outside the reference manifold (low CI overlap:\n"
-                               "        an ill-conditioned reference, or a state from outside the window entering\n"
-                               "        after the dressing). The value above averages the matched roots only,\n"
-                               "        covering %.6f of the reference weight -- it is not the reference\n"
-                               "        ensemble's relaxation.\n", w_cov);
+        int n_unm=0; for(int d=0;d<ns;d++) if(d2b[d]<0) n_unm++;
+        if(sa && n_unm)
+            fprintf(out_stream,"\n  NOTE: %d dressed root(s) matched no reference root ('?' above); they are averaged\n"
+                               "        in with the unclaimed reference weights.\n", n_unm);
         fprintf(out_stream,"============================================================================\n\n");
     }
 

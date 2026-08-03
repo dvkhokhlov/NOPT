@@ -1522,6 +1522,10 @@ int dsrg_par::read_line(char * inp){
         else if(kw_to_kw(inp, dsrg_relax_kw, dsrg_relax_once_kw)) relax = DSRG_RELAX_ONCE;
         else                                                      relax = DSRG_RELAX_UNKNOWN;
     }
+    // sa=1 on its own yields an ensemble average only, so the multi-state step is its default;
+    // an explicit relax= still wins.
+    else if(sa==1)
+        relax = DSRG_RELAX_ONCE;
 
     return 0;
 }

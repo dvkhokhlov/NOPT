@@ -51,12 +51,15 @@ Default shown in parentheses.
   built on this root's densities.
 - **sa** *(0)* — `0 | 1`. `1` builds the reference from the weighted ensemble of all `$CAS`
   states (weights taken from `$CAS w_state`, normalized): ensemble 1-/2-RDM → SA
-  generalized Fock → ensemble amplitudes. Mutually exclusive with `root`. On its own it
-  yields only an ensemble-averaged energy — pair it with `relax=once` (see §3).
-- **relax** *(none)* — `none | once`. `once` performs the uncontracted multi-state step: the
+  generalized Fock → ensemble amplitudes. Mutually exclusive with `root`. It implies
+  `relax=once`, since on its own it yields only an ensemble-averaged energy (see §3).
+- **relax** *(none, or once under `sa=1`)* — `none | once`. `once` performs the uncontracted
+  multi-state step: the
   DSRG dressing is folded into a bare 0/1/2-body active operator, re-diagonalized in the
   CAS determinant space, and the dressed roots are matched back to the bare roots by
-  CI-vector overlap. This is what produces **per-state** energies.
+  CI-vector overlap. This is what produces **per-state** energies. A dressed root whose best
+  overlap falls below the rule prints as `?`; it still carries weight in the SA average, which
+  is a summary number, not a per-state result.
 
 ### Output
 
@@ -77,11 +80,11 @@ off-diagonal exceeds `1e-8`.
 
 ### Hints
 
-- **`sa=1` without `relax=once` is not a chemically meaningful result.** It prints one
+- **`sa=1 relax=none` is not a chemically meaningful result**, which is why `sa=1` turns the
+  multi-state step on by default and you have to ask for `relax=none` explicitly. It prints one
   number — the energy of the ensemble averaged over the reference states — which is neither
   a state energy nor an observable, and yields no excitation energies. It exists as a
-  well-defined intermediate (and matches what Forte reports as its unrelaxed SA summary),
-  but for a state-averaged calculation you want `sa=1 relax=once`.
+  well-defined intermediate (and matches what Forte reports as its unrelaxed SA summary).
 - **DSRG-PT2 is more sensitive to CAS-SCF convergence than the reference energy is.** The
   denominators are orbital energies, so they respond at *first* order to a residual orbital
   rotation, while `E_ref` responds at second order. A reference that looks perfectly
