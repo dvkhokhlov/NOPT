@@ -138,19 +138,21 @@ public:
                                          const double* h3_total, double const_total);
 
     // --- transition-density read-outs (capability-gated) ---
+#if 0  // full transition 2-RDM: no consumer, the driver reads G2_calc_diag. Revive for first-order
+       // properties -- the 2-body Mbar needs bra != ket densities between the dressed roots.
     // Full n_s x n_s state matrix of the spin-summed 2-RDM: G[(bra*n_s+ket)*n_act^4] blocks in
     // the GAMMA convention above; diagonal = per-state 2-RDM, off-diagonal = <bra|..|ket>.
     // Delocalized basis. Accumulates into G (caller zeroes it). Default aborts loudly.
     virtual bool supports_g2_full() const { return false; }
     virtual void G_calc_full(double* G);
+#endif
     // Per-state spin-summed 3-body moment, native active basis, caller buffer n_act^6,
     // overwritten; layout G3[p,q,r,i,j,k] = <a+_p a+_q a+_r a_k a_j a_i>, spin-summed,
     // flat row-major over the six active axes. Default aborts loudly.
     virtual bool supports_g3_diag() const { return false; }
     virtual void G3_calc_diag(double* G3, int state);
     // Diagonal per-state spin-summed 2-RDMs: n_s consecutive n_act^4 blocks, native basis,
-    // same element convention as G_calc_full's (s,s) blocks. Overwritten, not accumulated
-    // (unlike G_calc_full). Default aborts loudly.
+    // GAMMA convention as above. Overwritten, not accumulated. Default aborts loudly.
     virtual bool supports_g2_diag() const { return false; }
     virtual void G2_calc_diag(double* G);
 #if 0  // DIRECT lambda3 path (superseded by the explicit lattice-3RDM route; revive for nact >~ 30)

@@ -10,6 +10,8 @@
 // The adapter owns no resources (ci_/par_ are non-owning), so the default suffices.
 aldet_casci_wrap::~aldet_casci_wrap() = default;
 
+#if 0  // full transition 2-RDM: no consumer, the driver reads G2_calc_diag. Revive for first-order
+       // properties -- the 2-body Mbar needs bra != ket densities between the dressed roots.
 // Full n_s x n_s spin-summed 2-RDM state matrix in the NOPT GAMMA convention
 // (diagonal = per-state, off-diagonal = transition). Mirrors aldet_data::G_calc's
 // OpenMP reduction but with the non-_diag workers. Accumulates (+=): the caller zeroes G,
@@ -37,6 +39,7 @@ void aldet_casci_wrap::G_calc_full(double* G) {
     for (int i = 1; i < num_threads; i++)
         for (long j = 0; j < block; j++) Gth[0][j] += Gth[i][j];
 }
+#endif
 
 namespace {
 

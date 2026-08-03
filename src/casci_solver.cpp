@@ -35,10 +35,13 @@ void casci_solver::import_dressed_operator(const double*, const double*, const d
 
 // Defaults: both shipped backends implement the transition-density read-outs; reaching one
 // of these is a driver mis-dispatch (our own contract), so abort loudly, never return silence.
+#if 0  // full transition 2-RDM: no consumer, the driver reads G2_calc_diag. Revive for first-order
+       // properties -- the 2-body Mbar needs bra != ket densities between the dressed roots.
 void casci_solver::G_calc_full(double*) {
     fprintf(out_stream, "ERROR: this CI backend does not provide the full transition 2-RDM read-out\n");
     exit(EXIT_FAILURE);
 }
+#endif
 
 void casci_solver::G3_calc_diag(double*, int) {
     fprintf(out_stream, "ERROR: this CI backend does not provide the per-state 3-body moment"

@@ -73,8 +73,11 @@ public:
     void calc_DMB(double* g, int a, int b) override { ci_->calc_DMB(g, a, b); }
 
     // --- transition-density read-outs (the determinant CI supplies all of them natively) ---
+#if 0  // full transition 2-RDM: no consumer, the driver reads G2_calc_diag. Revive for first-order
+       // properties -- the 2-body Mbar needs bra != ket densities between the dressed roots.
     bool supports_g2_full() const override { return true; }
     void G_calc_full(double* G) override;                                     // full n_s x n_s 2-RDM
+#endif
     bool supports_g3_diag() const override { return true; }
     void G3_calc_diag(double* G3, int state) override;                        // per-state 3-body moment
     bool supports_g2_diag() const override { return true; }

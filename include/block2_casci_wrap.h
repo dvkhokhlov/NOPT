@@ -66,8 +66,11 @@ public:
     void calc_DMB(double* g, int a, int b) override;
 
     // --- transition-density read-outs ---
+#if 0  // full transition 2-RDM: no consumer, the driver reads G2_calc_diag. Revive for first-order
+       // properties -- the 2-body Mbar needs bra != ket densities between the dressed roots.
     bool supports_g2_full() const override { return true; }
     void G_calc_full(double* G) override;
+#endif
     // Diagonal per-state read-outs, native (delocalized) active basis; both OVERWRITE the caller's
     // buffer: G2_calc_diag n_s consecutive n_act^4 GAMMA blocks, G3_calc_diag one n_act^6 moment
     // G3[p,q,r,i,j,k] = <a+_p a+_q a+_r a_k a_j a_i> spin-summed.

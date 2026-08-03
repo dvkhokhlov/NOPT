@@ -1,7 +1,6 @@
-// block2_casci_wrap density read-outs over the external block2 DMRG library: the full n_s x n_s
-// spin-summed transition 2-RDM (G_calc_full), its per-state diagonal (G2_calc_diag) and the
-// per-state spin-summed 3-body moment (G3_calc_diag). All port Forte's block2 primitives onto
-// NOPT's own scaffolds; split from block2_dmrg.cpp, same author idiom.
+// block2_casci_wrap density read-outs over the external block2 DMRG library: the per-state
+// spin-summed 2-RDM (G2_calc_diag) and 3-body moment (G3_calc_diag). All port Forte's block2
+// primitives onto NOPT's own scaffolds; split from block2_dmrg.cpp, same author idiom.
 
 #include "block2_dmrg_engine.h"   // block2 headers + dmrgci_engine + shared helpers
 
@@ -21,7 +20,7 @@
 using namespace block2;
 using namespace nopt_block2;
 
-// ---- transition 2-RDM (full n_s x n_s state matrix) ---------------------------------------
+// ---- 2-RDM read-out helpers ----------------------------------------------------------------
 
 // Finish one raw block2 2-RDM block into the NOPT GAMMA convention: un-permute out of the
 // Fiedler lattice, rotate back to the delocalized basis, then GAMMA[p,q,r,s] = D2[p,r,s,q].
@@ -52,6 +51,8 @@ static void g2full_finish_block(const dmrgci_engine &e, const double *raw,
                         cur[(((size_t)p * n + r) * n + s) * n + q];
 }
 
+#if 0  // full transition 2-RDM: no consumer, the driver reads G2_calc_diag. Revive for first-order
+       // properties -- the 2-body Mbar needs bra != ket densities between the dressed roots.
 // Full n_s x n_s spin-summed 2-RDM, once per solve: one Expect sweep per root pair i<=j of the
 // single SA MultiMPS yields the block2 2-RDM <i| a+ a+ a a |j>; the (j,i) block follows by the
 // operator adjoint (full index reversal on the raw layout, before the un-permute/back-transform
@@ -144,6 +145,7 @@ void block2_casci_wrap::G_calc_full(double *G) {
     for (size_t k = 0; k < nel; k++)
         G[k] += e.dg2full[k];
 }
+#endif
 
 // The lattice -> input orbital map of every read-out: inverse of reorder_perm, empty when the
 // solve ran in the input order.
@@ -166,9 +168,9 @@ static void require_solved(const dmrgci_engine &e, const char *what) {
 
 // ---- per-state 2-RDM (diagonal blocks) -----------------------------------------------------
 
-// The n_s diagonal blocks of the state matrix, one Expect sweep per root, in the same GAMMA
-// convention and delocalized basis as G_calc_full's (s,s) blocks. Overwrites the caller's n_s
-// consecutive n_act^4 blocks (aldet's G_calc convention).
+// The n_s diagonal blocks of the state matrix, one Expect sweep per root, GAMMA convention in
+// the delocalized basis. Overwrites the caller's n_s consecutive n_act^4 blocks (aldet's
+// G_calc convention).
 void block2_casci_wrap::G2_calc_diag(double *G) {
     dmrgci_engine &e = *impl_;
     const int n = e.n_act;
