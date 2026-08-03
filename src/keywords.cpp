@@ -545,6 +545,7 @@ int is_splitter(char a){
     if(a==',')return 1;
     if(a==';')return 1;
     if(a=='\n')return 1;
+    if(a=='\r')return 1;
     if(a=='=')return 1;
 
 //     if(a==" ")return 1;
