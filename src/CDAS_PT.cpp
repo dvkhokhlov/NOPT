@@ -309,7 +309,7 @@ int CDAS_PT2(molecule * M, cdas_par * cdas, char * job_name){
 #endif
     }
     
-    T.set_par(&R, eps, n_cor, n_act, n_virt, H_AV, H_CA, H_CV, cdas->edshift);
+    T.set_par(&R, eps, n_cor, n_act, n_virt, H_AV, H_CA, H_CV, cdas->edshift, M);
     if(cdas->IPEA){
         T.IPEA(CAS->CI,cdas->cas->w_state);
         T.E2_calc_IPEA();
