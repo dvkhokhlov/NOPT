@@ -1,0 +1,2493 @@
+
+    -----------------------------------------------------------------------
+          Psi4: An Open-Source Ab Initio Electronic Structure Package
+                               Psi4 1.9.1 release
+
+                         Git: Rev {} zzzzzzz 
+
+
+    D. G. A. Smith, L. A. Burns, A. C. Simmonett, R. M. Parrish,
+    M. C. Schieber, R. Galvelis, P. Kraus, H. Kruse, R. Di Remigio,
+    A. Alenaizan, A. M. James, S. Lehtola, J. P. Misiewicz, M. Scheurer,
+    R. A. Shaw, J. B. Schriber, Y. Xie, Z. L. Glick, D. A. Sirianni,
+    J. S. O'Brien, J. M. Waldrop, A. Kumar, E. G. Hohenstein,
+    B. P. Pritchard, B. R. Brooks, H. F. Schaefer III, A. Yu. Sokolov,
+    K. Patkowski, A. E. DePrince III, U. Bozkaya, R. A. King,
+    F. A. Evangelista, J. M. Turney, T. D. Crawford, C. D. Sherrill,
+    J. Chem. Phys. 152(18) 184108 (2020). https://doi.org/10.1063/5.0006002
+
+                            Additional Code Authors
+    E. T. Seidl, C. L. Janssen, E. F. Valeev, M. L. Leininger,
+    J. F. Gonthier, R. M. Richard, H. R. McAlexander, M. Saitow, X. Wang,
+    P. Verma, M. H. Lechner, A. Jiang, S. Behnle, A. G. Heide,
+    M. F. Herbst, and D. L. Poole
+
+             Previous Authors, Complete List of Code Contributors,
+                       and Citations for Specific Modules
+    https://github.com/psi4/psi4/blob/master/codemeta.json
+    https://github.com/psi4/psi4/graphs/contributors
+    http://psicode.org/psi4manual/master/introduction.html#citing-psifour
+
+    -----------------------------------------------------------------------
+
+
+    Psi4 started on: Tuesday, 04 August 2026 11:20PM
+
+    Process ID: 724488
+    Host:       daniilkh
+    PSIDATADIR: /opt/forte/env/share/psi4
+    Memory:     500.0 MiB
+    Threads:    16
+    
+  ==> Input File <==
+
+--------------------------------------------------------------------------
+import forte
+
+memory 4 gb
+
+molecule naph{
+  0 1
+  C 0.000000  2.487805  0.681686
+  C 0.000000  1.237994  1.400915
+  C 0.000000  1.237994 -1.400915
+  C 0.000000  0.000000  0.725252
+  C 0.000000  2.487805 -0.681686
+  C 0.000000  0.000000 -0.725252
+  C 0.000000 -1.237994  1.400915
+  C 0.000000 -2.487805  0.681686
+  C 0.000000 -2.487805 -0.681686
+  C 0.000000 -1.237994 -1.400915
+  H 0.000000  3.419182  1.240611
+  H 0.000000  1.246282  2.487572
+  H 0.000000  3.419182 -1.240611
+  H 0.000000 -1.246282 -2.487572
+  H 0.000000  1.246282 -2.487572
+  H 0.000000 -1.246282  2.487572
+  H 0.000000 -3.419182  1.240611
+  H 0.000000 -3.419182 -1.240611
+
+  units angstrom
+  symmetry c1
+  noreorient
+  nocom
+}
+
+set globals{
+  basis                  cc-pvdz
+  df_basis_scf           cc-pvdz-jkfit
+  df_basis_mp2           cc-pvdz-jkfit
+  reference              rhf
+  scf_type               df
+  d_convergence          10
+  e_convergence          12
+  ints_tolerance         0.0
+  mcscf_type             df
+  mcscf_e_convergence    12
+  mcscf_r_convergence    8
+  mcscf_diis_start       8
+  mcscf_max_rot          0.2
+}
+Escf, wfn = energy('scf', return_wfn=True)
+
+set forte{
+  subspace               ["C(2px)"]
+  avas                   true
+  avas_diagonalize       true
+  avas_num_active_occ    5
+  avas_num_active_vir    5
+  job_type               mcscf_two_step
+  active_space_solver    detci
+  restricted_docc        [29]
+  active                 [10]
+  multiplicity           3
+  ms                     0.0
+  e_convergence          12
+  r_convergence          7
+  mcscf_g_convergence   1e-8
+  mcscf_e_convergence   1e-12
+  int_type               df
+  mcscf_final_orbital   unspecified
+  print                  2
+}
+Ecas, wfn = energy("forte", ref_wfn=wfn, return_wfn=True)
+
+set forte{
+  avas                   false
+  job_type               newdriver
+  active_space_solver    detci
+  correlation_solver     sa-mrdsrg
+  corr_level             pt2
+  frozen_docc            [0]
+  restricted_docc        [29]
+  active                 [10]
+  multiplicity           3
+  ms                     0.0
+  dsrg_s                 0.5
+  e_convergence          12
+  int_type               df
+  mcscf_reference        false
+  dsrg_3rdm_algorithm    direct
+  print                  2
+}
+energy('forte', ref_wfn=wfn)
+--------------------------------------------------------------------------
+
+  Memory set to   3.725 GiB by Python driver.
+
+Scratch directory: /tmp/
+   => Libint2 <=
+
+    Primary   basis highest AM E, G, H:  6, 6, 3
+    Auxiliary basis highest AM E, G, H:  7, 7, 4
+    Onebody   basis highest AM E, G, H:  -, -, -
+    Solid Harmonics ordering:            Gaussian
+
+*** tstart() called on daniilkh
+*** at Tue Aug  4 23:20:41 2026
+
+   => Loading Basis Set <=
+
+    Name: CC-PVDZ
+    Role: ORBITAL
+    Keyword: BASIS
+    atoms 1-10  entry C          line   138 file /opt/forte/env/share/psi4/basis/cc-pvdz.gbs 
+    atoms 11-18 entry H          line    22 file /opt/forte/env/share/psi4/basis/cc-pvdz.gbs 
+
+
+         ---------------------------------------------------------
+                                   SCF
+               by Justin Turney, Rob Parrish, Andy Simmonett
+                          and Daniel G. A. Smith
+                              RHF Reference
+                       16 Threads,   3814 MiB Core
+         ---------------------------------------------------------
+
+  ==> Geometry <==
+
+    Molecular point group: c1
+    Full point group: D2h
+
+    Geometry (in Angstrom), charge = 0, multiplicity = 1:
+
+       Center              X                  Y                   Z               Mass       
+    ------------   -----------------  -----------------  -----------------  -----------------
+         C            0.000000000000     2.487805000000     0.681686000000    12.000000000000
+         C            0.000000000000     1.237994000000     1.400915000000    12.000000000000
+         C            0.000000000000     1.237994000000    -1.400915000000    12.000000000000
+         C            0.000000000000     0.000000000000     0.725252000000    12.000000000000
+         C            0.000000000000     2.487805000000    -0.681686000000    12.000000000000
+         C            0.000000000000     0.000000000000    -0.725252000000    12.000000000000
+         C            0.000000000000    -1.237994000000     1.400915000000    12.000000000000
+         C            0.000000000000    -2.487805000000     0.681686000000    12.000000000000
+         C            0.000000000000    -2.487805000000    -0.681686000000    12.000000000000
+         C            0.000000000000    -1.237994000000    -1.400915000000    12.000000000000
+         H            0.000000000000     3.419182000000     1.240611000000     1.007825032230
+         H            0.000000000000     1.246282000000     2.487572000000     1.007825032230
+         H            0.000000000000     3.419182000000    -1.240611000000     1.007825032230
+         H            0.000000000000    -1.246282000000    -2.487572000000     1.007825032230
+         H            0.000000000000     1.246282000000    -2.487572000000     1.007825032230
+         H            0.000000000000    -1.246282000000     2.487572000000     1.007825032230
+         H            0.000000000000    -3.419182000000     1.240611000000     1.007825032230
+         H            0.000000000000    -3.419182000000    -1.240611000000     1.007825032230
+
+  Running in c1 symmetry.
+
+  Rotational constants: A =      0.10517  B =      0.03976  C =      0.02885 [cm^-1]
+  Rotational constants: A =   3153.05039  B =   1191.82713  C =    864.90148 [MHz]
+  Nuclear repulsion =  453.890729199347504
+
+  Charge       = 0
+  Multiplicity = 1
+  Electrons    = 68
+  Nalpha       = 34
+  Nbeta        = 34
+
+  ==> Algorithm <==
+
+  SCF Algorithm Type is DF.
+  DIIS enabled.
+  MOM disabled.
+  Fractional occupation disabled.
+  Guess Type is SAD.
+  Energy threshold   = 1.00e-12
+  Density threshold  = 1.00e-10
+  Integral threshold = 0.00e+00
+
+  ==> Primary Basis <==
+
+  Basis Set: CC-PVDZ
+    Blend: CC-PVDZ
+    Number of shells: 84
+    Number of basis functions: 180
+    Number of Cartesian functions: 190
+    Spherical Harmonics?: true
+    Max angular momentum: 2
+
+   => Loading Basis Set <=
+
+    Name: CC-PVDZ-JKFIT
+    Role: JKFIT
+    Keyword: DF_BASIS_SCF
+    atoms 1-10  entry C          line   121 file /opt/forte/env/share/psi4/basis/cc-pvdz-jkfit.gbs 
+    atoms 11-18 entry H          line    51 file /opt/forte/env/share/psi4/basis/cc-pvdz-jkfit.gbs 
+
+  ==> Integral Setup <==
+
+  DFHelper Memory: AOs need 0.228 GiB; user supplied 2.794 GiB. 
+  Using in-core AOs.
+
+  ==> MemDFJK: Density-Fitted J/K Matrices <==
+
+    J tasked:                   Yes
+    K tasked:                   Yes
+    wK tasked:                   No
+    OpenMP threads:              16
+    Memory [MiB]:              2861
+    Algorithm:                 Core
+    Schwarz Cutoff:           0E+00
+    Mask sparsity (%):       0.0000
+    Fitting Condition:        1E-10
+
+   => Auxiliary Basis Set <=
+
+  Basis Set: CC-PVDZ-JKFIT
+    Blend: CC-PVDZ-JKFIT
+    Number of shells: 312
+    Number of basis functions: 884
+    Number of Cartesian functions: 1010
+    Spherical Harmonics?: true
+    Max angular momentum: 3
+
+  Minimum eigenvalue in the overlap matrix is 2.0066147127E-04.
+  Reciprocal condition number of the overlap matrix is 3.3742455585E-05.
+    Using symmetric orthogonalization.
+
+  ==> Pre-Iterations <==
+
+  SCF Guess: Superposition of Atomic Densities via on-the-fly atomic UHF (no occupation information).
+
+   -------------------------
+    Irrep   Nso     Nmo    
+   -------------------------
+     A        180     180 
+   -------------------------
+    Total     180     180
+   -------------------------
+
+  ==> Iterations <==
+
+                           Total Energy        Delta E     RMS |[F,P]|
+
+   @DF-RHF iter SAD:  -382.61656733681878   -3.82617e+02   0.00000e+00 
+   @DF-RHF iter   1:  -383.20356680811136   -5.86999e-01   2.51682e-03 ADIIS/DIIS
+   @DF-RHF iter   2:  -383.33991713531265   -1.36350e-01   9.83471e-04 ADIIS/DIIS
+   @DF-RHF iter   3:  -383.35752759842893   -1.76105e-02   2.73875e-04 ADIIS/DIIS
+   @DF-RHF iter   4:  -383.35934042912231   -1.81283e-03   8.18109e-05 DIIS
+   @DF-RHF iter   5:  -383.35946790178110   -1.27473e-04   1.87394e-05 DIIS
+   @DF-RHF iter   6:  -383.35947765832310   -9.75654e-06   6.93352e-06 DIIS
+   @DF-RHF iter   7:  -383.35947944527220   -1.78695e-06   2.41021e-06 DIIS
+   @DF-RHF iter   8:  -383.35947991810838   -4.72836e-07   7.62102e-07 DIIS
+   @DF-RHF iter   9:  -383.35947997984897   -6.17406e-08   1.11597e-07 DIIS
+   @DF-RHF iter  10:  -383.35947998076432   -9.15350e-10   1.35832e-08 DIIS
+   @DF-RHF iter  11:  -383.35947998077182   -7.50333e-12   2.61254e-09 DIIS
+   @DF-RHF iter  12:  -383.35947998077131    5.11591e-13   8.12996e-10 DIIS
+   @DF-RHF iter  13:  -383.35947998077194   -6.25278e-13   2.45982e-10 DIIS
+   @DF-RHF iter  14:  -383.35947998077165    2.84217e-13   4.37371e-11 DIIS
+  Energy and wave function converged.
+
+
+  ==> Post-Iterations <==
+
+    Orbital Energies [Eh]
+    ---------------------
+
+    Doubly Occupied:                                                      
+
+       1A    -11.250277     2A    -11.249691     3A    -11.248884  
+       4A    -11.248883     5A    -11.248489     6A    -11.248167  
+       7A    -11.246019     8A    -11.246014     9A    -11.244696  
+      10A    -11.244692    11A     -1.169443    12A     -1.102836  
+      13A     -1.043440    14A     -1.018389    15A     -0.959520  
+      16A     -0.867390    17A     -0.824059    18A     -0.807939  
+      19A     -0.709358    20A     -0.693138    21A     -0.670588  
+      22A     -0.623879    23A     -0.613610    24A     -0.580716  
+      25A     -0.575449    26A     -0.547366    27A     -0.535959  
+      28A     -0.526099    29A     -0.480370    30A     -0.479451  
+      31A     -0.442092    32A     -0.379070    33A     -0.327022  
+      34A     -0.264971  
+
+    Virtual:                                                              
+
+      35A      0.066257    36A      0.124556    37A      0.175912  
+      38A      0.185095    39A      0.199020    40A      0.201312  
+      41A      0.232276    42A      0.239391    43A      0.251028  
+      44A      0.267112    45A      0.273391    46A      0.293163  
+      47A      0.390392    48A      0.393652    49A      0.408478  
+      50A      0.437486    51A      0.454489    52A      0.455054  
+      53A      0.478188    54A      0.512580    55A      0.586569  
+      56A      0.586857    57A      0.638950    58A      0.663710  
+      59A      0.670883    60A      0.681501    61A      0.683824  
+      62A      0.698848    63A      0.703040    64A      0.707154  
+      65A      0.718325    66A      0.727368    67A      0.731877  
+      68A      0.743750    69A      0.748883    70A      0.753948  
+      71A      0.767621    72A      0.770259    73A      0.772312  
+      74A      0.832081    75A      0.832600    76A      0.838410  
+      77A      0.848499    78A      0.878089    79A      0.882204  
+      80A      0.907241    81A      0.911625    82A      0.914243  
+      83A      0.961082    84A      0.964516    85A      0.965759  
+      86A      0.988793    87A      1.053770    88A      1.085586  
+      89A      1.087672    90A      1.104102    91A      1.110179  
+      92A      1.128577    93A      1.132475    94A      1.175674  
+      95A      1.180291    96A      1.183242    97A      1.183803  
+      98A      1.186178    99A      1.207709   100A      1.227577  
+     101A      1.248403   102A      1.263361   103A      1.275220  
+     104A      1.284873   105A      1.311655   106A      1.335265  
+     107A      1.336835   108A      1.351253   109A      1.392356  
+     110A      1.488316   111A      1.538230   112A      1.544967  
+     113A      1.579276   114A      1.622605   115A      1.650838  
+     116A      1.666820   117A      1.712738   118A      1.717543  
+     119A      1.731468   120A      1.752083   121A      1.770206  
+     122A      1.796538   123A      1.830673   124A      1.836094  
+     125A      1.859084   126A      1.866209   127A      1.905353  
+     128A      1.906122   129A      1.913239   130A      1.915302  
+     131A      1.931702   132A      1.938647   133A      1.943232  
+     134A      1.957020   135A      1.972458   136A      2.002626  
+     137A      2.003591   138A      2.030141   139A      2.040316  
+     140A      2.083070   141A      2.093143   142A      2.112324  
+     143A      2.119216   144A      2.130088   145A      2.145161  
+     146A      2.150678   147A      2.152476   148A      2.172786  
+     149A      2.180396   150A      2.185437   151A      2.233637  
+     152A      2.294955   153A      2.308827   154A      2.315802  
+     155A      2.347464   156A      2.347986   157A      2.384836  
+     158A      2.392655   159A      2.453766   160A      2.474766  
+     161A      2.585004   162A      2.589794   163A      2.605631  
+     164A      2.701138   165A      2.722597   166A      2.736162  
+     167A      2.764489   168A      2.816120   169A      2.822360  
+     170A      2.923070   171A      2.987090   172A      2.990125  
+     173A      3.008309   174A      3.038719   175A      3.136512  
+     176A      3.137328   177A      3.208716   178A      3.283199  
+     179A      3.792997   180A      3.923375  
+
+    Final Occupation by Irrep:
+              A 
+    DOCC [    34 ]
+    NA   [    34 ]
+    NB   [    34 ]
+
+  @DF-RHF Final Energy:  -383.35947998077165
+
+   => Energetics <=
+
+    Nuclear Repulsion Energy =            453.8907291993475042
+    One-Electron Energy =               -1417.0644799691008302
+    Two-Electron Energy =                 579.8142707889816165
+    Total Energy =                       -383.3594799807716527
+
+Computation Completed
+
+
+Properties will be evaluated at   0.000000,   0.000000,   0.000000 [a0]
+
+Properties computed using the SCF density matrix
+
+
+ Multipole Moments:
+
+ ------------------------------------------------------------------------------------
+     Multipole            Electronic (a.u.)      Nuclear  (a.u.)        Total (a.u.)
+ ------------------------------------------------------------------------------------
+
+ L = 1.  Multiply by 2.5417464519 to convert [e a0] to [Debye]
+ Dipole X            :         -0.0000000            0.0000000           -0.0000000
+ Dipole Y            :          0.0000000           -0.0000000            0.0000000
+ Dipole Z            :         -0.0000000           -0.0000000           -0.0000000
+ Magnitude           :                                                    0.0000000
+
+ ------------------------------------------------------------------------------------
+
+*** tstop() called on daniilkh at Tue Aug  4 23:20:43 2026
+Module time:
+	user time   =      18.65 seconds =       0.31 minutes
+	system time =       0.77 seconds =       0.01 minutes
+	total time  =          2 seconds =       0.03 minutes
+Total time:
+	user time   =      18.65 seconds =       0.31 minutes
+	system time =       0.77 seconds =       0.01 minutes
+	total time  =          2 seconds =       0.03 minutes
+
+Scratch directory: /tmp/
+
+  Forte
+  ----------------------------------------------------------------------------
+  A suite of quantum chemistry methods for strongly correlated electrons
+
+    git branch:  - git commit: 
+
+  Developed by:
+    Francesco A. Evangelista, Chenyang Li, Kevin P. Hannon,
+    Jeffrey B. Schriber, Tianyuan Zhang, Chenxi Cai,
+    Nan He, Nicholas Stair, Shuhe Wang, Renke Huang
+  ----------------------------------------------------------------------------
+
+
+  Preparing forte objects from a Psi4 Wavefunction object   => Loading Basis Set <=
+
+    Name: CC-PVDZ
+    Role: ORBITAL
+    Keyword: BASIS
+    atoms 1-10  entry C          line   138 file /opt/forte/env/share/psi4/basis/cc-pvdz.gbs 
+    atoms 11-18 entry H          line    22 file /opt/forte/env/share/psi4/basis/cc-pvdz.gbs 
+
+
+
+  ==> MO Space Information <==
+
+  -------------------------------
+                        A   Sum
+  -------------------------------
+    FROZEN_DOCC         0     0
+    RESTRICTED_DOCC    29    29
+    GAS1               10    10
+    GAS2                0     0
+    GAS3                0     0
+    GAS4                0     0
+    GAS5                0     0
+    GAS6                0     0
+    RESTRICTED_UOCC   141   141
+    FROZEN_UOCC         0     0
+    Total             180   180
+  -------------------------------   => Loading Basis Set <=
+
+    Name: CC-PVDZ-JKFIT
+    Role: RIFIT
+    Keyword: DF_BASIS_MP2
+    atoms 1-10  entry C          line   121 file /opt/forte/env/share/psi4/basis/cc-pvdz-jkfit.gbs 
+    atoms 11-18 entry H          line    51 file /opt/forte/env/share/psi4/basis/cc-pvdz-jkfit.gbs 
+
+   => Loading Basis Set <=
+
+    Name: STO-3G
+    Role: ORBITAL
+    Keyword: MINAO_BASIS
+    atoms 1-10  entry C          line    61 file /opt/forte/env/share/psi4/basis/sto-3g.gbs 
+    atoms 11-18 entry H          line    19 file /opt/forte/env/share/psi4/basis/sto-3g.gbs 
+
+
+
+  ==> List of Subspace Orbitals Requested <==
+        C(2PX)
+
+
+  ==> AO Basis Set Selected By Subspace <==
+
+    =======================================
+      AO  Atom  Label     Type  Coefficient
+    ---------------------------------------
+       3     1     C1      2PX   1.0000E+00
+       8     2     C2      2PX   1.0000E+00
+      13     3     C3      2PX   1.0000E+00
+      18     4     C4      2PX   1.0000E+00
+      23     5     C5      2PX   1.0000E+00
+      28     6     C6      2PX   1.0000E+00
+      33     7     C7      2PX   1.0000E+00
+      38     8     C8      2PX   1.0000E+00
+      43     9     C9      2PX   1.0000E+00
+      48    10    C10      2PX   1.0000E+00
+    ---------------------------------------
+    Number of subspace orbitals:         10
+    =======================================
+
+  ==> Orbital Overlap with AO Subspace (> 1.00e-03) <==
+
+    =======================
+    Irrep   MO  <phi|P|phi>
+    -----------------------
+       A    28    0.971557
+       A    31    0.962657
+       A    32    0.960135
+       A    33    0.960565
+       A    34    0.946174
+       A    35    0.902119
+       A    36    0.866184
+       A    37    0.827506
+       A    44    0.839785
+       A    47    0.772209
+       A    59    0.027811
+       A    62    0.029355
+       A    65    0.091555
+       A    69    0.071690
+       A    73    0.060710
+       A    74    0.107480
+       A    75    0.083299
+       A    76    0.163226
+       A    80    0.126911
+       A    86    0.117057
+       A    87    0.002068
+       A    88    0.003214
+       A    98    0.002237
+       A   100    0.004560
+       A   101    0.004953
+       A   103    0.005285
+       A   105    0.005992
+       A   106    0.006144
+       A   115    0.006683
+       A   116    0.006403
+       A   119    0.004232
+       A   120    0.004820
+       A   121    0.005374
+       A   134    0.002533
+       A   135    0.001308
+       A   141    0.002545
+       A   142    0.001787
+    ========================
+
+                     --------------------------------------
+                       Atomic Valence Active Space (AVAS)
+                           Chenxi Cai and Chenyang Li
+                     --------------------------------------
+
+
+  ==> AVAS Options <==
+
+    --------------------------------------------------------
+    AVAS selection scheme                    # DOCC/UOCC MOS
+    Diagonalize projected overlap matrices              TRUE
+    AVAS sigma threshold (cumulative)              9.800e-01
+    AVAS sigma direct cutoff                       1.000e+00
+    Nonzero eigenvalue threshold                   1.000e-06
+    Number of doubly occupied MOs                         34
+    Number of singly occupied MOs                          0
+    Number of unoccupied MOs                             146
+    # Active AVAS MOs requested                            0
+    # Active occupied AVAS MOs requested                   5
+    # Active virtual AVAS MOs requested                    5
+    --------------------------------------------------------
+  Diagonalizing the doubly occupied projected overlap matrix ... Done
+  Diagonalizing the unoccupied projected overlap matrix ........ Done
+  Sum of eigenvalues: 9.96164084
+  AVAS covers 98.20% of the subspace.
+
+  ==> AVAS MOs Information <==
+
+    ---------------------
+                        A
+    ---------------------
+    DOCC INACTIVE      29
+    DOCC ACTIVE         5
+    SOCC ACTIVE         0
+    UOCC ACTIVE         5
+    UOCC INACTIVE     141
+    ---------------------
+    RESTRICTED_DOCC    29
+    ACTIVE             10
+    RESTRICTED_UOCC   141
+    ---------------------
+
+  ==> Atomic Valence MOs (Active Marked by *) <==
+
+    ===============================
+     Irrep    MO  Occ.  <phi|P|phi>
+    -------------------------------
+    *   A      0    2      0.971856
+    *   A      1    2      0.962657
+    *   A      2    2      0.960266
+    *   A      3    2      0.960135
+    *   A      4    2      0.946174
+    *   A     34    0      0.996336
+    *   A     35    0      0.996317
+    *   A     36    0      0.996244
+    *   A     37    0      0.996008
+    *   A     38    0      0.995979
+        A     39    0      0.050150
+        A     40    0      0.036084
+        A     41    0      0.036083
+        A     42    0      0.033322
+        A     43    0      0.024031
+    ===============================
+
+  ==> Semicanonicalize Subsets of Orbitals <==
+
+  Canonicalizing orbital block INACTIVE DOCC ....... Done
+  Canonicalizing orbital block ACTIVE DOCC ......... Done
+  Canonicalizing orbital block ACTIVE UOCC ......... Done
+  Canonicalizing orbital block INACTIVE UOCC ....... Done
+  State Triplet (Ms = 0) A GAS min: 0 0 0 0 0 0 ; GAS max: 20 0 0 0 0 0 ; weights:
+      1.000000000000
+  Forte will use psi4 integrals
+
+  ==> Primary Basis Set Summary <==
+
+  Basis Set: CC-PVDZ
+    Blend: CC-PVDZ
+    Number of shells: 84
+    Number of basis functions: 180
+    Number of Cartesian functions: 190
+    Spherical Harmonics?: true
+    Max angular momentum: 2
+
+
+  JK created using MemDF integrals
+  DFHelper Memory: AOs need 0.228 GiB; user supplied 2.980 GiB. 
+  Using in-core AOs.
+
+  ==> MemDFJK: Density-Fitted J/K Matrices <==
+
+    J tasked:                   Yes
+    K tasked:                   Yes
+    wK tasked:                   No
+    OpenMP threads:              16
+    Memory [MiB]:              3051
+    Algorithm:                 Core
+    Schwarz Cutoff:           0E+00
+    Mask sparsity (%):       0.0000
+    Fitting Condition:        1E-10
+
+   => Auxiliary Basis Set <=
+
+  Basis Set: CC-PVDZ-JKFIT
+    Blend: CC-PVDZ-JKFIT
+    Number of shells: 312
+    Number of basis functions: 884
+    Number of Cartesian functions: 1010
+    Spherical Harmonics?: true
+    Max angular momentum: 3
+
+
+
+  ==> Integral Transformation <==
+
+  Number of molecular orbitals:                        180
+  Number of correlated molecular orbitals:             180
+  Number of frozen occupied orbitals:                    0
+  Number of frozen unoccupied orbitals:                  0
+  Two-electron integral type:              Density fitting
+
+
+  Skip integral allocation and transformation for AO-driven CASSCF.
+
+          -----------------------------------------------------------
+                  Multi-Configurational Self Consistent Field
+                Two-Step Approximate Second-Order AO Algorithm
+            written by Chenyang Li, Kevin P. Hannon, and Shuhe Wang
+          -----------------------------------------------------------
+
+
+  ==> MCSCF Calculation Information <==
+
+    --------------------------------------------------------
+    Print level                                      Default
+    Integral type                                         DF
+    CI solver type                                     DETCI
+    Final orbital type                           UNSPECIFIED
+    Derivative type                                     NONE
+    Optimize orbitals                                   TRUE
+    Include internal rotations                         FALSE
+    Debug printing                                     FALSE
+    Energy convergence                             1.000e-12
+    Gradient convergence                           1.000e-08
+    Max value for rotation                         2.000e-01
+    Max number of macro iter.                            100
+    Max number of micro iter. for orbitals                 6
+    Max number of micro iter. for CI                      12
+    DIIS start                                             8
+    Min DIIS vectors                                       3
+    Max DIIS vectors                                       8
+    Frequency of DIIS extrapolation                        1
+    --------------------------------------------------------
+
+  ==> Independent Orbital Rotations <==
+
+    ORBITAL SPACES                         A
+    ----------------------------------------
+             ACTIVE / RESTRICTED_DOCC    290
+    RESTRICTED_UOCC /          ACTIVE   1410
+    RESTRICTED_UOCC / RESTRICTED_DOCC   4089
+    ----------------------------------------
+
+  DF-MCSCF adopts integrals from DFHelper of Psi4.
+
+
+  ==> General Determinant-Based CI Solver <==
+
+  Number of active orbitals: 10
+  Number of active alpha electrons: 5
+  Number of active beta electrons: 5
+  Number of determinants (CAS): 63504
+
+  ==> Diagonalizing Hamiltonian Triplet (Ms = 0) A <==
+
+
+  Davidson-Liu solver algorithm using SigmaVectorSparseList sigma algorithm
+
+  Spin-adaptation of the initial guess based on minimum spin-complete subset
+  Initial guess determinants do not form a spin-complete set. 2 determinant(s) missing
+
+  Guess determinants after screening: 46
+
+  ==> Initial Guess <==
+
+  Initial guess determinants:         46
+
+  Classification of the initial guess solutions
+
+  Number   2S+1   Selected
+  ------------------------
+    24       1        
+    22       3       *
+  ------------------------
+
+    Spin    Root           Energy        <S^2>    Status
+  -------------------------------------------------------
+   singlet    0     -383.366868195722  +0.000000  removed
+   triplet    0     -383.218586666963  +2.000000  added
+  -------------------------------------------------------
+
+  ==> Davidson-Liu Solver <==
+
+    --------------------------------------------------------
+    Print level                                      Default
+    Energy convergence threshold                   1.000e-12
+    Residual convergence threshold                 1.000e-07
+    Schmidt orthogonality threshold                1.000e-12
+    Schmidt discard threshold                      1.000e-07
+    Size of the space                                  63504
+    Number of roots                                        1
+    Maximum number of iterations                         100
+    Collapse subspace size                                 2
+    Maximum subspace size                                 10
+    --------------------------------------------------------
+
+  Davidson-Liu solver: adding 1 guess vectors
+  Iteration     Average Energy            max(∆E)            max(Residual)  Vectors
+  ---------------------------------------------------------------------------------
+       0      -13.382313671439       13.382313671439        0.295171468256      1
+       1      -13.485101149492        0.102787478052        0.154498835948      2
+       2      -13.505953345887        0.020852196395        0.077905216167      3
+       3      -13.510139775246        0.004186429360        0.035804829018      4
+       4      -13.510921942895        0.000782167649        0.014879143753      5
+       5      -13.511061629672        0.000139686777        0.007064766806      6
+       6      -13.511103636917        0.000042007245        0.005046910729      7
+       7      -13.511125312348        0.000021675431        0.003251652242      8
+       8      -13.511131507963        0.000006195615        0.001416476724      9
+       9      -13.511132765401        0.000001257438        0.000790777286     10
+      10      -13.511133107026        0.000000341624        0.000504018522      3
+      11      -13.511133351017        0.000000243991        0.000383532206      4
+      12      -13.511133429647        0.000000078630        0.000183050946      5
+      13      -13.511133445481        0.000000015835        0.000070365097      6
+      14      -13.511133448172        0.000000002691        0.000029223484      7
+      15      -13.511133448675        0.000000000504        0.000013751025      8
+      16      -13.511133448797        0.000000000122        0.000007174092      9
+      17      -13.511133448834        0.000000000036        0.000003556912     10
+      18      -13.511133448841        0.000000000007        0.000001822492      3
+      19      -13.511133448844        0.000000000003        0.000000999183      4
+      20      -13.511133448844        0.000000000001        0.000000526199      5
+      21      -13.511133448845        0.000000000000        0.000000269447      6
+      22      -13.511133448845        0.000000000000        0.000000127460      7
+      23      -13.511133448845        0.000000000000        0.000000054914      8
+  ---------------------------------------------------------------------------------
+  Davidson-Liu procedure took  1.173455 s
+
+  Done diagonalizing Hamiltonian, 1.316e+00 seconds.
+
+  ==> Computing 1 Coupling Lists <==
+
+  (N-1) a lists size counts
+      Size      Count
+         6      52920
+        α          1.487e-02 seconds
+        β          1.658e-02 seconds
+  Time spent building 1-rdm: 9.694e-03 seconds
+
+  ==> CI Vectors & Occupation Number for Triplet (Ms = 0) A <==
+
+  Important determinants with coefficients |C| >= 5.000e-02
+
+  ---- Root No. 0 ----
+
+              A    Coefficients
+    ---------------------------
+     2222ab0000   -0.5961769484
+     2222ba0000    0.5961769484
+     22b2200a00   -0.1778967650
+     22a2200b00    0.1778967650
+     222a20b000    0.1348603976
+     222b20a000   -0.1348603976
+     2a222000b0   -0.1022132622
+     2b222000a0    0.1022132622
+     b22220000a   -0.0652537717
+     a22220000b    0.0652537717
+     22a2020b00   -0.0619340971
+     22b2020a00    0.0619340971
+     b222aa0b00    0.0594670247
+     a222bb0a00   -0.0594670247
+     2220ab2000    0.0560560238
+     2220ba2000   -0.0560560238
+     22b2aa000b    0.0532863489
+     22a2bb000a   -0.0532863489
+     2a22b20000   -0.0529993966
+     2b22a20000    0.0529993966
+    ---------------------------
+
+    Occupation Numbers:
+        1A    1.95039864    2A    1.91873094    4A    1.87731590    3A    1.86043227
+        5A    1.12322451    6A    0.87720417    8A    0.14186063    7A    0.12545540
+        9A    0.08020719   10A    0.04517034
+
+    Total Energy:  -383.347406444368119
+
+  ==> Energy Summary <==
+
+    Multi.(2ms)  Irrep.  No.               Energy      <S^2>
+    --------------------------------------------------------
+       3  (  0)     A     0     -383.347406444368   2.000000
+    --------------------------------------------------------
+  Computing RDMs for dipole moments ...
+
+  ==> Computing 1 Coupling Lists <==
+
+  (N-1) a lists size counts
+      Size      Count
+         6      52920
+        α          1.671e-02 seconds
+        β          1.550e-02 seconds
+  Time spent building 1-rdm: 8.285e-03 seconds Done
+
+  ==> Summary of Dipole Moments [e a0] (Nuclear + Electronic) <==
+
+       State           DM_X           DM_Y           DM_Z           |DM|
+    --------------------------------------------------------------------
+          0A    -0.00000000     0.00000000    -0.00000000     0.00000000
+    --------------------------------------------------------------------
+     Nuclear     0.00000000    -0.00000000    -0.00000000     0.00000000
+    --------------------------------------------------------------------
+
+  ==> Computing 1 Coupling Lists <==
+
+  (N-1) a lists size counts
+      Size      Count
+         6      52920
+        α          1.241e-02 seconds
+        β          1.409e-02 seconds
+  Time spent building 1-rdm: 8.332e-03 seconds
+
+  ==> Computing 2 Coupling Lists <==
+
+  (N-2) aa lists size counts
+      Size      Count
+        21      30240
+        αα         2.060e-02 seconds
+  (N-2) ab lists size counts
+      Size      Count
+        36      44100
+        αβ         4.540e-02 seconds
+        ββ         1.400e-02 seconds
+  Time spent building 2-rdm: 1.303e-01 seconds
+
+  ==> MCSCF Iterations <==
+
+                      Energy CI                    Energy Orbital
+           ------------------------------  ------------------------------
+    Iter.        Total Energy       Delta        Total Energy       Delta  Orb. Grad.  Micro
+    ----------------------------------------------------------------------------------------
+       1    -383.347406444368 -3.8335e+02   -383.405626918648 -3.8341e+02  5.9025e-03    6/N
+
+  ==> General Determinant-Based CI Solver <==
+
+  Number of active orbitals: 10
+  Number of active alpha electrons: 5
+  Number of active beta electrons: 5
+
+  ==> Diagonalizing Hamiltonian Triplet (Ms = 0) A <==
+
+
+  Spin-adaptation of the initial guess based on minimum spin-complete subset
+  Initial guess determinants do not form a spin-complete set. 6 determinant(s) missing
+
+  Guess determinants after screening: 44
+
+  ==> Initial Guess <==
+
+  Initial guess determinants:         44
+
+  Classification of the initial guess solutions
+
+  Number   2S+1   Selected
+  ------------------------
+    23       1        
+    21       3       *
+  ------------------------
+
+    Spin    Root           Energy        <S^2>    Status
+  -------------------------------------------------------
+   singlet    0     -383.363167598048  +0.000000  removed
+   triplet    0     -383.277051061118  +2.000000  added
+  -------------------------------------------------------
+
+  ==> Davidson-Liu Solver <==
+
+    --------------------------------------------------------
+    Print level                                      Default
+    Energy convergence threshold                   1.000e-12
+    Residual convergence threshold                 1.000e-07
+    Schmidt orthogonality threshold                1.000e-12
+    Schmidt discard threshold                      1.000e-07
+    Size of the space                                  63504
+    Number of roots                                        1
+    Maximum number of iterations                         100
+    Collapse subspace size                                 2
+    Maximum subspace size                                 10
+    --------------------------------------------------------
+
+  Davidson-Liu solver: adding 1 guess vectors
+  Iteration     Average Energy            max(∆E)            max(Residual)  Vectors
+  ---------------------------------------------------------------------------------
+       0      -13.477542729130       13.477542729130        0.282813456522      1
+       1      -13.579556734776        0.102014005646        0.153827255938      2
+       2      -13.601936967436        0.022380232660        0.081631892946      3
+       3      -13.606999824093        0.005062856657        0.039491534602      4
+       4      -13.608020894853        0.001021070760        0.017100424708      5
+       5      -13.608203974860        0.000183080007        0.007537004409      6
+       6      -13.608246433138        0.000042458278        0.004568724646      7
+       7      -13.608265168684        0.000018735546        0.003132119215      8
+       8      -13.608271584358        0.000006415674        0.001444227814      9
+       9      -13.608272801087        0.000001216728        0.000694820258     10
+      10      -13.608273076107        0.000000275020        0.000446987348      3
+      11      -13.608273274948        0.000000198842        0.000347678541      4
+      12      -13.608273355875        0.000000080926        0.000194134981      5
+      13      -13.608273381099        0.000000025224        0.000093999051      6
+      14      -13.608273386687        0.000000005588        0.000039104594      7
+      15      -13.608273387660        0.000000000973        0.000018664194      8
+      16      -13.608273387922        0.000000000263        0.000011001296      9
+      17      -13.608273388022        0.000000000100        0.000006050903     10
+      18      -13.608273388044        0.000000000022        0.000002977269      3
+      19      -13.608273388051        0.000000000008        0.000001743035      4
+      20      -13.608273388054        0.000000000003        0.000001050013      5
+      21      -13.608273388055        0.000000000001        0.000000496996      6
+      22      -13.608273388055        0.000000000000        0.000000244532      7
+      23      -13.608273388055        0.000000000000        0.000000120540      8
+      24      -13.608273388055        0.000000000000        0.000000046179      9
+  ---------------------------------------------------------------------------------
+
+  Done diagonalizing Hamiltonian, 1.382e+00 seconds.
+
+  ==> Computing 1 Coupling Lists <==
+
+  (N-1) a lists size counts
+      Size      Count
+         6      52920
+        α          1.631e-02 seconds
+        β          1.463e-02 seconds
+  Time spent building 1-rdm: 1.023e-02 seconds
+
+  ==> Computing 1 Coupling Lists <==
+
+  (N-1) a lists size counts
+      Size      Count
+         6      52920
+        α          1.468e-02 seconds
+        β          1.349e-02 seconds
+  Time spent building 1-rdm: 8.404e-03 seconds
+
+  ==> Computing 1 Coupling Lists <==
+
+  (N-1) a lists size counts
+      Size      Count
+         6      52920
+        α          1.252e-02 seconds
+        β          1.260e-02 seconds
+  Time spent building 1-rdm: 8.843e-03 seconds
+
+  ==> Computing 2 Coupling Lists <==
+
+  (N-2) aa lists size counts
+      Size      Count
+        21      30240
+        αα         2.093e-02 seconds
+  (N-2) ab lists size counts
+      Size      Count
+        36      44100
+        αβ         4.729e-02 seconds
+        ββ         1.523e-02 seconds
+  Time spent building 2-rdm: 1.311e-01 seconds
+       2    -383.407781720043 -6.0375e-02   -383.407851878426 -2.2250e-03  5.0625e-06    6/N
+
+  ==> General Determinant-Based CI Solver <==
+
+  Number of active orbitals: 10
+  Number of active alpha electrons: 5
+  Number of active beta electrons: 5
+
+  ==> Diagonalizing Hamiltonian Triplet (Ms = 0) A <==
+
+
+  Spin-adaptation of the initial guess based on minimum spin-complete subset
+  Initial guess determinants do not form a spin-complete set. 6 determinant(s) missing
+
+  Guess determinants after screening: 44
+
+  ==> Initial Guess <==
+
+  Initial guess determinants:         44
+
+  Classification of the initial guess solutions
+
+  Number   2S+1   Selected
+  ------------------------
+    23       1        
+    21       3       *
+  ------------------------
+
+    Spin    Root           Energy        <S^2>    Status
+  -------------------------------------------------------
+   singlet    0     -383.362038295585  +0.000000  removed
+   triplet    0     -383.276502922013  +2.000000  added
+  -------------------------------------------------------
+
+  ==> Davidson-Liu Solver <==
+
+    --------------------------------------------------------
+    Print level                                      Default
+    Energy convergence threshold                   1.000e-12
+    Residual convergence threshold                 1.000e-07
+    Schmidt orthogonality threshold                1.000e-12
+    Schmidt discard threshold                      1.000e-07
+    Size of the space                                  63504
+    Number of roots                                        1
+    Maximum number of iterations                         100
+    Collapse subspace size                                 2
+    Maximum subspace size                                 10
+    --------------------------------------------------------
+
+  Davidson-Liu solver: adding 1 guess vectors
+  Iteration     Average Energy            max(∆E)            max(Residual)  Vectors
+  ---------------------------------------------------------------------------------
+       0      -13.478890354392       13.478890354392        0.283534381040      1
+       1      -13.581360700067        0.102470345675        0.154380677415      2
+       2      -13.603863339427        0.022502639360        0.081971999793      3
+       3      -13.608962056948        0.005098717520        0.039693376254      4
+       4      -13.609992046546        0.001029989598        0.017197949375      5
+       5      -13.610176500628        0.000184454082        0.007568988158      6
+       6      -13.610218898725        0.000042398097        0.004554426624      7
+       7      -13.610237266181        0.000018367456        0.003088276696      8
+       8      -13.610243451494        0.000006185314        0.001413260202      9
+       9      -13.610244602413        0.000001150918        0.000670400781     10
+      10      -13.610244855280        0.000000252868        0.000426868717      3
+      11      -13.610245034078        0.000000178798        0.000328895795      4
+      12      -13.610245107531        0.000000073453        0.000186667894      5
+      13      -13.610245131375        0.000000023844        0.000092261846      6
+      14      -13.610245136780        0.000000005405        0.000038543027      7
+      15      -13.610245137726        0.000000000947        0.000018523049      8
+      16      -13.610245137985        0.000000000259        0.000010953593      9
+      17      -13.610245138084        0.000000000098        0.000006025023     10
+      18      -13.610245138105        0.000000000022        0.000002962041      3
+      19      -13.610245138113        0.000000000008        0.000001737515      4
+      20      -13.610245138116        0.000000000003        0.000001046423      5
+      21      -13.610245138117        0.000000000001        0.000000495109      6
+      22      -13.610245138117        0.000000000000        0.000000244684      7
+      23      -13.610245138117        0.000000000000        0.000000121166      8
+      24      -13.610245138117        0.000000000000        0.000000046406      9
+  ---------------------------------------------------------------------------------
+
+  Done diagonalizing Hamiltonian, 1.370e+00 seconds.
+
+  ==> Computing 1 Coupling Lists <==
+
+  (N-1) a lists size counts
+      Size      Count
+         6      52920
+        α          1.602e-02 seconds
+        β          1.531e-02 seconds
+  Time spent building 1-rdm: 1.005e-02 seconds
+
+  ==> Computing 1 Coupling Lists <==
+
+  (N-1) a lists size counts
+      Size      Count
+         6      52920
+        α          1.458e-02 seconds
+        β          1.370e-02 seconds
+  Time spent building 1-rdm: 8.698e-03 seconds
+
+  ==> Computing 1 Coupling Lists <==
+
+  (N-1) a lists size counts
+      Size      Count
+         6      52920
+        α          1.260e-02 seconds
+        β          1.276e-02 seconds
+  Time spent building 1-rdm: 9.129e-03 seconds
+
+  ==> Computing 2 Coupling Lists <==
+
+  (N-2) aa lists size counts
+      Size      Count
+        21      30240
+        αα         2.104e-02 seconds
+  (N-2) ab lists size counts
+      Size      Count
+        36      44100
+        αβ         4.709e-02 seconds
+        ββ         1.509e-02 seconds
+  Time spent building 2-rdm: 1.295e-01 seconds
+       3    -383.407857705738 -7.5986e-05   -383.407858374595 -6.4962e-06  2.9895e-07    6/N
+
+  ==> General Determinant-Based CI Solver <==
+
+  Number of active orbitals: 10
+  Number of active alpha electrons: 5
+  Number of active beta electrons: 5
+
+  ==> Diagonalizing Hamiltonian Triplet (Ms = 0) A <==
+
+
+  Spin-adaptation of the initial guess based on minimum spin-complete subset
+  Initial guess determinants do not form a spin-complete set. 6 determinant(s) missing
+
+  Guess determinants after screening: 44
+
+  ==> Initial Guess <==
+
+  Initial guess determinants:         44
+
+  Classification of the initial guess solutions
+
+  Number   2S+1   Selected
+  ------------------------
+    23       1        
+    21       3       *
+  ------------------------
+
+    Spin    Root           Energy        <S^2>    Status
+  -------------------------------------------------------
+   singlet    0     -383.361966067601  +0.000000  removed
+   triplet    0     -383.276455126204  +2.000000  added
+  -------------------------------------------------------
+
+  ==> Davidson-Liu Solver <==
+
+    --------------------------------------------------------
+    Print level                                      Default
+    Energy convergence threshold                   1.000e-12
+    Residual convergence threshold                 1.000e-07
+    Schmidt orthogonality threshold                1.000e-12
+    Schmidt discard threshold                      1.000e-07
+    Size of the space                                  63504
+    Number of roots                                        1
+    Maximum number of iterations                         100
+    Collapse subspace size                                 2
+    Maximum subspace size                                 10
+    --------------------------------------------------------
+
+  Davidson-Liu solver: adding 1 guess vectors
+  Iteration     Average Energy            max(∆E)            max(Residual)  Vectors
+  ---------------------------------------------------------------------------------
+       0      -13.478973238950       13.478973238950        0.283596227108      1
+       1      -13.581481275110        0.102508036160        0.154425898308      2
+       2      -13.603992617936        0.022511342825        0.081995811917      3
+       3      -13.609093287499        0.005100669564        0.039704956350      4
+       4      -13.610123620773        0.001030333274        0.017202221344      5
+       5      -13.610308081136        0.000184460363        0.007569379383      6
+       6      -13.610350437600        0.000042356463        0.004551020566      7
+       7      -13.610368747695        0.000018310095        0.003081652402      8
+       8      -13.610374899457        0.000006151763        0.001408644846      9
+       9      -13.610376041075        0.000001141617        0.000666978728     10
+      10      -13.610376290993        0.000000249918        0.000424124990      3
+      11      -13.610376467175        0.000000176182        0.000326337419      4
+      12      -13.610376539596        0.000000072421        0.000185541613      5
+      13      -13.610376563213        0.000000023616        0.000091921256      6
+      14      -13.610376568580        0.000000005367        0.000038418848      7
+      15      -13.610376569521        0.000000000941        0.000018479138      8
+      16      -13.610376569778        0.000000000258        0.000010932583      9
+      17      -13.610376569876        0.000000000098        0.000006012556     10
+      18      -13.610376569898        0.000000000022        0.000002955321      3
+      19      -13.610376569906        0.000000000008        0.000001733557      4
+      20      -13.610376569908        0.000000000003        0.000001043847      5
+      21      -13.610376569909        0.000000000001        0.000000493877      6
+      22      -13.610376569909        0.000000000000        0.000000244198      7
+      23      -13.610376569909        0.000000000000        0.000000120971      8
+      24      -13.610376569909        0.000000000000        0.000000046325      9
+  ---------------------------------------------------------------------------------
+
+  Done diagonalizing Hamiltonian, 1.450e+00 seconds.
+
+  ==> Computing 1 Coupling Lists <==
+
+  (N-1) a lists size counts
+      Size      Count
+         6      52920
+        α          1.606e-02 seconds
+        β          1.646e-02 seconds
+  Time spent building 1-rdm: 1.082e-02 seconds
+
+  ==> Computing 1 Coupling Lists <==
+
+  (N-1) a lists size counts
+      Size      Count
+         6      52920
+        α          1.506e-02 seconds
+        β          1.344e-02 seconds
+  Time spent building 1-rdm: 8.678e-03 seconds
+
+  ==> Computing 1 Coupling Lists <==
+
+  (N-1) a lists size counts
+      Size      Count
+         6      52920
+        α          1.290e-02 seconds
+        β          1.292e-02 seconds
+  Time spent building 1-rdm: 9.059e-03 seconds
+
+  ==> Computing 2 Coupling Lists <==
+
+  (N-2) aa lists size counts
+      Size      Count
+        21      30240
+        αα         2.090e-02 seconds
+  (N-2) ab lists size counts
+      Size      Count
+        36      44100
+        αβ         4.770e-02 seconds
+        ββ         1.546e-02 seconds
+  Time spent building 2-rdm: 1.330e-01 seconds
+       4    -383.407858457163 -7.5143e-07   -383.407858467840 -9.3246e-08  2.6400e-08    6/N
+
+  ==> General Determinant-Based CI Solver <==
+
+  Number of active orbitals: 10
+  Number of active alpha electrons: 5
+  Number of active beta electrons: 5
+
+  ==> Diagonalizing Hamiltonian Triplet (Ms = 0) A <==
+
+
+  Spin-adaptation of the initial guess based on minimum spin-complete subset
+  Initial guess determinants do not form a spin-complete set. 6 determinant(s) missing
+
+  Guess determinants after screening: 44
+
+  ==> Initial Guess <==
+
+  Initial guess determinants:         44
+
+  Classification of the initial guess solutions
+
+  Number   2S+1   Selected
+  ------------------------
+    23       1        
+    21       3       *
+  ------------------------
+
+    Spin    Root           Energy        <S^2>    Status
+  -------------------------------------------------------
+   singlet    0     -383.361958615271  +0.000000  removed
+   triplet    0     -383.276450025693  +2.000000  added
+  -------------------------------------------------------
+
+  ==> Davidson-Liu Solver <==
+
+    --------------------------------------------------------
+    Print level                                      Default
+    Energy convergence threshold                   1.000e-12
+    Residual convergence threshold                 1.000e-07
+    Schmidt orthogonality threshold                1.000e-12
+    Schmidt discard threshold                      1.000e-07
+    Size of the space                                  63504
+    Number of roots                                        1
+    Maximum number of iterations                         100
+    Collapse subspace size                                 2
+    Maximum subspace size                                 10
+    --------------------------------------------------------
+
+  Davidson-Liu solver: adding 1 guess vectors
+  Iteration     Average Energy            max(∆E)            max(Residual)  Vectors
+  ---------------------------------------------------------------------------------
+       0      -13.478988517715       13.478988517715        0.283603503709      1
+       1      -13.581500706500        0.102512188785        0.154430855558      2
+       2      -13.604012880414        0.022512173914        0.081998126328      3
+       3      -13.609113693411        0.005100812997        0.039705896390      4
+       4      -13.610144039286        0.001030345875        0.017202456912      5
+       5      -13.610328493737        0.000184454451        0.007569277679      6
+       6      -13.610370843348        0.000042349611        0.004550505911      7
+       7      -13.610389145599        0.000018302251        0.003080764721      8
+       8      -13.610395292932        0.000006147333        0.001408037238      9
+       9      -13.610396433337        0.000001140405        0.000666535907     10
+      10      -13.610396682877        0.000000249539        0.000423772248      3
+      11      -13.610396858726        0.000000175849        0.000326009376      4
+      12      -13.610396931013        0.000000072288        0.000185393981      5
+      13      -13.610396954599        0.000000023586        0.000091874040      6
+      14      -13.610396959962        0.000000005362        0.000038401070      7
+      15      -13.610396960901        0.000000000940        0.000018472425      8
+      16      -13.610396961159        0.000000000257        0.000010929221      9
+      17      -13.610396961257        0.000000000098        0.000006010581     10
+      18      -13.610396961278        0.000000000022        0.000002954264      3
+      19      -13.610396961286        0.000000000008        0.000001732924      4
+      20      -13.610396961289        0.000000000003        0.000001043439      5
+      21      -13.610396961289        0.000000000001        0.000000493681      6
+      22      -13.610396961290        0.000000000000        0.000000244115      7
+      23      -13.610396961290        0.000000000000        0.000000120934      8
+      24      -13.610396961290        0.000000000000        0.000000046310      9
+  ---------------------------------------------------------------------------------
+
+  Done diagonalizing Hamiltonian, 1.445e+00 seconds.
+
+  ==> Computing 1 Coupling Lists <==
+
+  (N-1) a lists size counts
+      Size      Count
+         6      52920
+        α          1.696e-02 seconds
+        β          1.589e-02 seconds
+  Time spent building 1-rdm: 1.035e-02 seconds
+
+  ==> Computing 1 Coupling Lists <==
+
+  (N-1) a lists size counts
+      Size      Count
+         6      52920
+        α          1.486e-02 seconds
+        β          1.380e-02 seconds
+  Time spent building 1-rdm: 8.831e-03 seconds
+
+  ==> Computing 1 Coupling Lists <==
+
+  (N-1) a lists size counts
+      Size      Count
+         6      52920
+        α          1.342e-02 seconds
+        β          1.307e-02 seconds
+  Time spent building 1-rdm: 9.059e-03 seconds
+
+  ==> Computing 2 Coupling Lists <==
+
+  (N-2) aa lists size counts
+      Size      Count
+        21      30240
+        αα         2.091e-02 seconds
+  (N-2) ab lists size counts
+      Size      Count
+        36      44100
+        αβ         4.757e-02 seconds
+        ββ         1.543e-02 seconds
+  Time spent building 2-rdm: 1.308e-01 seconds
+       5    -383.407858469268 -1.2105e-08   -383.407858469467 -1.6261e-09  3.3044e-09    6/N
+
+  ==> General Determinant-Based CI Solver <==
+
+  Number of active orbitals: 10
+  Number of active alpha electrons: 5
+  Number of active beta electrons: 5
+
+  ==> Diagonalizing Hamiltonian Triplet (Ms = 0) A <==
+
+
+  Spin-adaptation of the initial guess based on minimum spin-complete subset
+  Initial guess determinants do not form a spin-complete set. 6 determinant(s) missing
+
+  Guess determinants after screening: 44
+
+  ==> Initial Guess <==
+
+  Initial guess determinants:         44
+
+  Classification of the initial guess solutions
+
+  Number   2S+1   Selected
+  ------------------------
+    23       1        
+    21       3       *
+  ------------------------
+
+    Spin    Root           Energy        <S^2>    Status
+  -------------------------------------------------------
+   singlet    0     -383.361957737582  +0.000000  removed
+   triplet    0     -383.276449427959  +2.000000  added
+  -------------------------------------------------------
+
+  ==> Davidson-Liu Solver <==
+
+    --------------------------------------------------------
+    Print level                                      Default
+    Energy convergence threshold                   1.000e-12
+    Residual convergence threshold                 1.000e-07
+    Schmidt orthogonality threshold                1.000e-12
+    Schmidt discard threshold                      1.000e-07
+    Size of the space                                  63504
+    Number of roots                                        1
+    Maximum number of iterations                         100
+    Collapse subspace size                                 2
+    Maximum subspace size                                 10
+    --------------------------------------------------------
+
+  Davidson-Liu solver: adding 1 guess vectors
+  Iteration     Average Energy            max(∆E)            max(Residual)  Vectors
+  ---------------------------------------------------------------------------------
+       0      -13.478991753838       13.478991753838        0.283604397204      1
+       1      -13.581504440125        0.102512686287        0.154431443211      2
+       2      -13.604016705248        0.022512265123        0.081998382185      3
+       3      -13.609117531266        0.005100826018        0.039705988676      4
+       4      -13.610147877252        0.001030345986        0.017202470897      5
+       5      -13.610332330623        0.000184453371        0.007569256689      6
+       6      -13.610374679282        0.000042348659        0.004550436022      7
+       7      -13.610392980513        0.000018301231        0.003080650246      8
+       8      -13.610399127282        0.000006146769        0.001407959832      9
+       9      -13.610400267533        0.000001140251        0.000666479948     10
+      10      -13.610400517025        0.000000249492        0.000423727735      3
+      11      -13.610400692832        0.000000175807        0.000325968099      4
+      12      -13.610400765103        0.000000072271        0.000185375307      5
+      13      -13.610400788685        0.000000023582        0.000091867937      6
+      14      -13.610400794046        0.000000005362        0.000038398733      7
+      15      -13.610400794986        0.000000000940        0.000018471516      8
+      16      -13.610400795244        0.000000000257        0.000010928760      9
+      17      -13.610400795342        0.000000000098        0.000006010313     10
+      18      -13.610400795363        0.000000000022        0.000002954120      3
+      19      -13.610400795371        0.000000000008        0.000001732837      4
+      20      -13.610400795373        0.000000000003        0.000001043383      5
+      21      -13.610400795374        0.000000000001        0.000000493655      6
+      22      -13.610400795374        0.000000000000        0.000000244104      7
+      23      -13.610400795374        0.000000000000        0.000000120929      8
+      24      -13.610400795374        0.000000000000        0.000000046307      9
+  ---------------------------------------------------------------------------------
+
+  Done diagonalizing Hamiltonian, 1.462e+00 seconds.
+
+  ==> Computing 1 Coupling Lists <==
+
+  (N-1) a lists size counts
+      Size      Count
+         6      52920
+        α          1.654e-02 seconds
+        β          1.601e-02 seconds
+  Time spent building 1-rdm: 1.056e-02 seconds
+
+  ==> Computing 1 Coupling Lists <==
+
+  (N-1) a lists size counts
+      Size      Count
+         6      52920
+        α          1.512e-02 seconds
+        β          1.368e-02 seconds
+  Time spent building 1-rdm: 9.250e-03 seconds
+
+  ==> Computing 1 Coupling Lists <==
+
+  (N-1) a lists size counts
+      Size      Count
+         6      52920
+        α          1.334e-02 seconds
+        β          1.306e-02 seconds
+  Time spent building 1-rdm: 9.063e-03 seconds
+
+  ==> Computing 2 Coupling Lists <==
+
+  (N-2) aa lists size counts
+      Size      Count
+        21      30240
+        αα         2.121e-02 seconds
+  (N-2) ab lists size counts
+      Size      Count
+        36      44100
+        αβ         4.807e-02 seconds
+        ββ         1.544e-02 seconds
+  Time spent building 2-rdm: 1.309e-01 seconds
+       6    -383.407858469495 -2.2698e-10   -383.407858469499 -3.2799e-11  4.4070e-10    5/Y
+
+  ==> General Determinant-Based CI Solver <==
+
+  Number of active orbitals: 10
+  Number of active alpha electrons: 5
+  Number of active beta electrons: 5
+
+  ==> Diagonalizing Hamiltonian Triplet (Ms = 0) A <==
+
+
+  Spin-adaptation of the initial guess based on minimum spin-complete subset
+  Initial guess determinants do not form a spin-complete set. 6 determinant(s) missing
+
+  Guess determinants after screening: 44
+
+  ==> Initial Guess <==
+
+  Initial guess determinants:         44
+
+  Classification of the initial guess solutions
+
+  Number   2S+1   Selected
+  ------------------------
+    23       1        
+    21       3       *
+  ------------------------
+
+    Spin    Root           Energy        <S^2>    Status
+  -------------------------------------------------------
+   singlet    0     -383.361957627765  +0.000000  removed
+   triplet    0     -383.276449353041  +2.000000  added
+  -------------------------------------------------------
+
+  ==> Davidson-Liu Solver <==
+
+    --------------------------------------------------------
+    Print level                                      Default
+    Energy convergence threshold                   1.000e-12
+    Residual convergence threshold                 1.000e-07
+    Schmidt orthogonality threshold                1.000e-12
+    Schmidt discard threshold                      1.000e-07
+    Size of the space                                  63504
+    Number of roots                                        1
+    Maximum number of iterations                         100
+    Collapse subspace size                                 2
+    Maximum subspace size                                 10
+    --------------------------------------------------------
+
+  Davidson-Liu solver: adding 1 guess vectors
+  Iteration     Average Energy            max(∆E)            max(Residual)  Vectors
+  ---------------------------------------------------------------------------------
+       0      -13.478992447543       13.478992447543        0.283604509107      1
+       1      -13.581505196562        0.102512749018        0.154431516372      2
+       2      -13.604017472876        0.022512276315        0.081998413326      3
+       3      -13.609118300424        0.005100827548        0.039705999527      4
+       4      -13.610148646388        0.001030345964        0.017202471959      5
+       5      -13.610333099610        0.000184453222        0.007569253589      6
+       6      -13.610375448144        0.000042348534        0.004550426900      7
+       7      -13.610393749245        0.000018301101        0.003080635708      8
+       8      -13.610399895943        0.000006146698        0.001407950089      9
+       9      -13.610401036175        0.000001140232        0.000666472933     10
+      10      -13.610401285660        0.000000249486        0.000423722150      3
+      11      -13.610401461462        0.000000175802        0.000325962939      4
+      12      -13.610401533731        0.000000072269        0.000185372980      5
+      13      -13.610401557313        0.000000023582        0.000091867169      6
+      14      -13.610401562674        0.000000005361        0.000038398434      7
+      15      -13.610401563614        0.000000000940        0.000018471398      8
+      16      -13.610401563871        0.000000000257        0.000010928700      9
+      17      -13.610401563969        0.000000000098        0.000006010278     10
+      18      -13.610401563991        0.000000000022        0.000002954102      3
+      19      -13.610401563998        0.000000000008        0.000001732825      4
+      20      -13.610401564001        0.000000000003        0.000001043376      5
+      21      -13.610401564002        0.000000000001        0.000000493651      6
+      22      -13.610401564002        0.000000000000        0.000000244102      7
+      23      -13.610401564002        0.000000000000        0.000000120928      8
+      24      -13.610401564002        0.000000000000        0.000000046307      9
+  ---------------------------------------------------------------------------------
+
+  Done diagonalizing Hamiltonian, 1.445e+00 seconds.
+
+  ==> Computing 1 Coupling Lists <==
+
+  (N-1) a lists size counts
+      Size      Count
+         6      52920
+        α          1.584e-02 seconds
+        β          1.487e-02 seconds
+  Time spent building 1-rdm: 1.076e-02 seconds
+
+  ==> Computing 1 Coupling Lists <==
+
+  (N-1) a lists size counts
+      Size      Count
+         6      52920
+        α          1.603e-02 seconds
+        β          1.401e-02 seconds
+  Time spent building 1-rdm: 9.005e-03 seconds
+
+  ==> Computing 1 Coupling Lists <==
+
+  (N-1) a lists size counts
+      Size      Count
+         6      52920
+        α          1.284e-02 seconds
+        β          1.312e-02 seconds
+  Time spent building 1-rdm: 8.775e-03 seconds
+
+  ==> Computing 2 Coupling Lists <==
+
+  (N-2) aa lists size counts
+      Size      Count
+        21      30240
+        αα         2.141e-02 seconds
+  (N-2) ab lists size counts
+      Size      Count
+        36      44100
+        αβ         4.820e-02 seconds
+        ββ         1.608e-02 seconds
+  Time spent building 2-rdm: 1.331e-01 seconds
+       7    -383.407858469500 -5.1159e-12   -383.407858469500 -7.9581e-13  7.2427e-11    4/Y
+
+  ==> General Determinant-Based CI Solver <==
+
+  Number of active orbitals: 10
+  Number of active alpha electrons: 5
+  Number of active beta electrons: 5
+
+  ==> Diagonalizing Hamiltonian Triplet (Ms = 0) A <==
+
+
+  Spin-adaptation of the initial guess based on minimum spin-complete subset
+  Initial guess determinants do not form a spin-complete set. 6 determinant(s) missing
+
+  Guess determinants after screening: 44
+
+  ==> Initial Guess <==
+
+  Initial guess determinants:         44
+
+  Classification of the initial guess solutions
+
+  Number   2S+1   Selected
+  ------------------------
+    23       1        
+    21       3       *
+  ------------------------
+
+    Spin    Root           Energy        <S^2>    Status
+  -------------------------------------------------------
+   singlet    0     -383.361957613463  +0.000000  removed
+   triplet    0     -383.276449343280  +2.000000  added
+  -------------------------------------------------------
+
+  ==> Davidson-Liu Solver <==
+
+    --------------------------------------------------------
+    Print level                                      Default
+    Energy convergence threshold                   1.000e-12
+    Residual convergence threshold                 1.000e-07
+    Schmidt orthogonality threshold                1.000e-12
+    Schmidt discard threshold                      1.000e-07
+    Size of the space                                  63504
+    Number of roots                                        1
+    Maximum number of iterations                         100
+    Collapse subspace size                                 2
+    Maximum subspace size                                 10
+    --------------------------------------------------------
+
+  Davidson-Liu solver: adding 1 guess vectors
+  Iteration     Average Energy            max(∆E)            max(Residual)  Vectors
+  ---------------------------------------------------------------------------------
+       0      -13.478992596391       13.478992596391        0.283604523079      1
+       1      -13.581505353529        0.102512757138        0.154431525694      2
+       2      -13.604017631320        0.022512277791        0.081998417361      3
+       3      -13.609118459091        0.005100827771        0.039706001001      4
+       4      -13.610148805061        0.001030345970        0.017202472095      5
+       5      -13.610333258265        0.000184453204        0.007569253170      6
+       6      -13.610375606783        0.000042348518        0.004550425725      7
+       7      -13.610393907867        0.000018301085        0.003080633876      8
+       8      -13.610400054557        0.000006146689        0.001407948872      9
+       9      -13.610401194786        0.000001140229        0.000666472058     10
+      10      -13.610401444271        0.000000249485        0.000423721452      3
+      11      -13.610401620072        0.000000175801        0.000325962298      4
+      12      -13.610401692341        0.000000072269        0.000185372693      5
+      13      -13.610401715922        0.000000023582        0.000091867074      6
+      14      -13.610401721284        0.000000005361        0.000038398396      7
+      15      -13.610401722223        0.000000000940        0.000018471383      8
+      16      -13.610401722481        0.000000000257        0.000010928693      9
+      17      -13.610401722579        0.000000000098        0.000006010274     10
+      18      -13.610401722600        0.000000000022        0.000002954099      3
+      19      -13.610401722608        0.000000000008        0.000001732824      4
+      20      -13.610401722610        0.000000000003        0.000001043375      5
+      21      -13.610401722611        0.000000000001        0.000000493651      6
+      22      -13.610401722611        0.000000000000        0.000000244102      7
+      23      -13.610401722612        0.000000000000        0.000000120928      8
+      24      -13.610401722612        0.000000000000        0.000000046307      9
+  ---------------------------------------------------------------------------------
+
+  Done diagonalizing Hamiltonian, 1.497e+00 seconds.
+
+  ==> Computing 1 Coupling Lists <==
+
+  (N-1) a lists size counts
+      Size      Count
+         6      52920
+        α          1.659e-02 seconds
+        β          1.556e-02 seconds
+  Time spent building 1-rdm: 1.043e-02 seconds
+
+  ==> Computing 1 Coupling Lists <==
+
+  (N-1) a lists size counts
+      Size      Count
+         6      52920
+        α          1.519e-02 seconds
+        β          1.377e-02 seconds
+  Time spent building 1-rdm: 8.826e-03 seconds
+
+  ==> Computing 1 Coupling Lists <==
+
+  (N-1) a lists size counts
+      Size      Count
+         6      52920
+        α          1.300e-02 seconds
+        β          1.307e-02 seconds
+  Time spent building 1-rdm: 9.041e-03 seconds
+
+  ==> Computing 2 Coupling Lists <==
+
+  (N-2) aa lists size counts
+      Size      Count
+        21      30240
+        αα         2.092e-02 seconds
+  (N-2) ab lists size counts
+      Size      Count
+        36      44100
+        αβ         4.718e-02 seconds
+        ββ         1.603e-02 seconds
+  Time spent building 2-rdm: 1.321e-01 seconds
+       8    -383.407858469500 -5.6843e-14   -383.407858469500  1.7053e-13  1.3079e-10    2/Y
+    ----------------------------------------------------------------------------------------
+
+  A miracle has come to pass: MCSCF iterations have converged!
+
+  Performing final CI Calculation using converged orbitals
+
+  ==> General Determinant-Based CI Solver <==
+
+  Number of active orbitals: 10
+  Number of active alpha electrons: 5
+  Number of active beta electrons: 5
+  Number of determinants (CAS): 63504
+
+  ==> Diagonalizing Hamiltonian Triplet (Ms = 0) A <==
+
+
+  Davidson-Liu solver algorithm using SigmaVectorSparseList sigma algorithm
+
+  Spin-adaptation of the initial guess based on minimum spin-complete subset
+  Initial guess determinants do not form a spin-complete set. 6 determinant(s) missing
+
+  Guess determinants after screening: 44
+
+  ==> Initial Guess <==
+
+  Initial guess determinants:         44
+
+  Classification of the initial guess solutions
+
+  Number   2S+1   Selected
+  ------------------------
+    23       1        
+    21       3       *
+  ------------------------
+
+    Spin    Root           Energy        <S^2>    Status
+  -------------------------------------------------------
+   singlet    0     -383.361957611715  +0.000000  removed
+   triplet    0     -383.276449342078  +2.000000  added
+  -------------------------------------------------------
+
+  ==> Davidson-Liu Solver <==
+
+    --------------------------------------------------------
+    Print level                                      Default
+    Energy convergence threshold                   1.000e-12
+    Residual convergence threshold                 1.000e-07
+    Schmidt orthogonality threshold                1.000e-12
+    Schmidt discard threshold                      1.000e-07
+    Size of the space                                  63504
+    Number of roots                                        1
+    Maximum number of iterations                         100
+    Collapse subspace size                                 2
+    Maximum subspace size                                 10
+    --------------------------------------------------------
+
+  Davidson-Liu solver: adding 1 guess vectors
+  Iteration     Average Energy            max(∆E)            max(Residual)  Vectors
+  ---------------------------------------------------------------------------------
+       0      -13.478992627811       13.478992627811        0.283604524516      1
+       1      -13.581505385913        0.102512758102        0.154431526761      2
+       2      -13.604017663897        0.022512277984        0.081998417883      3
+       3      -13.609118491710        0.005100827814        0.039706001247      4
+       4      -13.610148837687        0.001030345977        0.017202472149      5
+       5      -13.610333290890        0.000184453203        0.007569253141      6
+       6      -13.610375639406        0.000042348517        0.004550425605      7
+       7      -13.610393940489        0.000018301083        0.003080633686      8
+       8      -13.610400087178        0.000006146688        0.001407948746      9
+       9      -13.610401227406        0.000001140229        0.000666471968     10
+      10      -13.610401476891        0.000000249485        0.000423721379      3
+      11      -13.610401652693        0.000000175801        0.000325962232      4
+      12      -13.610401724961        0.000000072269        0.000185372665      5
+      13      -13.610401748543        0.000000023581        0.000091867064      6
+      14      -13.610401753904        0.000000005361        0.000038398393      7
+      15      -13.610401754844        0.000000000940        0.000018471381      8
+      16      -13.610401755101        0.000000000257        0.000010928692      9
+      17      -13.610401755199        0.000000000098        0.000006010273     10
+      18      -13.610401755221        0.000000000022        0.000002954099      3
+      19      -13.610401755228        0.000000000008        0.000001732824      4
+      20      -13.610401755231        0.000000000003        0.000001043375      5
+      21      -13.610401755232        0.000000000001        0.000000493651      6
+      22      -13.610401755232        0.000000000000        0.000000244102      7
+      23      -13.610401755232        0.000000000000        0.000000120928      8
+      24      -13.610401755232        0.000000000000        0.000000046307      9
+  ---------------------------------------------------------------------------------
+  Davidson-Liu procedure took  1.342472 s
+
+  Done diagonalizing Hamiltonian, 1.481e+00 seconds.
+
+  ==> Computing 1 Coupling Lists <==
+
+  (N-1) a lists size counts
+      Size      Count
+         6      52920
+        α          1.611e-02 seconds
+        β          1.514e-02 seconds
+  Time spent building 1-rdm: 1.074e-02 seconds
+
+  ==> CI Vectors & Occupation Number for Triplet (Ms = 0) A <==
+
+  Important determinants with coefficients |C| >= 5.000e-02
+
+  ---- Root No. 0 ----
+
+              A    Coefficients
+    ---------------------------
+     2222ab0000   -0.5965816122
+     2222ba0000    0.5965816122
+     22b2200a00   -0.1547681862
+     22a2200b00    0.1547681862
+     222b20a000   -0.1063767559
+     222a20b000    0.1063767559
+     2a222000b0   -0.0832100664
+     2b222000a0    0.0832100664
+     22b2020a00    0.0727225712
+     22a2020b00   -0.0727225712
+     b222aa0b00    0.0640905836
+     a222bb0a00   -0.0640905836
+     2220ab2000    0.0625636733
+     2220ba2000   -0.0625636733
+     2b22a20000    0.0609599279
+     2a22b20000   -0.0609599279
+     22220a00b0    0.0603729820
+     22220b00a0   -0.0603729820
+     22b2aa000b    0.0555103260
+     22a2bb000a   -0.0555103260
+     2202ab0200    0.0523016619
+     2202ba0200   -0.0523016619
+     b22220000a   -0.0520571185
+     a22220000b    0.0520571185
+     222b02a000    0.0500767618
+     222a02b000   -0.0500767618
+    ---------------------------
+
+    Occupation Numbers:
+        1A    1.94818938    2A    1.91326739    4A    1.87014148    3A    1.85625942
+        5A    1.07654924    6A    0.92726049    8A    0.14546555    7A    0.13216370
+        9A    0.08465924   10A    0.04604411
+
+    Total Energy:  -383.407858469499899
+
+  ==> Energy Summary <==
+
+    Multi.(2ms)  Irrep.  No.               Energy      <S^2>
+    --------------------------------------------------------
+       3  (  0)     A     0     -383.407858469500   2.000000
+    --------------------------------------------------------
+  Computing RDMs for dipole moments ...
+
+  ==> Computing 1 Coupling Lists <==
+
+  (N-1) a lists size counts
+      Size      Count
+         6      52920
+        α          1.599e-02 seconds
+        β          1.358e-02 seconds
+  Time spent building 1-rdm: 9.079e-03 seconds Done
+
+  ==> Summary of Dipole Moments [e a0] (Nuclear + Electronic) <==
+
+       State           DM_X           DM_Y           DM_Z           |DM|
+    --------------------------------------------------------------------
+          0A    -0.00000000     0.00000000    -0.00000000     0.00000000
+    --------------------------------------------------------------------
+     Nuclear     0.00000000    -0.00000000    -0.00000000     0.00000000
+    --------------------------------------------------------------------
+
+  ==> Computing 1 Coupling Lists <==
+
+  (N-1) a lists size counts
+      Size      Count
+         6      52920
+        α          1.328e-02 seconds
+        β          1.312e-02 seconds
+  Time spent building 1-rdm: 9.032e-03 seconds
+  Canonicalizing final MCSCF orbitals
+
+  ==> Semicanonicalize Orbitals <==
+
+    MIX INACTIVE ORBITALS         TRUE
+    MIX GAS ACTIVE ORBITALS       FALSE
+    GAS1                          UNSPECIFIED
+    INACTIVE_DOCC                 CANONICAL
+    INACTIVE_UOCC                 CANONICAL
+
+    Off-Diag. Elements       Max           2-Norm
+    ------------------------------------------------
+    INACTIVE_DOCC        0.0038636677   0.0148956532
+    INACTIVE_UOCC        0.0236726718   0.1128310012
+    ------------------------------------------------
+
+    Canonicalization test failed
+
+  Timing for orbital canonicalization:                        0.002 s.
+
+  Time to prepare integrals:        0.454 seconds
+  Time to run job          :       20.522 seconds
+  Total                    :       20.977 seconds
+
+Scratch directory: /tmp/
+
+  Forte
+  ----------------------------------------------------------------------------
+  A suite of quantum chemistry methods for strongly correlated electrons
+
+    git branch:  - git commit: 
+
+  Developed by:
+    Francesco A. Evangelista, Chenyang Li, Kevin P. Hannon,
+    Jeffrey B. Schriber, Tianyuan Zhang, Chenxi Cai,
+    Nan He, Nicholas Stair, Shuhe Wang, Renke Huang
+  ----------------------------------------------------------------------------
+
+
+  Preparing forte objects from a Psi4 Wavefunction object   => Loading Basis Set <=
+
+    Name: CC-PVDZ
+    Role: ORBITAL
+    Keyword: BASIS
+    atoms 1-10  entry C          line   138 file /opt/forte/env/share/psi4/basis/cc-pvdz.gbs 
+    atoms 11-18 entry H          line    22 file /opt/forte/env/share/psi4/basis/cc-pvdz.gbs 
+
+
+
+  ==> MO Space Information <==
+
+  -------------------------------
+                        A   Sum
+  -------------------------------
+    FROZEN_DOCC         0     0
+    RESTRICTED_DOCC    29    29
+    GAS1               10    10
+    GAS2                0     0
+    GAS3                0     0
+    GAS4                0     0
+    GAS5                0     0
+    GAS6                0     0
+    RESTRICTED_UOCC   141   141
+    FROZEN_UOCC         0     0
+    Total             180   180
+  -------------------------------   => Loading Basis Set <=
+
+    Name: CC-PVDZ-JKFIT
+    Role: RIFIT
+    Keyword: DF_BASIS_MP2
+    atoms 1-10  entry C          line   121 file /opt/forte/env/share/psi4/basis/cc-pvdz-jkfit.gbs 
+    atoms 11-18 entry H          line    51 file /opt/forte/env/share/psi4/basis/cc-pvdz-jkfit.gbs 
+
+   => Loading Basis Set <=
+
+    Name: STO-3G
+    Role: ORBITAL
+    Keyword: MINAO_BASIS
+    atoms 1-10  entry C          line    61 file /opt/forte/env/share/psi4/basis/sto-3g.gbs 
+    atoms 11-18 entry H          line    19 file /opt/forte/env/share/psi4/basis/sto-3g.gbs 
+
+
+  State Triplet (Ms = 0) A GAS min: 0 0 0 0 0 0 ; GAS max: 20 0 0 0 0 0 ; weights:
+      1.000000000000
+  Forte will use psi4 integrals
+
+  ==> Primary Basis Set Summary <==
+
+  Basis Set: CC-PVDZ
+    Blend: CC-PVDZ
+    Number of shells: 84
+    Number of basis functions: 180
+    Number of Cartesian functions: 190
+    Spherical Harmonics?: true
+    Max angular momentum: 2
+
+
+  JK created using MemDF integrals
+  DFHelper Memory: AOs need 0.228 GiB; user supplied 2.980 GiB. 
+  Using in-core AOs.
+
+  ==> MemDFJK: Density-Fitted J/K Matrices <==
+
+    J tasked:                   Yes
+    K tasked:                   Yes
+    wK tasked:                   No
+    OpenMP threads:              16
+    Memory [MiB]:              3051
+    Algorithm:                 Core
+    Schwarz Cutoff:           0E+00
+    Mask sparsity (%):       0.0000
+    Fitting Condition:        1E-10
+
+   => Auxiliary Basis Set <=
+
+  Basis Set: CC-PVDZ-JKFIT
+    Blend: CC-PVDZ-JKFIT
+    Number of shells: 312
+    Number of basis functions: 884
+    Number of Cartesian functions: 1010
+    Spherical Harmonics?: true
+    Max angular momentum: 3
+
+
+
+  ==> Integral Transformation <==
+
+  Number of molecular orbitals:                        180
+  Number of correlated molecular orbitals:             180
+  Number of frozen occupied orbitals:                    0
+  Number of frozen unoccupied orbitals:                  0
+  Two-electron integral type:              Density fitting
+
+
+  Computing density fitted integrals
+
+  Number of auxiliary basis functions:  884
+  Need 229.13 MB to store DF integrals
+  DFHelper Memory: AOs need 0.228 GiB; user supplied 3.125 GiB. 
+  Using in-core AOs.
+
+  ==> DFHelper <==
+    NBF:                             180
+    NAux:                            884
+    Schwarz Cutoff:                0E+00
+    Mask sparsity (%):                 0
+    DFH Avail. Memory [GiB]:       3.125
+    OpenMP threads:                   16
+    Algorithm:                     STORE
+    AO Core:                        True
+    MO Core:                       False
+    Hold Metric:                   False
+    Metric Power:                 -0.500
+    Fitting Condition:             1E-10
+    Q Shell Max:                       7
+
+
+
+  Transforming DF Integrals
+  Timing for density-fitting transformation:                  0.167 s.
+
+  Timing for freezing core and virtual orbitals:              0.000 s.
+  Timing for computing density-fitted integrals:              0.753 s.
+
+  Skipping MCSCF computation. Using HF or orbitals passed via ref_wfn
+
+
+  ==> General Determinant-Based CI Solver <==
+
+  Number of active orbitals: 10
+  Number of active alpha electrons: 5
+  Number of active beta electrons: 5
+  Number of determinants (CAS): 63504
+
+  ==> Diagonalizing Hamiltonian Triplet (Ms = 0) A <==
+
+
+  Davidson-Liu solver algorithm using SigmaVectorSparseList sigma algorithm
+
+  Spin-adaptation of the initial guess based on minimum spin-complete subset
+  Initial guess determinants do not form a spin-complete set. 6 determinant(s) missing
+
+  Guess determinants after screening: 44
+
+  ==> Initial Guess <==
+
+  Initial guess determinants:         44
+
+  Classification of the initial guess solutions
+
+  Number   2S+1   Selected
+  ------------------------
+    23       1        
+    21       3       *
+  ------------------------
+
+    Spin    Root           Energy        <S^2>    Status
+  -------------------------------------------------------
+   singlet    0     -383.361957611716  +0.000000  removed
+   triplet    0     -383.276449342079  +2.000000  added
+  -------------------------------------------------------
+
+  ==> Davidson-Liu Solver <==
+
+    --------------------------------------------------------
+    Print level                                      Default
+    Energy convergence threshold                   1.000e-12
+    Residual convergence threshold                 1.000e-07
+    Schmidt orthogonality threshold                1.000e-12
+    Schmidt discard threshold                      1.000e-07
+    Size of the space                                  63504
+    Number of roots                                        1
+    Maximum number of iterations                         100
+    Collapse subspace size                                 2
+    Maximum subspace size                                 10
+    --------------------------------------------------------
+
+  Davidson-Liu solver: adding 1 guess vectors
+  Iteration     Average Energy            max(∆E)            max(Residual)  Vectors
+  ---------------------------------------------------------------------------------
+       0      -13.478992627811       13.478992627811        0.283604524516      1
+       1      -13.581505385913        0.102512758102        0.154431526761      2
+       2      -13.604017663897        0.022512277984        0.081998417883      3
+       3      -13.609118491710        0.005100827814        0.039706001247      4
+       4      -13.610148837687        0.001030345977        0.017202472149      5
+       5      -13.610333290890        0.000184453203        0.007569253141      6
+       6      -13.610375639406        0.000042348517        0.004550425605      7
+       7      -13.610393940489        0.000018301083        0.003080633686      8
+       8      -13.610400087178        0.000006146688        0.001407948746      9
+       9      -13.610401227406        0.000001140229        0.000666471968     10
+      10      -13.610401476891        0.000000249485        0.000423721379      3
+      11      -13.610401652693        0.000000175801        0.000325962232      4
+      12      -13.610401724961        0.000000072269        0.000185372665      5
+      13      -13.610401748543        0.000000023581        0.000091867064      6
+      14      -13.610401753904        0.000000005361        0.000038398393      7
+      15      -13.610401754844        0.000000000940        0.000018471381      8
+      16      -13.610401755101        0.000000000257        0.000010928692      9
+      17      -13.610401755199        0.000000000098        0.000006010273     10
+      18      -13.610401755221        0.000000000022        0.000002954099      3
+      19      -13.610401755228        0.000000000008        0.000001732824      4
+      20      -13.610401755231        0.000000000003        0.000001043375      5
+      21      -13.610401755232        0.000000000001        0.000000493651      6
+      22      -13.610401755232        0.000000000000        0.000000244102      7
+      23      -13.610401755232        0.000000000000        0.000000120928      8
+      24      -13.610401755232        0.000000000000        0.000000046307      9
+  ---------------------------------------------------------------------------------
+  Davidson-Liu procedure took  1.224512 s
+
+  Done diagonalizing Hamiltonian, 1.352e+00 seconds.
+
+  ==> Computing 1 Coupling Lists <==
+
+  (N-1) a lists size counts
+      Size      Count
+         6      52920
+        α          1.486e-02 seconds
+        β          1.541e-02 seconds
+  Time spent building 1-rdm: 9.693e-03 seconds
+
+  ==> CI Vectors & Occupation Number for Triplet (Ms = 0) A <==
+
+  Important determinants with coefficients |C| >= 5.000e-02
+
+  ---- Root No. 0 ----
+
+              A    Coefficients
+    ---------------------------
+     2222ab0000    0.5965816122
+     2222ba0000   -0.5965816122
+     22a2200b00   -0.1547681862
+     22b2200a00    0.1547681862
+     222a20b000   -0.1063767559
+     222b20a000    0.1063767559
+     2b222000a0   -0.0832100664
+     2a222000b0    0.0832100664
+     22b2020a00   -0.0727225712
+     22a2020b00    0.0727225712
+     b222aa0b00   -0.0640905836
+     a222bb0a00    0.0640905836
+     2220ab2000   -0.0625636733
+     2220ba2000    0.0625636733
+     2a22b20000    0.0609599279
+     2b22a20000   -0.0609599279
+     22220b00a0    0.0603729820
+     22220a00b0   -0.0603729820
+     22a2bb000a    0.0555103260
+     22b2aa000b   -0.0555103260
+     2202ab0200   -0.0523016619
+     2202ba0200    0.0523016619
+     b22220000a    0.0520571185
+     a22220000b   -0.0520571185
+     222b02a000   -0.0500767618
+     222a02b000    0.0500767618
+    ---------------------------
+
+    Occupation Numbers:
+        1A    1.94818938    2A    1.91326739    4A    1.87014148    3A    1.85625942
+        5A    1.07654924    6A    0.92726049    8A    0.14546555    7A    0.13216370
+        9A    0.08465924   10A    0.04604411
+
+    Total Energy:  -383.407858469500354
+
+  ==> Energy Summary <==
+
+    Multi.(2ms)  Irrep.  No.               Energy      <S^2>
+    --------------------------------------------------------
+       3  (  0)     A     0     -383.407858469500   2.000000
+    --------------------------------------------------------
+  Computing RDMs for dipole moments ...
+
+  ==> Computing 1 Coupling Lists <==
+
+  (N-1) a lists size counts
+      Size      Count
+         6      52920
+        α          1.441e-02 seconds
+        β          1.400e-02 seconds
+  Time spent building 1-rdm: 8.279e-03 seconds Done
+
+  ==> Summary of Dipole Moments [e a0] (Nuclear + Electronic) <==
+
+       State           DM_X           DM_Y           DM_Z           |DM|
+    --------------------------------------------------------------------
+          0A    -0.00000000     0.00000000    -0.00000000     0.00000000
+    --------------------------------------------------------------------
+     Nuclear     0.00000000    -0.00000000    -0.00000000     0.00000000
+    --------------------------------------------------------------------
+  DSRG 3RDM direct algorithm only available for BLOCK2/SA-MRDSRG
+  Set DSRG_3RDM_ALGORITHM to 'EXPLICIT' (default)
+
+  ==> Computing 1 Coupling Lists <==
+
+  (N-1) a lists size counts
+      Size      Count
+         6      52920
+        α          1.271e-02 seconds
+        β          1.279e-02 seconds
+  Time spent building 1-rdm: 8.456e-03 seconds
+
+  ==> Computing 2 Coupling Lists <==
+
+  (N-2) aa lists size counts
+      Size      Count
+        21      30240
+        αα         2.068e-02 seconds
+  (N-2) ab lists size counts
+      Size      Count
+        36      44100
+        αβ         4.668e-02 seconds
+        ββ         1.579e-02 seconds
+  Time spent building 2-rdm: 1.329e-01 seconds
+
+  ==> Computing 3 Coupling Lists <==
+
+  (N-3) aaa lists size counts
+      Size      Count
+        56      11340
+        ααα        1.789e-02 seconds
+  (N-3) aab lists size counts
+      Size      Count
+       126      25200
+        ααβ        6.008e-02 seconds
+        αββ        6.074e-02 seconds
+        βββ        1.220e-02 seconds
+  Time spent building 3-rdm: 8.365e+00 seconds
+
+  ==> Semicanonicalize Orbitals <==
+
+    MIX INACTIVE ORBITALS         FALSE
+    MIX GAS ACTIVE ORBITALS       FALSE
+    FROZEN_DOCC                   CANONICAL
+    FROZEN_UOCC                   CANONICAL
+    GAS1                          CANONICAL
+    RESTRICTED_DOCC               CANONICAL
+    RESTRICTED_UOCC               CANONICAL
+
+    Off-Diag. Elements       Max           2-Norm
+    ------------------------------------------------
+    GAS1                 0.0306928461   0.0743035232
+    RESTRICTED_DOCC      0.0000000000   0.0000000000
+    RESTRICTED_UOCC      0.0000000000   0.0000000000
+    ------------------------------------------------
+
+    Canonicalization test failed
+
+  Integrals are about to be updated.
+  Computing density fitted integrals
+
+  Number of auxiliary basis functions:  884
+  Need 229.13 MB to store DF integrals
+  DFHelper Memory: AOs need 0.228 GiB; user supplied 3.125 GiB. 
+  Using in-core AOs.
+
+  ==> DFHelper <==
+    NBF:                             180
+    NAux:                            884
+    Schwarz Cutoff:                0E+00
+    Mask sparsity (%):                 0
+    DFH Avail. Memory [GiB]:       3.125
+    OpenMP threads:                   16
+    Algorithm:                     STORE
+    AO Core:                        True
+    MO Core:                       False
+    Hold Metric:                   False
+    Metric Power:                 -0.500
+    Fitting Condition:             1E-10
+    Q Shell Max:                       7
+
+
+
+  Transforming DF Integrals
+  Timing for density-fitting transformation:                  0.159 s.
+
+  Timing for freezing core and virtual orbitals:              0.000 s.
+  Integrals update took     0.773 s.
+  Orbital rotations on spin-free RDMs ...
+    Transformed 1 RDMs.
+    Transformed 2 RDMs.
+    Transformed 3 RDMs.
+  Timing for orbital canonicalization:                        0.841 s.
+
+    -----------------------------------------------------------------------
+      Spin-Adapted Multireference Driven Similarity Renormalization Group
+                            written by Chenyang Li
+                                16 OMP threads
+    -----------------------------------------------------------------------
+
+  Disclaimer:
+    The spin-adapted DSRG code is largely adopted from the spin-integrated code developed by
+    Chenyang Li, Kevin P. Hannon, Tianyuan Zhang, and Francesco A. Evangelista.
+
+  ==> Multireference Driven Similarity Renormalization Group <==
+
+    Computing Fock matrix and cleaning JK ....... Done. Timing      0.039 s
+    Reading DSRG options ........................ Done. Timing      0.000 s
+    Setting ambit MO space ...................... Done. Timing      0.000 s
+    Initializing density cumulants .............. Done. Timing      0.032 s
+    Filling Fock matrix from ForteIntegrals ..... Done. Timing      0.000 s
+
+  ==> Density Cumulant Summary <==
+
+             2-cumulant   3-cumulant
+    --------------------------------
+    max        0.360192     0.084978
+    2-norm     1.626717     1.517908
+    --------------------------------
+
+  ==> Checking Semicanonical Orbitals <==
+
+    Block                Max            Mean
+    ----------------------------------------
+    CORE        0.0000000000    0.0000000000
+    VIRTUAL     0.0000000000    0.0000000000
+    GAS1        0.0000000000    0.0000000000
+    ----------------------------------------
+    Orbitals are semi-canonicalized.
+
+                  --------------------------------------------
+                    MR-DSRG Second-Order Perturbation Theory
+                  --------------------------------------------
+
+
+  ==> Calculation Information <==
+
+    --------------------------------------------------------
+    Integral type                                         DF
+    Source operator                                 STANDARD
+    Core-Virtual source type                          NORMAL
+    Reference relaxation                                NONE
+    3RDM algorithm                                  EXPLICIT
+    Internal amplitudes                                 NONE
+    State type                                  SINGLE STATE
+    Flow parameter                                 5.000e-01
+    Taylor expansion threshold                     1.000e-03
+    Intruder amplitudes threshold                  1.000e-01
+    Number of amplitudes for printing                     15
+    --------------------------------------------------------
+
+  ==> DSRG-MRPT2 Memory Information <==
+
+    Memory assigned by the user                      4.00 GB
+    Memory available for MR-DSRG                     3.12 GB
+    Generalized Fock matrix                        260.64 KB
+    1-, 2-, and 3-density cumulants                  8.08 MB
+    2-electron (4-index) integrals                  24.56 MB
+    T2 cluster amplitudes                           49.12 MB
+    3-index auxiliary integrals                     41.65 MB
+    T1 cluster amplitudes                           47.11 KB
+    Local integrals for CCVV energy                  7.08 MB
+    Local integrals for CAVV energy                 11.52 MB
+    Local integrals for CCAV energy                  4.42 MB
+    Max memory for local intermediates              11.52 MB
+    Memory currently available                       2.99 GB
+
+
+  ==> Prepare Integrals & Amplitudes <==
+
+    Initializing integrals ...................... Done. Timing      0.086 s
+    Allocating amplitudes ....................... Done. Timing      0.006 s
+    Computing T2 amplitudes minimal ............. Done. Timing      0.010 s
+    Computing T1 amplitudes ..................... Done. Timing      0.002 s
+
+  ==> First-Order Excitation Amplitudes Summary <==
+
+    Active Indices:   29   30   31   32   33   34   35   36   37   38
+                    
+    Largest T1 amplitudes (absolute values):
+        i    a                i    a                i    a
+    -----------------------------------------------------------------
+    [  35   73] 0.0379186 [  37   77] 0.0363478 [  36   74] 0.0293145
+    [  37  119] 0.0283289 [  38   82] 0.0270591 [  36  114] 0.0241230
+    [  36   66] 0.0223174 [  35  115] 0.0200839 [  35  118] 0.0190120
+    [  34   75] 0.0190024 [  37   70] 0.0188813 [  35   82] 0.0177468
+    [  38  118] 0.0167375 [  33   70] 0.0152396 [  38   73] 0.0147117
+    -----------------------------------------------------------------
+    2-Norm of T1 vector:                            0.104542962208331
+    Number of nonzero elements:                                  2658
+    -----------------------------------------------------------------
+    Largest T2 amplitudes (absolute values):
+        i    j    a    b                i    j    a    b                i    j    a    b
+    -----------------------------------------------------------------------------------------------
+    [  30   37   62   37] 0.0154950 [  31   38   61   38] 0.0139962 [  31   36   61   36] 0.0139944
+    [  29   38   58   38] 0.0138354 [  32   37   66   37] 0.0130199 [  30   35   62   35] 0.0126075
+    [  34   36   75   36] 0.0124795 [  30   30   62   30] 0.0124673 [  31   31   61   31] 0.0121762
+    [  29   36   58   36] 0.0121646 [  32   35   66   35] 0.0121627 [  35   23   37   48] 0.0119862
+    [  34   38   75   38] 0.0117390 [  34   33   75   33] 0.0116843 [  38   24   38   64] 0.0115968
+    -----------------------------------------------------------------------------------------------
+    2-Norm of T2 vector:                                                          0.530062874832686
+    Number of nonzero elements:                                                             1941676
+    -----------------------------------------------------------------------------------------------
+
+  ==> Possible Intruders <==
+
+    T1 amplitudes larger than 0.1000: NULL
+    T2 amplitudes larger than 0.1000: NULL
+  =>** Before self.dsrg_solver.compute_energy() **<=
+
+    Renormalizing 2-body integrals .............. Done. Timing      0.006 s
+    Renormalizing 1-body integrals .............. Done. Timing      0.002 s
+    Computing <0|[Fr, T1]|0> .................... Done. Timing      0.000 s
+    Computing <0|[Fr, T2]|0> .................... Done. Timing      0.000 s
+    Computing <0|[Vr, T1]|0> .................... Done. Timing      0.000 s
+    Computing <0|[Vr, T2]|0> minimal ............ Done. Timing      0.026 s
+    Computing DF <0|[Vr, T2]|0> CCVV ............ Done. Timing      0.094 s
+    Computing DF Hbar1 CAVV ..................... Done. Timing      0.187 s
+    Computing DF Hbar1 CCAV ..................... Done. Timing      0.046 s
+  DF-PT2 CCVV energy:     -0.651069921454815
+  DF-PT2 CAVV energy:     -0.250694672393914
+  DF-PT2 CCAV energy:     -0.040634971761246
+
+  ==> DSRG-MRPT2 Energy Summary <==
+
+    E0 (reference)                 =   -383.407858469500354
+    < Phi_0 | [Fr, T1] | Phi_0 >   =     -0.010133344053698
+    < Phi_0 | [Fr, T2] | Phi_0 >   =      0.010695222562040
+    < Phi_0 | [Vr, T1] | Phi_0 >   =      0.009658129502079
+    < Phi_0 | [Vr, T2] | Phi_0 >   =     -1.189534665013002
+      - [Vr, T2] L1 contribution   =     -1.327905530654188
+      - [Vr, T2] L2 contribution   =      0.140081977373501
+      - [Vr, T2] L3 contribution   =     -0.001711111732315
+    DSRG-MRPT2 correlation energy  =     -1.179314657002581
+    DSRG-MRPT2 total energy        =   -384.587173126502933
+  =>** After self.dsrg_solver.compute_energy() **<=
+
+  Semicanonical orbitals must be used!
+
+
+  ==> Total Timings (s) for Computing Commutators <==
+
+           [H1, T1]    [H1, T2]    [H2, T1]    [H2, T2]  
+    -----------------------------------------------------
+    -> C0       0.000       0.000       0.000       0.000
+    -> C1       0.000       0.000       0.000       0.000
+    -> C2                   0.000       0.000       0.000
+    -----------------------------------------------------
+
+
+  Time to prepare integrals:        1.215 seconds
+  Time to run job          :       11.842 seconds
+  Total                    :       13.058 seconds
+
+    Psi4 stopped on: Tuesday, 04 August 2026 11:21PM
+    Psi4 wall time for execution: 0:00:35.66
+
+*** Psi4 exiting successfully. Buy a developer a beer!
