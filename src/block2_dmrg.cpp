@@ -610,6 +610,40 @@ static bool rotate_retained_mps(dmrgci_engine &e) {
     return true; // rotated MPS in place; benign success is silent (keeps the CASSCF table clean)
 }
 
+// Enforce exactly the symmetries qc_hamiltonian/RuleQC assume -- Hermiticity (p,q,r,s)->(q,p,s,r)
+// and particle exchange (p,q,r,s)->(r,s,p,q). block2 prunes complementary operators on
+// |integral| < TINY reading one partner per slot, so partners must agree bit for bit. The ERI-only
+// bra/ket transposes are deliberately left alone: a Hermitian dressed operator stays exact.
+static void symmetrize_active_integrals(const double *h1, const double *h2, int n,
+                                        std::vector<double> &h1_sym, std::vector<double> &h2_sym) {
+    auto id2 = [n](int p, int q) { return (size_t)p * n + q; };
+    auto id4 = [n](int p, int q, int r, int s) {
+        return (((size_t)p * n + q) * n + r) * n + s;
+    };
+    h1_sym.resize((size_t)n * n);
+    h2_sym.resize((size_t)n * n * n * n);
+
+    for (int p = 0; p < n; p++)
+        for (int q = 0; q <= p; q++) {
+            const double av = 0.5 * (h1[id2(p, q)] + h1[id2(q, p)]);
+            h1_sym[id2(p, q)] = h1_sym[id2(q, p)] = av;
+        }
+
+    // Orbit of the 4-group {id, H, P, HP}; flat index order is lexicographic, so the lowest one
+    // is the representative and each orbit is averaged exactly once (degenerate orbits included).
+    for (int p = 0; p < n; p++)
+        for (int q = 0; q < n; q++)
+            for (int r = 0; r < n; r++)
+                for (int s = 0; s < n; s++) {
+                    const size_t i0 = id4(p, q, r, s), i1 = id4(q, p, s, r);
+                    const size_t i2 = id4(r, s, p, q), i3 = id4(s, r, q, p);
+                    if (i0 > i1 || i0 > i2 || i0 > i3)
+                        continue;
+                    const double av = 0.25 * (h2[i0] + h2[i1] + h2[i2] + h2[i3]);
+                    h2_sym[i0] = h2_sym[i1] = h2_sym[i2] = h2_sym[i3] = av;
+                }
+}
+
 void block2_casci_wrap::import_integrals(double *aaaa, double *f_act, double e_core) {
     dmrgci_engine &e = *impl_;
     n_act_ = e.n_act;
@@ -631,8 +665,14 @@ void block2_casci_wrap::import_integrals(double *aaaa, double *f_act, double e_c
     g2.resize(n*n*n*n);
     memcpy(g1.data(), h1, sizeof(double)*n*n    );
     memcpy(g2.data(), h2, sizeof(double)*n*n*n*n);
-    
-    
+
+    // Local copies: the caller's buffers are reused elsewhere and must not be touched. Everything
+    // block2 sees below -- FCIDUMP and the Fiedler metric -- reads the symmetrized arrays.
+    std::vector<double> h1_sym, h2_sym;
+    symmetrize_active_integrals(h1, h2, n, h1_sym, h2_sym);
+    h1 = h1_sym.data();
+    h2 = h2_sym.data();
+
     // In-memory FCIDUMP (classic SU2 path). No rescale(): NOPT passes the embedded 1-e
     // Hamiltonian F_act (frozen core folded in) and chemist (tu|vw) directly
     e.fcidump = std::make_shared<FCIDUMP<double>>();
