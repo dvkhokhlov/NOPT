@@ -28,6 +28,7 @@ H  -0.61477995  -1.44763979   0.00000000
 $END
 $act_space n_alp=4 n_bet=4 n_val=8 mult=1 p_n=10 reorder=1 orbitals=26,27,28,29,30,31,37,39; $end
 _MO INP=4ene_RHF.orb
-$CAS n_s=3 w_state=all_1; cisolver=dmrg maxit=50 dE=1e-15 grad=1e-6 $END
-$DMRG m=200 localize=pm extract_cutoff=1E-10 sweep_tol=1E-10 $END
+$CAS n_s=3 w_state=all_1; cisolver=dmrg maxit=50 dE=1e-15 grad=1e-8 $END
+$dav dr=1e-14 de=1e-10 $end
+$DMRG m=200 localize=pm extract_cutoff=1E-10 sweep_tol=1E-12 $END
 $PROP QUAD=1 MULLIKEN=1 DISP=1 DIPOLE=1 $END
