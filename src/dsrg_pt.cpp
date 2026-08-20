@@ -25,6 +25,7 @@
 # include "dsrg_sf_tensors.h"
 # include "dsrg_sf_batch.h"
 # include "dsrg_pt.h"
+# include "dmrg_log.h"         // per-solve block2 sweep log
 
 // A relaxed dressed root is assigned to its argmax bare root only above this |CI overlap|.
 static const double DSRG_RELAX_OVERLAP_MIN = 0.9;
@@ -52,6 +53,7 @@ static double block_offdiag_max(const double * Xblock, const double * Usub, int 
 }
 
 int SA_DSRG_PT2(molecule * M, dsrg_par * dsrg, char * job_name){
+    dmrg_log_set_tag(dmrg_log_tag::dsrg);
 
     if(RI==0){
         fprintf(out_stream,"ERROR: DSRG-PT2 requires the RI (density-fitting) path (set RI=1)\n");
