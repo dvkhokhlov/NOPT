@@ -39,6 +39,11 @@ class CAS_engine{
         std::unique_ptr<orbital_localizer> localizer_;
         std::vector<double> U_loc;                // n_act^2, [a*n_act+p]; C_loc = ACT_CVEC * U_loc
 
+        // Active-basis rotation the CI backend's RDMs still need: the canonicalization of a backend
+        // that cannot rotate its own wavefunction. gamma' = U gamma U^T, U[p*n_act+i] (p canonical,
+        // i solve). Empty means nothing is pending; a solve returns RDMs in the current basis.
+        std::vector<double> U_pending;
+
         // warm-start (localization-rotation MPS reuse) state
         int  warm_start_cfg = 0;                  // cached cas->dmrg.warm_start (off|on)
         int  warm_after_cfg = 0;                  // cached cas->dmrg.warm_start_after (freeze gate)
@@ -122,6 +127,9 @@ class CAS_engine{
         int init(cas_par * cas, molecule * ext_M);
         int SCF_alloc();
         int tensors_recalc(int n);
+        int update_ACT_CVEC();
+        int rotate_pending_gamma(double * g, int n_blocks);
+        int rotate_pending_GAMMA(double * G);
         int CI_calc(int primary, int create_track_data,int read);
         int calc_DM_C();
         

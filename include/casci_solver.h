@@ -123,7 +123,7 @@ public:
     virtual void malmqvist(int i_set, double* U) {}                          // rotate CI vector by active-block U
     virtual void rotate_pi_pair(int i_set, double s, double c,               // linear-molecule pi-pair rotation
                                 int pair, int* ind_pi) {}
-    virtual void calc_S(double* S_track, int a, int b) {}                    // S[i*n_s+j] = <set a state i|set b state j>
+    virtual void calc_S(double* S_track, int a, int b);                      // S[i*n_s+j] = <set a state i|set b state j>
     
         
     
