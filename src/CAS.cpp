@@ -11,6 +11,7 @@
 # include "CAS.h"
 # include "localizer.h"
 # include "localized_dmrg.h"   // build_loc_orbitals (warm-start rotation)
+# include "dmrg_log.h"         // per-solve block2 sweep log
 # include "aldet_casci_wrap.h"
 #ifdef NOPT_HAS_BLOCK2
 # include "block2_casci_wrap.h"
@@ -1258,6 +1259,7 @@ CAS_engine::~CAS_engine(){
 
 int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
     
+    dmrg_log_set_job(job_name);
     M->CI[0].PT2_delete_data();
     
     cas->write_info(M->n_act_el_alp[0],
@@ -1313,6 +1315,7 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
     jacobi_mcscf_sd_engine j_sd;
     j_sd.init(CAS->G,CAS->B,CAS->n_core, CAS->n_act,CAS->n_vac,CAS->n_ao,CAS->n_s_opt,cas->x_max);
     
+    dmrg_log_set_tag(dmrg_log_tag::primary);
     n_dav_conv = CAS->CI_calc(1,0,0);
     CAS->make_canonical();
     printf_timer("Primary CI and calculation canonical orbitals");
@@ -1323,6 +1326,7 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
         CAS = M->CAS;
         CAS->init(cas ,M);
         CAS->SCF_alloc();
+        dmrg_log_set_tag(dmrg_log_tag::canonical);
         n_dav_conv = CAS->CI_calc(1,0,0);
         printf_timer("Recalculation of DMRG with canonical orbitals");
     }
@@ -1368,6 +1372,7 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
         if(cas->method==2)rot_step=j_sd.step(CAS->MO_VEC,CAS->MO_BUF);
 //         printf_timer("CAS_step");
 //         converged=0; break;
+        dmrg_log_set_tag(dmrg_log_tag::scf);
         n_dav_conv =CAS->CI_calc(0,0,1);
         if(rot_step  <cas->s_conv){converged=3; break;}
                 
@@ -1402,6 +1407,7 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
         CAS = M->CAS;
         CAS->init(cas ,M);
         CAS->SCF_alloc();
+        dmrg_log_set_tag(dmrg_log_tag::canonical);
         n_dav_conv = CAS->CI_calc(1,0,0);
         printf_timer("Recalculation of DMRG with canonical orbitals");
     }

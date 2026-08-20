@@ -10,6 +10,7 @@
 # include "XMCQDPT.h"
 # include "CAS.h"
 # include "localizer.h"
+# include "dmrg_log.h"         // per-solve block2 sweep log
 #ifdef NOPT_HAS_BLOCK2
 # include "block2_casci_wrap.h"
 #endif
@@ -46,6 +47,8 @@ int copy_MO_to_CVEC(double * V,
 }
 
 int CDAS_PT2(molecule * M, cdas_par * cdas, char * job_name){
+    
+    dmrg_log_set_job(job_name);
     
     
     if(RI==0){
@@ -337,6 +340,7 @@ int CDAS_PT2(molecule * M, cdas_par * cdas, char * job_name){
                 T.RF_PH,
                 T.RF_PS);
     
+    dmrg_log_set_tag(dmrg_log_tag::cdas);
     CAS->CI->solve(1,1,true);
     if(LINEAR)CAS->rotate();
 

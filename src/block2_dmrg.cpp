@@ -24,6 +24,7 @@
 #include "tensor_rotate.h"    // rotate1/rotate2 (active-space basis transforms)
 #include "blas_link.h"        // cblas_dgemm (warm-start rotation regularization)
 #include "mps_rotation.h"     // evolve_sa_multimps (multi-root SA MPS rotation)
+#include "dmrg_log.h"         // per-solve block2 sweep log (cout/cerr redirect)
 
 using namespace block2;
 
@@ -308,6 +309,7 @@ std::shared_ptr<MPS<SU2, double>> nopt_block2::extract_root_single(dmrgci_engine
 static void ensure_2rdm(dmrgci_engine &e) {
     if (e.d2_valid)
         return;
+    dmrg_log_guard log(false);
     host_threads_guard htg;
     const int n = e.n_act;
     const size_t blk = (size_t)n * n * n * n;
@@ -341,7 +343,7 @@ static void ensure_2rdm(dmrgci_engine &e) {
         p2me->init_environments(false);
         auto ex2 = std::make_shared<Expect<SU2, double, double>>(p2me, (ubond_t)e.cfg.m,
                                                                  (ubond_t)e.cfg.m);
-        ex2->iprint = 0; // silence the per-site Expect sweep log
+        ex2->iprint = DMRG_LOG_IPRINT;
         ex2->solve(true, imps->center == 0);
         std::shared_ptr<GTensor<double>> d2 = ex2->get_2pdm_spatial(); // shape {n,n,n,n}
 
@@ -433,6 +435,7 @@ static void ensure_2rdm(dmrgci_engine &e) {
 static void ensure_dm_full(dmrgci_engine &e) {
     if (e.dmfull_valid)
         return;
+    dmrg_log_guard log(false);
     host_threads_guard htg;
     const int n = e.n_act;
     const size_t blk = (size_t)n * n;
@@ -476,7 +479,7 @@ static void ensure_dm_full(dmrgci_engine &e) {
             p1me->init_environments(false);
             auto ex1 = std::make_shared<Expect<SU2, double, double>>(p1me, (ubond_t)e.cfg.m,
                                                                      (ubond_t)e.cfg.m);
-            ex1->iprint = 0; // silence the per-site Expect sweep log
+            ex1->iprint = DMRG_LOG_IPRINT;
             ex1->solve(true, jmps->center == 0);
             GMatrix<double> d1 = ex1->get_1pdm_spatial(); // n x n row-major, on the block2 double stack
 
@@ -780,6 +783,7 @@ static void recompute_cold_order(dmrgci_engine &e) {
 
 int block2_casci_wrap::solve(int, int, bool use_prev_guess) {
     dmrgci_engine &e = *impl_;
+    dmrg_log_guard log(true); // block2's sweep output for this solve only
     host_threads_guard htg;
     assert_stack_clean("solve entry"); // block2 LIFO stacks must be empty between macro-iterations
     e.d2_valid = false; // new wavefunction -> any cached 2-RDM is stale
@@ -869,7 +873,7 @@ int block2_casci_wrap::solve(int, int, bool use_prev_guess) {
     dmrg->trunc_type = dmrg->trunc_type | TruncationTypes::RealDensityMatrix;
     dmrg->decomp_type = DecompositionTypes::DensityMatrix;
     dmrg->davidson_soft_max_iter = 200;
-    dmrg->iprint = 0;
+    dmrg->iprint = DMRG_LOG_IPRINT;
     dmrg->solve(sch.n_sweeps, e.mps->center == 0, e.cfg.sweep_tol);
 
     // Convergence of the variational (two-site) phase, taken before the tail appends to the same
@@ -1017,7 +1021,7 @@ nopt_block2::compress_single_mps(dmrgci_engine &e, const std::shared_ptr<MPS<SU2
     std::vector<ubond_t> bdim{(ubond_t)target_m}, kdim{ket->info->get_max_bond_dimension()};
     std::vector<double> noises{1e-9, 0.0}; // one noisy sweep to seed the fit, then clean
     auto cps = std::make_shared<Linear<SU2, double, double>>(cme, bdim, kdim, noises);
-    cps->iprint = 0;
+    cps->iprint = DMRG_LOG_IPRINT;
     cps->solve(8, ket->center == 0);
 
     cme->remove_partition_files();
