@@ -841,7 +841,7 @@ int CAS_engine::av_DM_and_F_calc(){
 }
     
     
-int CAS_engine::make_canonical(){
+int CAS_engine::make_canonical(bool with_active){
     
     av_DM_and_F_calc();
     
@@ -849,6 +849,11 @@ int CAS_engine::make_canonical(){
     
     M->diag_X_MO_block(F_tot, 0           , n_core, nullptr);
     M->diag_X_MO_block(F_tot, n_core+n_act, n_vac , nullptr);
+    
+    // Core and virtual canonicalization touches neither the active orbitals nor the CI vector.
+    // The active block rotates only where no solve follows: lapack_diag absorbs the ordering
+    // permutation, so its rotation can be improper (det<0), which no warm-started backend carries.
+    if(!with_active)return 0;
     
     // Active-block canonicalization rotates the active orbitals, so the CI vector must
     // follow via malmqvist and the basis-dependent caches must be rebuilt -- a stale
@@ -869,9 +874,9 @@ int CAS_engine::make_canonical(){
         lapack_diag(U_canon, M->orb_energy+n_core, n_act);//ir.rep can be broken -- must be rewritten in the "diag_X_MO_block"-style
         normalize_rotation_rows(U_canon, n_act);
         
-        // The wavefunction sits in the last solved basis, and a canonicalization may be owed to it
-        // already (the SCF loop can exit before any solve), so this one composes with what is
-        // pending: U_total = U_canon * U_pending. dgemm must not alias, hence the fresh buffer.
+        // The wavefunction sits in the last solved basis, and a canonicalization may still be owed
+        // to it, so this one composes with what is pending: U_total = U_canon * U_pending.
+        // dgemm must not alias, hence the fresh buffer.
         if(U_pending.empty())
             U_pending.assign(U_canon, U_canon+(size_t)n_act*n_act);
         else{
@@ -1400,7 +1405,7 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
         M->LOC_print(job_name, CAS->U_loc.data());
     }
     
-    CAS->make_canonical();
+    CAS->make_canonical(/*with_active=*/false);
     printf_timer("Primary CI and calculation canonical orbitals");
     
     
@@ -1463,7 +1468,7 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
     
     
     //calculate canonical orbitals
-    CAS->make_canonical();
+    CAS->make_canonical(/*with_active=*/true);
     
     if(LINEAR)CAS->rotate();
     

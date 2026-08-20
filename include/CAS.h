@@ -142,7 +142,7 @@ class CAS_engine{
         int scale_grad(double * G_state, double * gamma_state);
         int calc_hess(double * B_state, double * gamma_state, double * F_state, double * G_ga_state);
         
-        int make_canonical();
+        int make_canonical(bool with_active);
         int av_DM_and_F_calc();
         double SA_grad_hess_calc();
         double SM_grad_hess_calc();
