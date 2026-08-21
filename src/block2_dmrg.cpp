@@ -25,6 +25,7 @@
 #include "blas_link.h"        // cblas_dgemm (warm-start rotation regularization)
 #include "mps_rotation.h"     // evolve_sa_multimps (multi-root SA MPS rotation)
 #include "dmrg_log.h"         // per-solve block2 sweep log (cout/cerr redirect)
+#include "dmrg_gaopt.h"       // genetic (GAopt) lattice ordering
 #include "defaults.h"         // DMRG_LOW_M_OPT_KK_MM_MAX
 
 using namespace block2;
@@ -707,15 +708,15 @@ void block2_casci_wrap::import_integrals(double *aaaa, double *f_act, double e_c
     e.fcidump->set_orb_sym<int>(std::vector<int>(n, 0)); // C1
 
     // DMRG lattice order: block2 strings orbitals on the lattice in raw FCIDUMP order, so localized
-    // orbitals come out scrambled and are ordered by Fiedler on the exchange matrix K_ij = |(ij|ji)|.
+    // orbitals come out scrambled and are ordered by loc_order on the exchange matrix K_ij = |(ij|ji)|.
     // RDMs come back in this order and are un-permuted in ensure_2rdm. A warm solve reuses the
-    // retained MPS's order -- Fiedler order is a function of the localized orbitals, so it is pinned
+    // retained MPS's order -- that order is a function of the localized orbitals, so it is pinned
     // together with the frozen localization. A cold solve recomputes it.
     if (e.have_rotation && !e.reorder_perm.empty()) {
         e.fcidump->reorder(e.reorder_perm); // frozen order (warm restart)
     } else {
         e.reorder_perm.clear();
-        if (e.cfg.loc_order == DMRG_LOCORDER_FIEDLER) {
+        if (e.cfg.loc_order == DMRG_LOCORDER_FIEDLER || e.cfg.loc_order == DMRG_LOCORDER_GAOPT) {
             // block2's metric (pyblock2 parser.py): the exchange graph, with the one-electron
             // coupling as a tie-break so a disconnected or tied graph still orders reproducibly.
             std::vector<double> kmat((size_t)n * n, 0.0);
@@ -725,7 +726,10 @@ void block2_casci_wrap::import_integrals(double *aaaa, double *f_act, double e_c
                         kmat[(size_t)i * n + j] =
                             std::fabs(h2[(((size_t)i * n + j) * n + j) * n + i]) +
                             1e-7 * std::fabs(h1[(size_t)i * n + j]);
-            e.reorder_perm = OrbitalOrdering::fiedler((uint16_t)n, kmat);
+            if (e.cfg.loc_order == DMRG_LOCORDER_FIEDLER)
+                e.reorder_perm = OrbitalOrdering::fiedler((uint16_t)n, kmat);
+            else if (e.cfg.loc_order == DMRG_LOCORDER_GAOPT)
+                e.reorder_perm = dmrg_gaopt_order(n, kmat);
             e.fcidump->reorder(e.reorder_perm);
         }
     }
@@ -772,11 +776,12 @@ static void adjust_mps_two_dot(dmrgci_engine &e) {
 }
 
 // Re-order the lattice for a cold fallback: import_integrals commits the order before solve() may
-// decline the warm rotation, leaving the FCIDUMP on the previous orbitals' Fiedler order. The
-// already-permuted FCIDUMP is re-ordered in place -- Fiedler on a relabelled exchange graph is the
-// same ordering up to that relabelling, so the fresh permutation composes with the frozen one.
+// decline the warm rotation, leaving the FCIDUMP on the previous orbitals' order. The already-
+// permuted FCIDUMP is re-ordered in place; the fresh permutation composes with the frozen one.
 static void recompute_cold_order(dmrgci_engine &e) {
-    if (e.cfg.loc_order != DMRG_LOCORDER_FIEDLER || e.reorder_perm.empty())
+    const bool ordered = (e.cfg.loc_order == DMRG_LOCORDER_FIEDLER ||
+                          e.cfg.loc_order == DMRG_LOCORDER_GAOPT);
+    if (!ordered || e.reorder_perm.empty())
         return;
     const int n = e.n_act;
     std::vector<double> kmat((size_t)n * n, 0.0);
@@ -785,7 +790,11 @@ static void recompute_cold_order(dmrgci_engine &e) {
             if (i != j)
                 kmat[(size_t)i * n + j] = std::fabs(e.fcidump->v(i, j, j, i)) +
                                           1e-7 * std::fabs(e.fcidump->t(i, j));
-    std::vector<uint16_t> p2 = OrbitalOrdering::fiedler((uint16_t)n, kmat);
+    std::vector<uint16_t> p2;
+    if (e.cfg.loc_order == DMRG_LOCORDER_FIEDLER)
+        p2 = OrbitalOrdering::fiedler((uint16_t)n, kmat);
+    else if (e.cfg.loc_order == DMRG_LOCORDER_GAOPT)
+        p2 = dmrg_gaopt_order(n, kmat);
     bool unchanged = true;
     for (int k = 0; k < n && unchanged; k++)
         unchanged = (p2[k] == (uint16_t)k);

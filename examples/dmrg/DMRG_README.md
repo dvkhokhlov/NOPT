@@ -110,7 +110,9 @@ Default shown in parentheses.
 - **localize** *(off)* — localize the active orbitals before the solve. `off | pm`
   (Pipek-Mezey). `boys` parses but is not implemented.
 - **loc_order** *(fiedler)* — orbital (site) ordering for the MPS lattice.
-  `fiedler | none`. `gaopt` parses but is not implemented.
+  `fiedler | gaopt | none`. `gaopt` is block2's genetic refinement of the Fiedler ordering
+  (pyblock2 parameters, 64 deterministically seeded runs); it costs seconds to minutes to
+  set up, growing with the active space, and can lower the mid-lattice bond dimension.
 - **dump_loc_orbs** *(off)* — flag: presence writes the localized orbitals (GAMESS format)
   at iteration 0, then continues. The `=on`/`=off` value is ignored — the keyword's
   presence alone enables it.

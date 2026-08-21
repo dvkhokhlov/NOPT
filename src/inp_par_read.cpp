@@ -1002,11 +1002,7 @@ int dmrg_par::validate(){
         ok=0;
     }
     if(loc_order==DMRG_LOCORDER_UNKNOWN){
-        fprintf(out_stream,"ERROR: $DMRG unknown loc_order value; accepted: fiedler, none\n");
-        ok=0;
-    }
-    if(loc_order==DMRG_LOCORDER_GAOPT){
-        fprintf(out_stream,"ERROR: $DMRG loc_order=gaopt not implemented yet; accepted: fiedler, none\n");
+        fprintf(out_stream,"ERROR: $DMRG unknown loc_order value; accepted: fiedler, gaopt, none\n");
         ok=0;
     }
     if(save_dir.empty()){
@@ -1088,6 +1084,8 @@ int dmrg_par::write_info(){
         fprintf(out_stream,"Dump localized orbitals:          yes\n");
     if(loc_order==DMRG_LOCORDER_FIEDLER)
         fprintf(out_stream,"DMRG orbital ordering:            Fiedler\n");
+    if(loc_order==DMRG_LOCORDER_GAOPT)
+        fprintf(out_stream,"DMRG orbital ordering:            GAopt (genetic, seeded)\n");
     if(loc_order==DMRG_LOCORDER_NONE)
         fprintf(out_stream,"DMRG orbital ordering:            none (input order)\n");
     fprintf(out_stream,"Scratch directory (save_dir):     %s\n",save_dir.c_str());
