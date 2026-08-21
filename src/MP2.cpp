@@ -223,7 +223,7 @@ int MP2(molecule * M, mp2_par * mp2, char * job_name)
 
     // MP2 correlation energy: reuse the validated closed-shell CCVV code (n_a = 0)
     PT_tensors T;
-    T.set_par(&R, eps, n_c, 0, n_v, NULL, NULL, NULL, 0.0);
+    T.set_par(&R, eps, n_c, 0, n_v, NULL, NULL, NULL, 0.0, M);
     T.RF_PS = 0;
     T.calc_EE_2_CCVV();
     double E_corr = T.RF_PS;

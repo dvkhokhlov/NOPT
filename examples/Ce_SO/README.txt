@@ -1,3 +1,7 @@
+WARNING: quasi-relativistic PT is temporary disabled
+         check further versions for the update
+
+
 1) run
 run_sQM -i cdas.inp > cdas.log
 

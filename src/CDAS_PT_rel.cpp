@@ -385,7 +385,7 @@ int CDAS_PT2_rel(molecule * M, cdas_par * cdas, char * job_name){
         
         //PT
         PT_tensors T;
-        T.set_par(&R, eps, n_cor, n_act, n_virt, H_AV, H_CA, H_CV, cdas->edshift);
+        T.set_par(&R, eps, n_cor, n_act, n_virt, H_AV, H_CA, H_CV, cdas->edshift, M);
         
         //calculation of IP/EA Fockian matrix
 //         double zero=0;
