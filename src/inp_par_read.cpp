@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <cstring>
+#include <cctype>
 
 #include "inp_par_read.h"
 #include "keywords.h"
@@ -1125,6 +1126,150 @@ dmrg_par::~dmrg_par(){
 
 }
 
+//-----------------------------------------------------------------------------------------------------
+
+static const char * avas_l_labels = "spdfghik";
+
+// "4s" -> n=4,l=0. Non-zero return = not an nl label.
+static int avas_nl_from_label(const char * lab, int * n, int * l){
+
+    if(lab==nullptr)                       return 1;
+    if(strlen(lab)!=2)                     return 1;
+    if((lab[0]<'1')||(lab[0]>'9'))         return 1;
+
+    const char * p = strchr(avas_l_labels,tolower((unsigned char)lab[1]));
+    if(p==nullptr)                         return 1;
+
+    *n = lab[0]-'0';
+    *l = int(p-avas_l_labels);
+    if(*n <= *l)                           return 1;
+
+    return 0;
+}
+
+avas_par::avas_par(){
+
+    y=0;
+    ref_basis = AVAS_REF_BASIS_DEFAULT;
+
+}
+
+int avas_par::read_group(char * inp){
+
+    recursive_file P;
+    char line[BUF_LINE_LENGTH];
+
+    P.r_open(inp);
+
+    P.r_gets(line,BUF_LINE_LENGTH);;
+    while((key_word_comp(line, avas_group_start)==0)&&(!P.r_eof()))P.r_gets(line,BUF_LINE_LENGTH);;
+    if(key_word_comp(line, avas_group_start)==0){
+        return 0;
+    }
+    y=1;
+
+    while(!P.r_eof()){
+        read_line(line);
+        if(key_word_comp(line, avas_group_end))break;
+        P.r_gets(line,BUF_LINE_LENGTH);;
+    }
+
+    return 0;
+}
+
+int avas_par::read_line(char * inp){
+
+    if(key_word_comp(inp, avas_atoms_kw)){
+        int n = kw_count(inp, avas_atoms_kw, ';');
+        atoms.resize(n);
+        kw_to_i_v(&atoms, inp, avas_atoms_kw, n);
+    }
+
+    if(key_word_comp(inp, avas_shells_kw)){
+        int n = kw_count(inp, avas_shells_kw, ';');
+        std::vector<char*> lab;
+        lab.resize(n);
+        kw_to_s_v(&lab, inp, avas_shells_kw, n);
+        shell_n.resize(n);
+        shell_l.resize(n);
+        for(int i=0;i<n;i++){
+            if(avas_nl_from_label(lab[i],&shell_n[i],&shell_l[i])){
+                fprintf(out_stream,"ERROR: $AVAS shells= got \"%s\"; expected nl labels like 4s or 3d\n",lab[i]);
+                exit(1);
+            }
+            delete[] lab[i];
+        }
+    }
+
+    if(key_word_comp(inp, avas_ref_basis_kw)){
+        char* tmp=nullptr;
+        kw_to_s(&tmp, inp, avas_ref_basis_kw);
+        if(tmp){ ref_basis=tmp; delete[] tmp; }
+    }
+
+    return 0;
+}
+
+int avas_par::validate(){
+
+    int ok=1;
+
+    if(atoms.size()==0){
+        fprintf(out_stream,"ERROR: $AVAS needs atoms=<1-based atom list>; (no default)\n");
+        ok=0;
+    }
+    if(shell_n.size()==0){
+        fprintf(out_stream,"ERROR: $AVAS needs shells=<nl label list>; e.g. shells=4s 3d; (no default)\n");
+        ok=0;
+    }
+    if(ref_basis.empty()){
+        fprintf(out_stream,"ERROR: $AVAS ref_basis must not be empty\n");
+        ok=0;
+    }
+    // duplicates would repeat reference functions and make the reference overlap singular
+    for(int i=0;i<int(atoms.size());i++){
+        if(atoms[i]<1){
+            fprintf(out_stream,"ERROR: $AVAS atom index %d must be >= 1\n",atoms[i]);
+            ok=0;
+        }
+        for(int j=i+1;j<int(atoms.size());j++)
+            if(atoms[i]==atoms[j]){
+                fprintf(out_stream,"ERROR: $AVAS atom %d is listed twice\n",atoms[i]);
+                ok=0;
+            }
+    }
+    for(int i=0;i<int(shell_n.size());i++)
+    for(int j=i+1;j<int(shell_n.size());j++)
+        if((shell_n[i]==shell_n[j])&&(shell_l[i]==shell_l[j])){
+            fprintf(out_stream,"ERROR: $AVAS shell %d%c is listed twice\n",shell_n[i],avas_l_labels[shell_l[i]]);
+            ok=0;
+        }
+
+    if(!ok)exit(1);
+
+    return 0;
+}
+
+int avas_par::write_info() const {
+
+    fprintf(out_stream,"AVAS settings:\n");
+    fprintf(out_stream,"Reference basis:                  %s\n",ref_basis.c_str());
+    fprintf(out_stream,"Target atoms:                    ");
+    for(int i=0;i<int(atoms.size());i++)
+        fprintf(out_stream," %d",atoms[i]);
+    fprintf(out_stream,"\n");
+    fprintf(out_stream,"Target shells:                   ");
+    for(int i=0;i<int(shell_n.size());i++)
+        fprintf(out_stream," %d%c",shell_n[i],avas_l_labels[shell_l[i]]);
+    fprintf(out_stream,"\n\n");
+
+    return 0;
+}
+
+avas_par::~avas_par(){
+
+}
+
 //XMC
 xmc_par::xmc_par(){
     y=0;
@@ -1898,6 +2043,9 @@ int inp_par::read(char * ext_inp){
     if(dsrg.y)dsrg.read_group(inp_name,&cas);
     if(cis.y)  cis.read_group(inp_name);
     if(mp2.y)  mp2.read_group(inp_name);
+
+    avas.read_group(inp_name);
+    if(avas.y) avas.validate();
 
     
     

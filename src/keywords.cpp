@@ -221,6 +221,16 @@ vector<const char *>dmrg_extract_cutoff_kw{{"extract_cutoff"}};
 vector<const char *>dmrg_h2caa_m_kw{{"h2caa_m"}};
 vector<const char *>dmrg_low_m_opt_kw{{"low_m_opt"}};
 
+vector<const char *>avas_group_start{{"$avas"}};
+
+vector<const char *>avas_group_end{{"$avasend"},
+                                   {"$avas_end"},
+                                   {"$end"}};
+
+vector<const char *>avas_atoms_kw{{"atoms"}};
+vector<const char *>avas_shells_kw{{"shells"}};
+vector<const char *>avas_ref_basis_kw{{"ref_basis"}};
+
 vector<const char *>MO_group_start{{"$vec1"},
                                    {"$vec"},
                                    {"$vec_a_1"},

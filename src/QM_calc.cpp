@@ -16,6 +16,7 @@
 #include "timer.h"
 # include "grabbers.h"
 # include "mp2.h"
+# include "avas.h"
 
 extern coord_list C;
 
@@ -45,6 +46,34 @@ int single_point_calc( inp_par * P, molecule * Qm){
         }
     }
 
+    // AVAS rewrites the reference orbitals so that the active window holds the target atomic
+    // valence span. It fills only the window CAS defines, and it mixes irreps.
+    if(P->avas.y){
+        if(!P->cas.y){
+            fprintf(out_stream,"ERROR: $AVAS needs CAS=1 (nothing else consumes the steered active window)\n");
+            exit(EXIT_FAILURE);
+        }
+        if(P->mp2.y || P->cis.y){
+            fprintf(out_stream,"ERROR: $AVAS cannot be combined with MP2 or CIS in one run "
+                               "(both need canonical orbitals)\n");
+            exit(EXIT_FAILURE);
+        }
+        if(Qm->reorder){
+            fprintf(out_stream,"ERROR: $AVAS cannot be combined with $ACT_SPACE reorder=1 "
+                               "(two active-space steering mechanisms)\n");
+            exit(EXIT_FAILURE);
+        }
+        if(IS_SYM){
+            fprintf(out_stream,"ERROR: $AVAS supports C1 only (the rotation mixes irreps)\n");
+            exit(EXIT_FAILURE);
+        }
+        if(Qm->PP.size()){
+            fprintf(out_stream,"ERROR: $AVAS supports all-electron calculations only "
+                               "(an ECP removes the reference shells from the calculation basis)\n");
+            exit(EXIT_FAILURE);
+        }
+    }
+
     Qm->gen_1el_data();
     fprintf(out_stream,"\n\n");
     printf_timer("Calculation of 1-el matrices");
@@ -54,6 +83,8 @@ int single_point_calc( inp_par * P, molecule * Qm){
         RHF    (Qm,&(P->rhf), P->job_name);
     else
         Qm->MO_orth();
+    
+    if(P->avas.y)avas_steer(Qm, P->avas, P->job_name);
     
     if(P->cis.y)CIS      (Qm, &(P->cis), P->job_name);
 

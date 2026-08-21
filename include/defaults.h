@@ -59,3 +59,5 @@
 #define DSRG_PRINT_DEFAULT 1               // print verbosity (>=2 adds per-class rows)
 #define DSRG_SA_DEFAULT 0                  // state-averaged ensemble reference (0 = state-specific root)
 #define DSRG_RELAX_DEFAULT DSRG_RELAX_NONE // reference relaxation level (none = unrelaxed)
+
+#define AVAS_REF_BASIS_DEFAULT "cc-pvtz-minao"   // $AVAS reference minimal basis (H-Kr)

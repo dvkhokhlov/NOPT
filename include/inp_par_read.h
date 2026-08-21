@@ -121,6 +121,25 @@ class dmrg_par // settings for the DMRG (block2) CI backend; see $DMRG group
 
 };
 
+// $AVAS group -- atoms= and shells= are mandatory (avas_par::validate).
+class avas_par
+{
+    public:
+        int y;
+        std::vector<int> atoms;    // 1-based indices of the atoms carrying the target shells
+        std::vector<int> shell_n;  // principal number of each target nl shell
+        std::vector<int> shell_l;  // angular momentum of each target nl shell
+        std::string ref_basis;     // reference minimal basis the target shells are taken from
+
+        avas_par();
+        int read_group(char * inp);
+        int read_line(char * inp);
+        int validate();            // enforces the mandatory keywords; exits loudly
+        int write_info() const;
+        ~avas_par();
+
+};
+
 class cas_par
 {
     public:
@@ -313,6 +332,7 @@ class inp_par
         char* point_group;
         
         rhf_par rhf;
+        avas_par avas;
         cas_par cas;
         cis_par cis;
         mp2_par mp2;
