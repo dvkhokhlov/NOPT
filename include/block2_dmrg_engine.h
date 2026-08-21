@@ -75,6 +75,17 @@ struct dmrgci_engine {
     bool d2_valid = false;                        // are d2_av/d1_states current for this solve?
     std::vector<double> dmfull_cache;             // full n_s x n_s spin-summed 1-RDM (properties), delocalized
     bool dmfull_valid = false;                     // is dmfull_cache current for this solve?
+    std::vector<double> dg2full;                  // full n_s x n_s transition 2-RDM (GAMMA convention), delocalized
+    bool g2full_valid = false;                     // is dg2full current for this solve?
+
+    // Bare-state snapshot for the dressed re-solve overlap: one persistent single-root MPS per
+    // root plus its scratch tag. snap_set is the storage slot calc_S answers for (-1 = none);
+    // dressed_mpo marks e.mpo as a dressed general MPO, never to be rebuilt from the bare FCIDUMP.
+    std::vector<std::shared_ptr<MPS<SU2, double>>> snap_mps;
+    std::vector<std::string> snap_tags;
+    int snap_set = -1;
+    bool dressed_mpo = false;
+
     const int engine_id = next_dmrg_engine_id(); // MPS tag namespace of this engine
     int solve_count = 0;                        // macro-iteration index -> unique MPS tag
     int last_n_sweeps = 0;                      // sweeps actually run in the last solve
@@ -128,6 +139,11 @@ struct host_threads_guard {
 void ensure_block2_runtime(const std::string &save_dir_root, double memory_gb, int n_threads);
 void remove_tag_files(const std::string &tag);
 void assert_stack_clean(const char *where);
+
+// One root of the state-averaged MultiMPS as a plain single-root MPS at a one-site end-center.
+// Defined in block2_dmrg.cpp; shared with the transition-RDM / overlap read-outs.
+std::shared_ptr<MPS<SU2, double>>
+extract_root_single(dmrgci_engine &e, int st, const std::string &xtag, const std::string &stag);
 
 // Fit a lower-bond-dim copy of an MPS (identity-MPO Linear) — a cheaper TRIE for the read-out.
 // Defined engine-side; called from the read-out TU.

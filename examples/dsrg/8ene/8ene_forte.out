@@ -1,0 +1,563 @@
+
+    -----------------------------------------------------------------------
+          Psi4: An Open-Source Ab Initio Electronic Structure Package
+                               Psi4 1.3.2 release
+
+                         Git: Rev {HEAD} ecbda83 
+
+
+    R. M. Parrish, L. A. Burns, D. G. A. Smith, A. C. Simmonett,
+    A. E. DePrince III, E. G. Hohenstein, U. Bozkaya, A. Yu. Sokolov,
+    R. Di Remigio, R. M. Richard, J. F. Gonthier, A. M. James,
+    H. R. McAlexander, A. Kumar, M. Saitow, X. Wang, B. P. Pritchard,
+    P. Verma, H. F. Schaefer III, K. Patkowski, R. A. King, E. F. Valeev,
+    F. A. Evangelista, J. M. Turney, T. D. Crawford, and C. D. Sherrill,
+    J. Chem. Theory Comput. 13(7) pp 3185--3197 (2017).
+    (doi: 10.1021/acs.jctc.7b00174)
+
+
+                         Additional Contributions by
+    P. Kraus, H. Kruse, M. H. Lechner, M. C. Schieber, R. A. Shaw,
+    A. Alenaizan, R. Galvelis, Z. L. Glick, S. Lehtola, and J. P. Misiewicz
+
+    -----------------------------------------------------------------------
+
+
+    Psi4 started on: Thursday, 01 October 2020 02:56AM
+
+    Process ID: 41272
+    Host:       debian
+    PSIDATADIR: /home/daniilkh/miniconda3/envs/psi4/share/psi4
+    Memory:     500.0 MiB
+    Threads:    28
+    
+  ==> Input File <==
+
+--------------------------------------------------------------------------
+import forte
+
+memory 64 gb
+
+molecule octaene{
+  0 1
+ C   -0.6420961614  -0.3284521681  -0.0000000000
+ C    0.6420961614   0.3284521681   0.0000000000
+ C   -1.8273119828   0.3195144441  -0.0000000000
+ C    1.8273119828  -0.3195144441   0.0000000000
+ C   -3.1121176125  -0.3372617420  -0.0000000000
+ C    3.1121176125   0.3372617420   0.0000000000
+ C   -4.2962522192   0.3109928956   0.0000000000
+ C    4.2962522192  -0.3109928956  -0.0000000000
+ C   -5.5830201574  -0.3463782163   0.0000000000
+ C    5.5830201574   0.3463782163  -0.0000000000
+ C   -6.7652516782   0.3000343230   0.0000000000
+ C    6.7652516782  -0.3000343230  -0.0000000000
+ C    8.0566288588   0.3645014823  -0.0000000000
+ C   -8.0566288588  -0.3645014823   0.0000000000
+ C    9.2323276445  -0.2739666599  -0.0000000000
+ C   -9.2323276445   0.2739666599   0.0000000000
+ H   -0.6388787670  -1.4243321267   0.0000000000
+ H    0.6388787670   1.4243321267  -0.0000000000
+ H   -1.8304648045   1.4153758028   0.0000000000
+ H    1.8304648045  -1.4153758028  -0.0000000000
+ H   -3.1090375910  -1.4331685888  -0.0000000000
+ H    3.1090375910   1.4331685888   0.0000000000
+ H   -4.2993952369   1.4068154244  -0.0000000000
+ H    4.2993952369  -1.4068154244   0.0000000000
+ H   -5.5788888117  -1.4423995591   0.0000000000
+ H    5.5788888117   1.4423995591  -0.0000000000
+ H   -6.7726692571   1.3958917496  -0.0000000000
+ H    6.7726692571  -1.3958917496   0.0000000000
+ H    8.0398493828   1.4598788501  -0.0000000000
+ H   -8.0398493828  -1.4598788501   0.0000000000
+ H    9.2830167931  -1.3660119655   0.0000000000
+ H   -9.2830167931   1.3660119655  -0.0000000000
+ H   10.1774561717   0.2707498653  -0.0000000000
+ H  -10.1774561717  -0.2707498653   0.0000000000
+ 
+  units angstrom
+  symmetry cs
+}
+
+
+set globals{
+  basis               cc-pvdz
+  df_basis_mp2        cc-pvdz-ri
+  df_basis_scf        cc-pvdz-jkfit
+  scf_type            df
+  reference           rhf
+  puream              false # otherwise SO2AO does not work, see PSI4 forum
+  print               0
+}
+
+set forte {
+# active space parameters
+  frozen_docc          [16,0]
+  restricted_docc      [33,0]
+  active               [0,16]
+# state symmetry and averaging
+  avg_state            [[0,1,3]] 		# 5 states of symmetry A' (irrep = 0) and multiplicity = 1
+  nstate_dressed       4
+# DSRG parameters  
+  correlation_solver   THREE-DSRG-MRPT2    	# DSRG theory level
+  dsrg_s               0.5 				# flow parameter value
+  calc_type            sa				# do SA-DSRG
+  dsrg_multi_state     sa_full 			# recalculate CI after dressing of integrals
+# techical parameters  
+  int_type             df				# density fitted 2-e ints
+  active_space_solver  sa_dmrg			# keyword to ensure that user really wants modified code 
+# dmrg parameters
+  dmrg_dir             TMP              # it will be translated to uppercase..
+  dmrg_m               500              # DMRG MPS size
+  dmrg_maxit           40               # max number of sweeps
+  dmrg_mem             100               # in GB
+  dmrg_scf             True
+  dmrg_nthr            28
+  dmrg_localize        True
+  dmrg_tprop           True
+}
+
+energy('forte')
+
+
+--------------------------------------------------------------------------
+
+  Memory set to  59.605 GiB by Python driver.
+
+ Data is an array -> call again
+*** tstart() called on debian
+*** at Thu Oct  1 02:56:15 2020
+
+   => Loading Basis Set <=
+
+    Name: CC-PVDZ
+    Role: ORBITAL
+    Keyword: BASIS
+    atoms 1-16  entry C          line   138 file /home/daniilkh/miniconda3/envs/psi4/share/psi4/basis/cc-pvdz.gbs 
+    atoms 17-34 entry H          line    22 file /home/daniilkh/miniconda3/envs/psi4/share/psi4/basis/cc-pvdz.gbs 
+
+   => Loading Basis Set <=
+
+    Name: CC-PVDZ-JKFIT
+    Role: JKFIT
+    Keyword: DF_BASIS_SCF
+    atoms 1-16  entry C          line   121 file /home/daniilkh/miniconda3/envs/psi4/share/psi4/basis/cc-pvdz-jkfit.gbs 
+    atoms 17-34 entry H          line    51 file /home/daniilkh/miniconda3/envs/psi4/share/psi4/basis/cc-pvdz-jkfit.gbs 
+
+  DFHelper Memory: AOs need 0.836 GiB; user supplied 44.703 GiB. Using in-core AOs.
+
+  ==> Iterations <==
+
+                           Total Energy        Delta E     RMS |[F,P]|
+
+   @DF-RHF iter SAD:  -614.18262257874460   -6.14183e+02   0.00000e+00 
+   @DF-RHF iter   1:  -615.98793685012777   -1.80531e+00   2.43976e-03 DIIS
+   @DF-RHF iter   2:  -616.27224765316475   -2.84311e-01   8.11909e-04 DIIS
+   @DF-RHF iter   3:  -616.30176731949496   -2.95197e-02   2.15491e-04 DIIS
+   @DF-RHF iter   4:  -616.30592608179495   -4.15876e-03   6.21217e-05 DIIS
+   @DF-RHF iter   5:  -616.30621518242754   -2.89101e-04   2.53582e-05 DIIS
+   @DF-RHF iter   6:  -616.30631612756792   -1.00945e-04   6.75704e-06 DIIS
+   @DF-RHF iter   7:  -616.30632367236228   -7.54479e-06   2.30330e-06 DIIS
+   @DF-RHF iter   8:  -616.30632416817707   -4.95815e-07   4.59375e-07 DIIS
+   @DF-RHF iter   9:  -616.30632418107098   -1.28939e-08   1.87052e-07 DIIS
+   @DF-RHF iter  10:  -616.30632418332402   -2.25305e-09   5.36415e-08 DIIS
+   @DF-RHF iter  11:  -616.30632418370681   -3.82784e-10   2.18910e-08 DIIS
+   @DF-RHF iter  12:  -616.30632418377149   -6.46878e-11   8.12065e-09 DIIS
+  Energy and wave function converged.
+
+
+  ==> Post-Iterations <==
+
+  @DF-RHF Final Energy:  -616.30632418377149
+
+   => Energetics <=
+
+    Nuclear Repulsion Energy =            797.2500049998512850
+    One-Electron Energy =               -2412.1689434133027135
+    Two-Electron Energy =                 998.6126142296800481
+    Total Energy =                       -616.3063241837714941
+
+Computation Completed
+
+
+Properties will be evaluated at   0.000000,   0.000000,   0.000000 [a0]
+
+Properties computed using the SCF density matrix
+
+  Nuclear Dipole Moment: [e a0]
+     X:    -0.0000      Y:     0.0000      Z:     0.0000
+
+  Electronic Dipole Moment: [e a0]
+     X:     0.0000      Y:    -0.0000      Z:     0.0000
+
+  Dipole Moment: [e a0]
+     X:     0.0000      Y:    -0.0000      Z:     0.0000     Total:     0.0000
+
+  Dipole Moment: [D]
+     X:     0.0000      Y:    -0.0000      Z:     0.0000     Total:     0.0000
+
+
+*** tstop() called on debian at Thu Oct  1 02:56:31 2020
+Module time:
+	user time   =     181.78 seconds =       3.03 minutes
+	system time =       9.17 seconds =       0.15 minutes
+	total time  =         16 seconds =       0.27 minutes
+Total time:
+	user time   =     181.78 seconds =       3.03 minutes
+	system time =       9.17 seconds =       0.15 minutes
+	total time  =         16 seconds =       0.27 minutes
+   => Loading Basis Set <=
+
+    Name: CC-PVDZ-RI
+    Role: RIFIT
+    Keyword: DF_BASIS_MP2
+    atoms 1-16  entry C          line   159 file /home/daniilkh/miniconda3/envs/psi4/share/psi4/basis/cc-pvdz-ri.gbs 
+    atoms 17-34 entry H          line    19 file /home/daniilkh/miniconda3/envs/psi4/share/psi4/basis/cc-pvdz-ri.gbs 
+
+
+  Forte
+  ----------------------------------------------------------------------------
+  A suite of quantum chemistry methods for strongly correlated electrons
+
+    git branch: master - git commit: 041f0a8e
+
+  Developed by:
+    Francesco A. Evangelista, Chenyang Li, Kevin P. Hannon,
+    Jeffrey B. Schriber, Tianyuan Zhang, Chenxi Cai,
+    Nan He, Nicholas Stair, Shuhe Wang, Renke Huang
+  ----------------------------------------------------------------------------
+
+  Size of Determinant class: 128 bits
+
+  WARNING: FORTE HAS BEEN PWNED!
+  You use pymodule.py modified for interaction with StackBlock
+  Use it with appropiate Forte version
+
+  Read options for space FROZEN_DOCC
+  Read options for space RESTRICTED_DOCC
+  Read options for space ACTIVE
+
+  ==> MO Space Information <==
+
+  -------------------------------------
+                       A'    A"   Sum
+  -------------------------------------
+    FROZEN_DOCC        16     0    16
+    RESTRICTED_DOCC    33     0    33
+    ACTIVE              0    16    16
+    RESTRICTED_UOCC   199    66   265
+    FROZEN_UOCC         0     0     0
+    Total             248    82   330
+  -------------------------------------
+
+  ==> Integral Transformation <==
+
+  Number of molecular orbitals:                   330
+  Number of correlated molecular orbitals:        314
+  Number of frozen occupied orbitals:              16
+  Number of frozen unoccupied orbitals:             0
+  Two-electron integral type:              Density fitting
+
+  DFHelper Memory: AOs need 0.620 GiB; user supplied 1.907 GiB. Using in-core AOs.
+
+  DFHelper Memory: AOs need 0.642 GiB; user supplied 381.470 GiB. Using in-core AOs.
+
+
+  Timing for computing density-fitted integrals:             32.611 s.
+
+  Localization of active space started
+  ==> Pipek-Mezey Localizer <==
+
+    Convergence =   1.000E-12
+    Maxiter     =         200
+
+    Iteration                   Metric       Residual
+    @PM    0   1.3683729054818534E+00              -
+    @PM    1   1.7567456401169391E+01   1.183821E+01
+    @PM    2   2.0438452903609946E+01   1.634270E-01
+    @PM    3   2.0456068131443232E+01   8.618670E-04
+    @PM    4   2.0456122603163628E+01   2.662864E-06
+    @PM    5   2.0456122851274838E+01   1.212895E-08
+    @PM    6   2.0456122853110589E+01   8.974091E-11
+    @PM    7   2.0456122853123521E+01   6.321764E-13
+
+    PM Localizer converged.
+
+
+
+          -----------------------------------------------------------
+                                  DMRG CI/SCF
+            Kevin Hannon, Daniil Khokhlov (interface to StackBlock)
+          -----------------------------------------------------------
+
+
+  ==> DMRGSCF Iteration <==
+
+ iter    ||g||           Delta_E            E_DMRGSCF       ITER_T       CONV_TYPE
+
+ DMRGCI started
+  E(0) = -616.453029477698
+  E(1) = -616.311188360925
+  E(2) = -616.285552076168
+  DFHelper Memory: AOs need 0.620 GiB; user supplied 1.907 GiB. Using in-core AOs.
+
+  DFHelper Memory: AOs need 0.642 GiB; user supplied 381.470 GiB. Using in-core AOs.
+
+
+    0   0.002134328601   -616.349923305029   -616.349923305029  185.136833 s       
+
+ DMRGCI started
+  E(0) = -616.506385398570
+  E(1) = -616.371392801808
+  E(2) = -616.346253787008
+  DFHelper Memory: AOs need 0.620 GiB; user supplied 1.907 GiB. Using in-core AOs.
+
+  DFHelper Memory: AOs need 0.642 GiB; user supplied 381.470 GiB. Using in-core AOs.
+
+
+    1   0.001171837810   -0.058087357552   -616.408010662581  124.696225 s       
+
+ DMRGCI started
+  E(0) = -616.514062862830
+  E(1) = -616.378141726683
+  E(2) = -616.352476294586
+  DFHelper Memory: AOs need 0.620 GiB; user supplied 1.907 GiB. Using in-core AOs.
+
+  DFHelper Memory: AOs need 0.642 GiB; user supplied 381.470 GiB. Using in-core AOs.
+
+
+    2   0.000483121908   -0.006882964982   -616.414893627563  119.204583 s       
+
+ DMRGCI started
+  E(0) = -616.515731708564
+  E(1) = -616.379376183034
+  E(2) = -616.353276123923
+  DFHelper Memory: AOs need 0.620 GiB; user supplied 1.907 GiB. Using in-core AOs.
+
+  DFHelper Memory: AOs need 0.642 GiB; user supplied 381.470 GiB. Using in-core AOs.
+
+
+    3   0.000227448526   -0.001234376909   -616.416128004472  106.476297 s  DIIS 
+
+ DMRGCI started
+  E(0) = -616.516165844388
+  E(1) = -616.379665547756
+  E(2) = -616.353332416980
+  DFHelper Memory: AOs need 0.620 GiB; user supplied 1.907 GiB. Using in-core AOs.
+
+  DFHelper Memory: AOs need 0.642 GiB; user supplied 381.470 GiB. Using in-core AOs.
+
+
+    4   0.000105344664   -0.000259931592   -616.416387936064  110.329887 s  DIIS 
+
+ DMRGCI started
+  E(0) = -616.516306171279
+  E(1) = -616.379746345278
+  E(2) = -616.353292387345
+  DFHelper Memory: AOs need 0.620 GiB; user supplied 1.907 GiB. Using in-core AOs.
+
+  DFHelper Memory: AOs need 0.642 GiB; user supplied 381.470 GiB. Using in-core AOs.
+
+
+    5   0.000051371615   -0.000060365412   -616.416448301476  101.394211 s  DIIS 
+
+ DMRGCI started
+  E(0) = -616.516306171226
+  E(1) = -616.379746345203
+  E(2) = -616.353292387255
+  DFHelper Memory: AOs need 0.620 GiB; user supplied 1.907 GiB. Using in-core AOs.
+
+  DFHelper Memory: AOs need 0.642 GiB; user supplied 381.470 GiB. Using in-core AOs.
+
+
+    6   0.000006868058   -0.000020384139   -616.416468685616   95.354257 s  DIIS 
+
+ DMRGCI started
+  E(0) = -616.516833032181
+  E(1) = -616.380210452795
+  E(2) = -616.353630322615
+   7   0.000003853183   -0.000000314282   -616.416468999898   59.352849 s
+
+
+ A miracle has come to pass. The DMRGSCF iterations have converged.
+ @E(CASSCF) =  -616.416468999898 
+
+(i->j)       Dx       Dy       Dz       Lx       Ly       Lz     sigma     <Nex>
+(0->1)    -0.0000   0.0000   0.0000   0.0000   0.0000   0.0519   0.2295   1.7705
+(0->2)    -0.0390   0.0006   0.0000   0.0000   0.0000   0.0000   0.2432   1.7568
+
+  Checking RDMs...
+  1RDM - GOOD, tr = 15.99999999987063
+  2RDM - GOOD, tr = 239.9999999980593
+  3RDM - GOOD, tr = 3359.999999972848
+  ...RDMs' QC passed
+
+
+       -----------------------------------------------------------------
+                            Semi-Canonical Orbitals
+         Chenyang Li, Jeffrey B. Schriber and Francesco A. Evangelista
+       -----------------------------------------------------------------
+
+  Took 28.873735 s to build Fock matrix
+
+  ==> Checking Fock Matrix Diagonal Blocks <==
+
+    Off-Diag. Elements       Max           2-Norm
+    ------------------------------------------------
+    Fa actv              0.0265721141   0.1124087565
+    Fb actv              0.0265721141   0.1124087565
+    ------------------------------------------------
+    Fa core              0.0041322603   0.0167706551
+    Fb core              0.0041322603   0.0167706551
+    ------------------------------------------------
+    Fa virt              0.0283454479   0.1092751383
+    Fb virt              0.0283454479   0.1092751383
+    ------------------------------------------------  DFHelper Memory: AOs need 0.620 GiB; user supplied 1.907 GiB. Using in-core AOs.
+
+  DFHelper Memory: AOs need 0.642 GiB; user supplied 381.470 GiB. Using in-core AOs.
+
+
+
+  ==> RDMs Transformation to Semicanonical Basis <==
+
+    Transformed 1 RDMs.
+    Transformed 2 RDMs.
+    Transformed 3 RDMs.
+  SemiCanonicalize takes 78.941720 s.
+
+  ==> Multireference Driven Similarity Renormalization Group <==
+
+    Reading DSRG options ............................ Done
+    Setting ambit MO space .......................... Done
+    Preparing tensors for density cumulants ......... Done
+    Building Fock matrix ............................ Done
+
+                  --------------------------------------------
+                      Density Fitted / Cholesky Decomposed
+                    MR-DSRG Second-Order Perturbation Theory
+                      Kevin Hannon and Chenyang (York) Li
+                                28 threads (OMP)
+                  --------------------------------------------
+
+    References:
+      u-DSRG-MRPT2:      J. Chem. Theory Comput. 2015, 11, 2097.
+      DF/CD-DSRG-MRPT2:  J. Chem. Phys. 2016, 144, 204111.
+      (pr-)DSRG-MRPT2:   J. Chem. Phys. 2017, 146, 124132.
+
+
+  ==> Calculation Information <==
+
+    Flow parameter                                 5.000e-01
+    Taylor expansion threshold                     1.000e-03
+    Cholesky tolerance                             1.000e-06
+    Psi4 ref_type                                        RHF
+    Integral type                                         DF
+    Source operator                                 STANDARD
+    CCVV algorithm                                 FLY_AMBIT
+    CCVV source                                       NORMAL
+    Reference relaxation                                NONE
+    State type                                   MULTI-STATE
+    Multi-state type                                 SA_FULL
+    form Hbar3                                         FALSE
+
+  ==> Checking Semicanonical Orbitals <==
+
+    Abs. max of Fock core, active, virtual blocks (Fij, i != j)
+                  core          active         virtual
+    --------------------------------------------------
+    Fα    0.0000000000    0.0000000000    0.0000000000
+    Fβ    0.0000000000    0.0000000000    0.0000000000
+    --------------------------------------------------
+
+    1-Norm of Fock core, active, virtual blocks (Fij, i != j)
+                  core          active         virtual
+    --------------------------------------------------
+    Fα    0.0000000000    0.0000000000    0.0000000015
+    Fβ    0.0000000000    0.0000000000    0.0000000015
+    --------------------------------------------------
+
+    Orbitals are semi-canonicalized.
+
+  ==> Computing DSRG-MRPT2 Energy <==
+
+  Reference Energy = -616.428059412553807
+    Computing T2                             ...... Done. Timing       49.563549 s
+    Renormalizing V                          ...... Done. Timing       48.495923 s
+    Computing T1                             ...... Done. Timing        0.031990 s
+    Renormalizing F                          ...... Done. Timing        0.028335 s
+    Computing <[F, T1]>                      ...... Done. Timing        0.000718 s
+    Computing <[F, T2]>                      ...... Done. Timing        0.016979 s
+    Computing <[V, T1]>                      ...... Done. Timing        0.023494 s
+    Computing <[V, T2]> 4HH                  ...... Done. Timing        0.027890 s
+    Computing <V, T2]> 4PP                   ...... Done. Timing        0.895515 s
+    Computing [V, T2] 4PH                    ...... Done. Timing        0.734908 s
+    Computing [V, T2] λ3                     ...... Done. Timing       18.671895 s
+    Computing <[V, T2]> (C_2)^4 (no ccvv)    ...... Done. Timing        2.505104 s
+    Computing <[V, T2]> (C_2)^4 ccvv         ...... Done. Timing        1.671175 s
+  Eccvv: -1.1002518459
+
+  ==> DSRG-MRPT2 (DF/CD) Energy Summary <==
+
+    E0 (reference)                 =   -616.428059412553807
+    <[F, T1]>                      =     -0.015579296598385
+    <[F, T2]>                      =      0.018077581396785
+    <[V, T1]>                      =      0.014794185325615
+    <[V, T2]> C_4 (C_2)^2 HH       =      0.005650812774840
+    <[V, T2]> C_4 (C_2)^2 PP       =      0.052181630918475
+    <[V, T2]> C_4 (C_2)^2 PH       =      0.149905845558867
+    <[V, T2]> C_6 C_2              =     -0.002384695192581
+    <[V, T2]> (C_2)^4              =     -2.145390846154759
+    <[V, T2]>                      =     -1.940037252095159
+    DSRG-MRPT2 correlation energy  =     -1.922744781971143
+    DSRG-MRPT2 total energy        =   -618.350804194524926
+    max(T1)                        =      0.033031347213530
+    ||T1||                         =      0.181937852557750
+
+  ==> Form DSRG-PT2 Transformed Hamiltonian <==
+
+    Initalizing Hbar                         ... Done. Timing:      0.134 s.
+    Computing all-active Hbar                ... Done. Timing:      8.422 s.
+
+  ==> De-Normal-Order DSRG Transformed Hamiltonian <==
+
+    Computing the scalar term                ... Done. Timing    0.002 s
+    Computing the 1-body term                ... Done. Timing    0.001 s
+
+  ==> Rotate DSRG Transformed Hamiltonian back to Original Basis <==
+
+    Rotating 1-body term to original basis   ... Done. Timing    0.000 s
+    Rotating 2-body term to original basis   ... Done. Timing    0.009 s
+
+          -----------------------------------------------------------
+                                  DMRG CI/SCF
+            Kevin Hannon, Daniil Khokhlov (interface to StackBlock)
+          -----------------------------------------------------------
+
+ DMRGCI started
+  E(0) = -618.462749261524
+  E(1) = -618.340488914214
+  E(2) = -618.326178070115
+  E(3) = -618.314337879470
+
+(i->j)       Dx       Dy       Dz       Lx       Ly       Lz     sigma     <Nex>
+(0->1)     0.0148   0.0230   0.0000   0.0000   0.0000   0.1413   0.3395   1.6605
+(0->2)     6.2209  -0.5067   0.0000   0.0000   0.0000  -0.0242   0.8518   1.1482
+(0->3)    -3.7705  -0.0364   0.0000   0.0000   0.0000   0.0260   0.3610   1.6390
+
+
+
+  ==> Total Timings (s) for Computing Commutators <==
+
+             [H1, T1]    [H1, T2]    [H2, T1]    [H2, T2]
+    -----------------------------------------------------
+    -> C0       0.001       0.017       0.024       5.835
+    -> C1       0.001       0.039       0.037       6.352
+    -> C2                   0.026       0.036       1.932
+    -----------------------------------------------------
+
+  Time to run job          :     1632.049 seconds
+  Total                    :     1632.049 seconds
+    Psi4 stopped on: Thursday, 01 October 2020 03:23AM
+    Psi4 wall time for execution: 0:27:28.60
+
+*** Psi4 exiting successfully. Buy a developer a beer!

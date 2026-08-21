@@ -1,5 +1,6 @@
 // block2_import_dressed — encode a TOTAL dressed active-space operator (0/1/2/3-body) as one
-// spin-adapted GeneralFCIDUMP -> GeneralMPO and swap it into the engine for a cold dressed solve.
+// spin-adapted GeneralFCIDUMP -> GeneralMPO and swap it into the engine for the dressed solve, plus
+// the bare-state snapshot and the bare-vs-dressed state overlap that map the dressed roots back.
 // The bare fcidump/hamil stay intact so the RDM read-out (block2_dmrg.cpp) keeps working.
 
 #include "block2_dmrg_engine.h"   // dmrgci_engine, block2 API, shared helpers
@@ -8,9 +9,11 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <string>
 #include <vector>
 
 #include "common_vars.h"          // out_stream
+#include "tensor_rotate.h"        // rotate1/rotate2/rotate3 (active-space basis transforms)
 #include "matr.h"
 #include "timer.h"
 
@@ -55,7 +58,7 @@ static void add_group(const std::shared_ptr<GeneralFCIDUMP<double>> &gfd, const 
     gfd->add_sum_term(T.data(), s, shape, strides, 0.0, factor, {}, rperm);
 }
 
-// The dressed operator and the IP/EA blocks combine the stored g1/g2 with read-out RDMs. Under
+// The PT2 increments and the IP/EA blocks combine the stored g1/g2 with read-out RDMs. Under
 // internal localization the former are held in the localized basis while the latter come back
 // delocalized (block2_dmrg.cpp), so the mix is uncertified and must refuse.
 static void require_no_internal_localization(const dmrgci_engine &e, const char *what) {
@@ -73,14 +76,56 @@ static bool all_zero(const double *T, size_t len) {
     return true;
 }
 
+// A converged MPS is the precondition of the snapshot and the overlap.
+static void require_solved(const dmrgci_engine &e, const char *what) {
+    if (e.mps == nullptr || e.mps_info == nullptr) {
+        fprintf(out_stream, "ERROR: DMRG %s needs a converged MPS (call solve first)\n", what);
+        exit(EXIT_FAILURE);
+    }
+}
+
+// Drop a previous bare-state snapshot and its scratch files.
+static void drop_snapshot(dmrgci_engine &e) {
+    for (const std::string &t : e.snap_tags)
+        remove_tag_files(t);
+    e.snap_tags.clear();
+    e.snap_mps.clear();
+    e.snap_set = -1;
+}
+
+// Move a one-site end-centered MPS to the other end so bra and ket share a center (the
+// MovingEnvironment constructor asserts they agree). Lossless gauge sweep at the MPS's own bond
+// dimension; the one-dot restriction of block2's DMRGDriver::align_mps_center.
+static void align_one_dot_center(dmrgci_engine &e, const std::shared_ptr<MPS<SU2, double>> &mps,
+                                 int target) {
+    if (mps->center == target) return;
+    if (mps->dot != 1 || (target != 0 && target != mps->n_sites - 1)) {
+        fprintf(out_stream, "ERROR: the MPS overlap expects one-site end-centered states"
+                            " (dot=%d, target center %d of %d sites)\n",
+                mps->dot, target, mps->n_sites);
+        exit(EXIT_FAILURE);
+    }
+    std::shared_ptr<CG<SU2>> cg = e.hamil->opf->cg;
+    mps->load_mutable();
+    mps->info->load_mutable();
+    mps->info->bond_dim = std::max(mps->info->bond_dim, mps->info->get_max_bond_dimension());
+    if (target == 0)
+        while (mps->center != 0)
+            mps->move_left(cg, nullptr);
+    else {
+        mps->canonical_form[0] = 'K';
+        while (mps->center != mps->n_sites - 1)
+            mps->move_right(cg, nullptr);
+    }
+    mps->save_data();
+}
+
 } // namespace
 
 void block2_casci_wrap::import_dressed_operator(const double *h1_total, const double *h2_total,
                                                 const double *h3_total, double const_total) {
     dmrgci_engine &e = *impl_;
     const int n = e.n_act;
-
-    require_no_internal_localization(e, "dressed-operator import");
 
     // A Fiedler lattice must already be frozen by the bare import; without it the dressed tensors
     // have no site->orbital map to land on.
@@ -89,14 +134,31 @@ void block2_casci_wrap::import_dressed_operator(const double *h1_total, const do
         exit(EXIT_FAILURE);
     }
 
-    // Reorder every axis of each tensor onto the frozen lattice (identity if reorder_perm empty).
-    std::vector<double> h1 = reorder_gather(h1_total, n, 2, e.reorder_perm);
-    std::vector<double> h2 = reorder_gather(h2_total, n, 4, e.reorder_perm);
-    const size_t len3 = (size_t)n * n * n * n * n * n;
+    const size_t len1 = (size_t)n * n, len2 = len1 * len1, len3 = len2 * len1;
     const bool have_3body = !all_zero(h3_total, len3);
+
+    // Native basis in, solver basis out: the localizing rotation first (exactly as the bare import
+    // does), then every axis onto the frozen lattice (identity if reorder_perm is empty).
+    std::vector<double> l1, l2, l3;
+    const double *r1 = h1_total, *r2 = h2_total, *r3 = h3_total;
+    if (e.localize_on) {
+        l1.resize(len1);
+        l2.resize(len2);
+        rotate1(h1_total, e.U_loc.data(), n, l1.data(), /*forward=*/true);
+        rotate2(h2_total, e.U_loc.data(), n, l2.data(), /*forward=*/true);
+        r1 = l1.data();
+        r2 = l2.data();
+        if (have_3body) {
+            l3.resize(len3);
+            rotate3(h3_total, e.U_loc.data(), n, l3.data(), /*forward=*/true);
+            r3 = l3.data();
+        }
+    }
+    std::vector<double> h1 = reorder_gather(r1, n, 2, e.reorder_perm);
+    std::vector<double> h2 = reorder_gather(r2, n, 4, e.reorder_perm);
     std::vector<double> h3;
     if (have_3body)
-        h3 = reorder_gather(h3_total, n, 6, e.reorder_perm);
+        h3 = reorder_gather(r3, n, 6, e.reorder_perm);
 
     // One spin-adapted GeneralFCIDUMP; factors 2^{k/2}/k! complete the 1/k! generator sums.
     auto gfd = std::make_shared<GeneralFCIDUMP<double>>(ElemOpTypes::SU2);
@@ -122,7 +184,71 @@ void block2_casci_wrap::import_dressed_operator(const double *h1_total, const do
     // adds no second constant in a sweep, while making the operator usable for expectations.
     mpo = std::make_shared<IdentityAddedMPO<SU2, double>>(mpo);
 
-    e.mpo = mpo; // the existing solve() runs the dressed MPO cold (have_rotation stays false)
+    e.mpo = mpo; // solve() runs the dressed MPO, warm off the retained MPS once a snapshot exists
+    e.dressed_mpo = true;
+}
+
+// One persistent single-root MPS per root, extracted from the converged MultiMPS exactly as the RDM
+// read-outs do; the intermediate MultiMPS extract is transient. The dressed solve overwrites the
+// retained tag (warm) or drops it (cold), so this is the only copy of the bare states left.
+void block2_casci_wrap::snapshot_states(int i_set) {
+    dmrgci_engine &e = *impl_;
+    require_solved(e, "snapshot_states");
+    host_threads_guard htg;
+
+    drop_snapshot(e);
+    e.snap_mps.resize(e.n_s);
+    for (int st = 0; st < e.n_s; st++) {
+        const std::string xtag = e.mps_info->tag + "-bare" + std::to_string(st);
+        const std::string stag = xtag + "-s";
+        e.snap_mps[st] = extract_root_single(e, st, xtag, stag);
+        e.snap_tags.push_back(stag);
+        remove_tag_files(xtag); // the single-MPS copy under stag is self-contained
+    }
+    e.snap_set = i_set;
+    assert_stack_clean("bare state snapshot");
+}
+
+// One identity-MPO expectation per (dressed, bare) pair. Both sets live on the same frozen lattice
+// in the same basis, so no rotation enters and the value is exactly the CI overlap; it is symmetric
+// and real, so the bare state takes the bra slot and the transient dressed extract is the one moved
+// into a common center.
+void block2_casci_wrap::calc_S(double *S_track, int a, int b) {
+    dmrgci_engine &e = *impl_;
+    require_solved(e, "calc_S");
+    if (a != 0 || e.snap_set < 0 || b != e.snap_set || (int)e.snap_mps.size() != e.n_s) {
+        fprintf(out_stream, "ERROR: DMRG calc_S compares the current MPS set (a=0) against the"
+                            " snapshot set %d (got a=%d b=%d)\n", e.snap_set, a, b);
+        exit(EXIT_FAILURE);
+    }
+    host_threads_guard htg;
+    const int ns = e.n_s;
+
+    std::shared_ptr<MPO<SU2, double>> impo = std::make_shared<IdentityMPO<SU2, double>>(e.hamil);
+    impo = std::make_shared<SimplifiedMPO<SU2, double>>(impo, std::make_shared<Rule<SU2, double>>());
+
+    for (int d = 0; d < ns; d++) {
+        const std::string xtag = e.mps_info->tag + "-ov" + std::to_string(d);
+        const std::string stag = xtag + "-s";
+        std::shared_ptr<MPS<SU2, double>> dmps = extract_root_single(e, d, xtag, stag);
+        align_one_dot_center(e, dmps, e.snap_mps[0]->center);
+
+        for (int q = 0; q < ns; q++) {
+            auto ome = std::make_shared<MovingEnvironment<SU2, double, double>>(
+                impo, e.snap_mps[q], dmps, "OVLP");
+            ome->init_environments(false);
+            auto ex = std::make_shared<Expect<SU2, double, double>>(ome, (ubond_t)e.cfg.m,
+                                                                    (ubond_t)e.cfg.m);
+            ex->iprint = 0; // silence the per-site Expect log
+            // propagate = false: one blocking at the built center, so neither MPS is touched
+            S_track[(size_t)d * ns + q] = ex->solve(false, dmps->center != 0);
+            ome->remove_partition_files();
+        }
+        remove_tag_files(xtag); // the per-root extract and its single-MPS copy are transient
+        remove_tag_files(stag);
+    }
+    impo->deallocate();
+    assert_stack_clean("bare-vs-dressed CI overlap");
 }
 
 void block2_casci_wrap::PT2_import_data(double * ext_T3,
@@ -131,7 +257,9 @@ void block2_casci_wrap::PT2_import_data(double * ext_T3,
                                        double * ext_T2_AB,
                                        double * ext_T1,
                                        double   ext_T0){
-    
+
+    require_no_internal_localization(*impl_, "block2_casci_wrap::PT2_import_data");
+
     int error=0;
     if(g1.size()!=n_act_*n_act_            ) error=1;
     if(g2.size()!=n_act_*n_act_*n_act_*n_act_) error=1;

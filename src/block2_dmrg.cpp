@@ -21,7 +21,7 @@
 #include <omp.h>
 
 #include "common_vars.h"      // out_stream
-#include "localized_dmrg.h"   // rotate1/rotate2 (active-space basis transforms)
+#include "tensor_rotate.h"    // rotate1/rotate2 (active-space basis transforms)
 #include "blas_link.h"        // cblas_dgemm (warm-start rotation regularization)
 #include "mps_rotation.h"     // evolve_sa_multimps (multi-root SA MPS rotation)
 
@@ -278,9 +278,9 @@ static double rdm_energy(const dmrgci_engine &e, const double *d2) {
 // Expect dispatches on the canonical form, and its MultiMPS branch resolves Automatic to Normal, a
 // serial loop over operators; only a plain MPS reaches the OpenMP-parallel path. The center is then
 // put in the one-site form (block2's site_type=1 conversion), which needs it at an end.
-static std::shared_ptr<MPS<SU2, double>> extract_root_single(dmrgci_engine &e, int st,
-                                                             const std::string &xtag,
-                                                             const std::string &stag) {
+std::shared_ptr<MPS<SU2, double>> nopt_block2::extract_root_single(dmrgci_engine &e, int st,
+                                                                  const std::string &xtag,
+                                                                  const std::string &stag) {
     std::shared_ptr<MultiMPS<SU2, double>> xmps = e.mps->extract(st, xtag);
     std::shared_ptr<MPS<SU2, double>> imps = xmps->make_single(stag);
     if (imps->dot == 2) {
@@ -610,6 +610,40 @@ static bool rotate_retained_mps(dmrgci_engine &e) {
     return true; // rotated MPS in place; benign success is silent (keeps the CASSCF table clean)
 }
 
+// Enforce exactly the symmetries qc_hamiltonian/RuleQC assume -- Hermiticity (p,q,r,s)->(q,p,s,r)
+// and particle exchange (p,q,r,s)->(r,s,p,q). block2 prunes complementary operators on
+// |integral| < TINY reading one partner per slot, so partners must agree bit for bit. The ERI-only
+// bra/ket transposes are deliberately left alone: a Hermitian dressed operator stays exact.
+static void symmetrize_active_integrals(const double *h1, const double *h2, int n,
+                                        std::vector<double> &h1_sym, std::vector<double> &h2_sym) {
+    auto id2 = [n](int p, int q) { return (size_t)p * n + q; };
+    auto id4 = [n](int p, int q, int r, int s) {
+        return (((size_t)p * n + q) * n + r) * n + s;
+    };
+    h1_sym.resize((size_t)n * n);
+    h2_sym.resize((size_t)n * n * n * n);
+
+    for (int p = 0; p < n; p++)
+        for (int q = 0; q <= p; q++) {
+            const double av = 0.5 * (h1[id2(p, q)] + h1[id2(q, p)]);
+            h1_sym[id2(p, q)] = h1_sym[id2(q, p)] = av;
+        }
+
+    // Orbit of the 4-group {id, H, P, HP}; flat index order is lexicographic, so the lowest one
+    // is the representative and each orbit is averaged exactly once (degenerate orbits included).
+    for (int p = 0; p < n; p++)
+        for (int q = 0; q < n; q++)
+            for (int r = 0; r < n; r++)
+                for (int s = 0; s < n; s++) {
+                    const size_t i0 = id4(p, q, r, s), i1 = id4(q, p, s, r);
+                    const size_t i2 = id4(r, s, p, q), i3 = id4(s, r, q, p);
+                    if (i0 > i1 || i0 > i2 || i0 > i3)
+                        continue;
+                    const double av = 0.25 * (h2[i0] + h2[i1] + h2[i2] + h2[i3]);
+                    h2_sym[i0] = h2_sym[i1] = h2_sym[i2] = h2_sym[i3] = av;
+                }
+}
+
 void block2_casci_wrap::import_integrals(double *aaaa, double *f_act, double e_core) {
     dmrgci_engine &e = *impl_;
     n_act_ = e.n_act;
@@ -631,8 +665,14 @@ void block2_casci_wrap::import_integrals(double *aaaa, double *f_act, double e_c
     g2.resize(n*n*n*n);
     memcpy(g1.data(), h1, sizeof(double)*n*n    );
     memcpy(g2.data(), h2, sizeof(double)*n*n*n*n);
-    
-    
+
+    // Local copies: the caller's buffers are reused elsewhere and must not be touched. Everything
+    // block2 sees below -- FCIDUMP and the Fiedler metric -- reads the symmetrized arrays.
+    std::vector<double> h1_sym, h2_sym;
+    symmetrize_active_integrals(h1, h2, n, h1_sym, h2_sym);
+    h1 = h1_sym.data();
+    h2 = h2_sym.data();
+
     // In-memory FCIDUMP (classic SU2 path). No rescale(): NOPT passes the embedded 1-e
     // Hamiltonian F_act (frozen core folded in) and chemist (tu|vw) directly
     e.fcidump = std::make_shared<FCIDUMP<double>>();
@@ -669,6 +709,7 @@ void block2_casci_wrap::import_integrals(double *aaaa, double *f_act, double e_c
     e.hamil = std::make_shared<HamiltonianQC<SU2, double>>(vacuum, n, e.orbsym, e.fcidump);
     e.hamil->opf->seq->mode = SeqTypes::Tasked;
     e.mpo = build_qc_mpo(e.hamil);
+    e.dressed_mpo = false; // any previous dressing leaves with the rebuilt bare MPO
 }
 
 // One-site sweeps closing every solve. Mirrors block2's default schedule, which ends two sweeps
@@ -743,26 +784,35 @@ int block2_casci_wrap::solve(int, int, bool use_prev_guess) {
     assert_stack_clean("solve entry"); // block2 LIFO stacks must be empty between macro-iterations
     e.d2_valid = false; // new wavefunction -> any cached 2-RDM is stale
     e.dmfull_valid = false; // ... and the cached property 1-RDM
+    e.g2full_valid = false; // ... and the cached transition 2-RDM
 
     // Warm-start: rotate the retained MPS into the current basis and re-solve from it. Requires a
     // usable retained MPS and a rotation from the host; the rotation itself may decline (return
     // false) if the basis change is too large, in which case we cold-start this iteration.
     // Same condition import_integrals keyed the frozen lattice order on, before the rotation could decline.
     const bool order_frozen = (e.have_rotation && !e.reorder_perm.empty());
+    // A dressed re-solve stays on the frozen lattice in the same basis, so the retained MPS is the
+    // guess with no rotation at all. Gated on the snapshot: warming overwrites the retained tag, so
+    // without it the bare states the dressed roots are mapped against would be gone.
+    const bool dressed_warm = (e.dressed_mpo && e.snap_set >= 0 && use_prev_guess &&
+                               e.cfg.warm_start == DMRG_WARM_ON && e.mps != nullptr &&
+                               e.mps_info != nullptr);
     // use_prev_guess false forces a cold start; true warms only when the host armed a rotation
     // and an MPS is retained.
-    bool warm = (e.cfg.warm_start == DMRG_WARM_ON && e.have_rotation && e.mps != nullptr &&
+    bool warm = dressed_warm ||
+                (e.cfg.warm_start == DMRG_WARM_ON && e.have_rotation && e.mps != nullptr &&
                  e.mps_info != nullptr && use_prev_guess);
     if (warm) {
         reload_retained_mps(e);        // fresh from disk (the in-memory shell is stale post-solve)
-        if (e.cfg.warm_rotate == DMRG_WARM_ON)
+        if (!dressed_warm && e.cfg.warm_rotate == DMRG_WARM_ON)
             warm = rotate_retained_mps(e); // rotate into the current basis; false => cold fallback
         // else reuse-only: the reloaded MPS is the (unrotated) warm guess; the short re-solve corrects
         // the basis change. Proven crash-free and == cold; the safe fallback if rotation is declined.
     }
     e.have_rotation = false; // consumed; the host supplies a fresh R each warm iteration
-    if (!warm && order_frozen)
-        recompute_cold_order(e); // the order was pinned to a basis we are no longer in
+    if (!warm && order_frozen && !e.dressed_mpo)
+        recompute_cold_order(e); // the order was pinned to a basis we are no longer in; never over a
+                                 // dressing, where it would rebuild the MPO from the bare FCIDUMP
 
     // --- sweep schedule: short warm re-solve vs full cold ramp ---
     dmrg_schedule sch;

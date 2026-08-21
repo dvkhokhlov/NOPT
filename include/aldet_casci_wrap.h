@@ -28,6 +28,8 @@ public:
     // --- configuration / lifecycle ---
     void init_state_storage(int n_s, int i_set) override { ci_->init_zero_vec(n_s, i_set); }
     bool has_coef(int i_set) const override { return ci_->coef[i_set] != nullptr; }
+    // Same copy the warm-guess solve makes, into the caller's slot (calc_S then reads set i_set).
+    void snapshot_states(int i_set) override { ci_->copy_coef(i_set, ci_, n_s_, 0, 0); }
     void set_act_rep_num(int* rep_num) override { ci_->act_rep_num = rep_num; }
     void import_integrals(double* aaaa, double* f_act, double e_core) override {
         ci_->simple_import_data(aaaa, aaaa, f_act, e_core);   // aaaa is both the AA and AB block
@@ -69,6 +71,23 @@ public:
     void G_calc(double* GAMMA) override { ci_->G_calc(GAMMA); } //works differently then in DMRG !!!
     void calc_DMA(double* g, int a, int b) override { ci_->calc_DMA(g, a, b); }
     void calc_DMB(double* g, int a, int b) override { ci_->calc_DMB(g, a, b); }
+
+    // --- transition-density read-outs (the determinant CI supplies all of them natively) ---
+#if 0  // full transition 2-RDM: no consumer, the driver reads G2_calc_diag. Revive for first-order
+       // properties -- the 2-body Mbar needs bra != ket densities between the dressed roots.
+    bool supports_g2_full() const override { return true; }
+    void G_calc_full(double* G) override;                                     // full n_s x n_s 2-RDM
+#endif
+    bool supports_g3_diag() const override { return true; }
+    void G3_calc_diag(double* G3, int state) override;                        // per-state 3-body moment
+    bool supports_g2_diag() const override { return true; }
+    void G2_calc_diag(double* G) override { ci_->G_calc(G); }                 // n_s per-state blocks
+#if 0  // DIRECT lambda3 path (superseded by the explicit lattice-3RDM route; revive for nact >~ 30)
+    bool supports_h2caa_overlap() const override { return true; }
+    void h2caa_overlap(const double* Tbra, const double* Tket, int np, double* omega) override;
+    void h2caa_overlap2(const double* Tbra1, const double* Tket1, int np1, double* omega1,
+                        const double* Tbra2, const double* Tket2, int np2, double* omega2) override;
+#endif
 
     // --- queries ---
     int    n_act()         const override { return ci_->n_act; }

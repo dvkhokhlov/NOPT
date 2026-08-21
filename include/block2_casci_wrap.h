@@ -28,6 +28,9 @@ public:
     // --- configuration / lifecycle ---
     void init_state_storage(int n_s, int i_set) override;
     bool has_coef(int i_set) const override;
+    // Persist the converged state set (one single-root MPS per root) under its own scratch tags:
+    // a dressed re-solve overwrites the retained MPS, so this must run before the dressed import.
+    void snapshot_states(int i_set) override;
     void set_act_rep_num(int* rep_num) override;
     void set_localization(const double* U) override;
     void set_active_rotation(const double* R) override;
@@ -36,7 +39,8 @@ public:
     void import_integrals(double* aaaa, double* f_act, double e_core) override;
     // Encode a TOTAL dressed active-space operator (F_act+g1, (tu|vw)+g2, g3, E_core+E0) as one
     // spin-adapted GeneralFCIDUMP -> GeneralMPO and swap it into the solve. Tensors arrive in the
-    // frozen lattice (localized) basis; only the frozen Fiedler reorder is applied. h3 may be null.
+    // native active basis; the localizing rotation and the frozen Fiedler reorder are applied
+    // internally, as the bare import does. h3 may be null.
     bool supports_dressed_import() const override { return true; }
     void import_dressed_operator(const double* h1_total, const double* h2_total,
                                  const double* h3_total, double const_total) override;
@@ -61,6 +65,24 @@ public:
     void calc_DMA(double* g, int a, int b) override;
     void calc_DMB(double* g, int a, int b) override;
 
+    // --- transition-density read-outs ---
+#if 0  // full transition 2-RDM: no consumer, the driver reads G2_calc_diag. Revive for first-order
+       // properties -- the 2-body Mbar needs bra != ket densities between the dressed roots.
+    bool supports_g2_full() const override { return true; }
+    void G_calc_full(double* G) override;
+#endif
+    // Diagonal per-state read-outs, native (delocalized) active basis; both OVERWRITE the caller's
+    // buffer: G2_calc_diag n_s consecutive n_act^4 GAMMA blocks, G3_calc_diag one n_act^6 moment
+    // G3[p,q,r,i,j,k] = <a+_p a+_q a+_r a_k a_j a_i> spin-summed.
+    bool supports_g2_diag() const override { return true; }
+    void G2_calc_diag(double* G) override;
+    bool supports_g3_diag() const override { return true; }
+    void G3_calc_diag(double* G3, int state) override;
+#if 0  // DIRECT lambda3 path (superseded by the explicit lattice-3RDM route; revive for nact >~ 30)
+    bool supports_h2caa_overlap() const override { return true; }
+    void h2caa_overlap(const double* Tbra, const double* Tket, int np, double* omega) override;
+#endif
+
     // --- queries ---
     int    n_act()            const override;
     int    n_states()         const override;
@@ -79,7 +101,13 @@ public:
     void print_states(int a, int n_s, int print) override;
     void write_civec(int i_s, char* name) override;
 
-    // supports_civec_rotation() stays false (base default): DMRG re-solves rather than
-    // rotating CI vectors; tracking/malmqvist/calc_S therefore stay no-ops. as_aldet()
-    // stays nullptr
+    // --- bare-vs-dressed state overlap (the dressed re-solve root map) ---
+    // S_track[i*n_s+j] = <state i of the current MPS set | state j of snapshot set b>, one
+    // identity-MPO sweep per pair. Only a=0 against the slot snapshot_states filled is defined;
+    // both sets sit on the same frozen lattice, so this is exactly the CI overlap.
+    void calc_S(double* S_track, int a, int b) override;
+
+    // supports_civec_rotation() stays false (base default): DMRG re-solves rather than rotating
+    // CI vectors, so malmqvist/rotate_pi_pair stay no-ops -- calc_S needs no rotation and is
+    // real. as_aldet() stays nullptr
 };

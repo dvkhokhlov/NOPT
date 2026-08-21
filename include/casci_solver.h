@@ -25,6 +25,10 @@ public:
     // --- configuration / lifecycle ---
     virtual void init_state_storage(int n_s, int i_set) = 0;   // allocate coef/E_states/... (aldet: init_zero_vec)
     virtual bool has_coef(int i_set) const = 0;                // is the CI vector storage allocated?
+    // Snapshot the current wavefunction set into storage slot i_set, so a later solve on a dressed
+    // operator can be overlapped against it through calc_S(S, 0, i_set). aldet copies its CI
+    // vectors; an MPS backend persists a tagged copy of its state set. Default aborts loudly.
+    virtual void snapshot_states(int i_set);
     virtual void set_act_rep_num(int* rep_num) = 0;            // per-active-orbital irrep numbers
     virtual void import_integrals(double* aaaa,                // active 2-e (tu|vw), chemist, n_act^4
                                   double* f_act,               // embedded 1-e h_tu (core folded in), n_act^2
@@ -112,13 +116,14 @@ public:
     // bases via exp(kappa) time evolution (logm(U) -> anti-Hermitian 1-body MPO -> td_dmrg;
     // see block2-preview docs/.../orbital-rotation.rst), and cross-basis overlap then needs
     // that rotation plus an identity-MPO sweep. Cheap for small near-converged steps, costly
-    // for large rotations (e.g. localization). So such a backend typically advertises false
-    // and skips all three -- re-solving from a warm-started MPS instead -- but may opt in.
+    // for large rotations (e.g. localization). So such a backend typically advertises false and
+    // re-solves from a warm-started MPS instead. calc_S across an UNCHANGED basis needs no
+    // rotation, so a backend may implement that one alone (block2 does).
     virtual bool supports_civec_rotation() const { return false; }
     virtual void malmqvist(int i_set, double* U) {}                          // rotate CI vector by active-block U
     virtual void rotate_pi_pair(int i_set, double s, double c,               // linear-molecule pi-pair rotation
                                 int pair, int* ind_pi) {}
-    virtual void calc_S(double* S_track, int a, int b) {}                    // overlap vs previous iter's CI vectors
+    virtual void calc_S(double* S_track, int a, int b) {}                    // S[i*n_s+j] = <set a state i|set b state j>
     
         
     
@@ -126,10 +131,46 @@ public:
     // A backend that can encode a TOTAL dressed operator (F_act+g1, (tu|vw)+g2, g3, E_core+E0) as
     // its own eigenproblem and re-solve it advertises true; the DMRG/block2 backend does. Default is
     // a loud out-of-line abort (our contract, not a physics choice) so no backend silently drops the
-    // dressing. h3_total may be null (no 3-body group); tensors are in the frozen lattice basis.
+    // dressing. h3_total may be null (no 3-body group); tensors are in the native active basis
+    // (h2 chemist (tu|vw)), and the backend maps them onto its own lattice.
     virtual bool supports_dressed_import() const { return false; }
     virtual void import_dressed_operator(const double* h1_total, const double* h2_total,
                                          const double* h3_total, double const_total);
+
+    // --- transition-density read-outs (capability-gated) ---
+#if 0  // full transition 2-RDM: no consumer, the driver reads G2_calc_diag. Revive for first-order
+       // properties -- the 2-body Mbar needs bra != ket densities between the dressed roots.
+    // Full n_s x n_s state matrix of the spin-summed 2-RDM: G[(bra*n_s+ket)*n_act^4] blocks in
+    // the GAMMA convention above; diagonal = per-state 2-RDM, off-diagonal = <bra|..|ket>.
+    // Delocalized basis. Accumulates into G (caller zeroes it). Default aborts loudly.
+    virtual bool supports_g2_full() const { return false; }
+    virtual void G_calc_full(double* G);
+#endif
+    // Per-state spin-summed 3-body moment, native active basis, caller buffer n_act^6,
+    // overwritten; layout G3[p,q,r,i,j,k] = <a+_p a+_q a+_r a_k a_j a_i>, spin-summed,
+    // flat row-major over the six active axes. Default aborts loudly.
+    virtual bool supports_g3_diag() const { return false; }
+    virtual void G3_calc_diag(double* G3, int state);
+    // Diagonal per-state spin-summed 2-RDMs: n_s consecutive n_act^4 blocks, native basis,
+    // GAMMA convention as above. Overwritten, not accumulated. Default aborts loudly.
+    virtual bool supports_g2_diag() const { return false; }
+    virtual void G2_calc_diag(double* G);
+#if 0  // DIRECT lambda3 path (superseded by the explicit lattice-3RDM route; revive for nact >~ 30)
+    // Complementary six-operator overlap (3-RDM-free lambda3): per root r, overwritten,
+    //   omega[r] = sum_{p,spins} Tbra[p,w,x,y] Tket[p,z,u,v] <r| x+_s y+_t w_t z+_q v_q u_s |r>.
+    // Tensors [np][n_act^3], axes (external p, creation, free-spin annih., paired annih.),
+    // active legs in the frozen lattice basis; unweighted. Default aborts loudly.
+    virtual bool supports_h2caa_overlap() const { return false; }
+    virtual void h2caa_overlap(const double* Tbra, const double* Tket, int np, double* omega);
+    // Two pairs against the same roots, per-pair semantics exactly as above; gated by the same
+    // query. A backend whose per-root density build dominates overrides this to build that density
+    // once and contract both pairs against it. The default runs the single-pair route twice.
+    virtual void h2caa_overlap2(const double* Tbra1, const double* Tket1, int np1, double* omega1,
+                                const double* Tbra2, const double* Tket2, int np2, double* omega2) {
+        h2caa_overlap(Tbra1, Tket1, np1, omega1);
+        h2caa_overlap(Tbra2, Tket2, np2, omega2);
+    }
+#endif
 
     // --- IO / diagnostics ---
     virtual void gen_ext_ind() = 0;

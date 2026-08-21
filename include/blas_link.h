@@ -34,7 +34,7 @@ inline void set_blas_par(){
     openblas_set_num_threads(num_threads);
 #endif
 #ifdef _MKL
-    mkl_set_num_threads(1);
+    mkl_set_num_threads(num_threads);
 #endif
 
 }
