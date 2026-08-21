@@ -100,6 +100,10 @@ Default shown in parentheses.
   RAM-backed by default.
 - **memory** *(1.0)* — size of block2's double stack, in GB. This is what a large active space
   or bond dimension exhausts; raise it if block2 aborts on a stack overflow.
+- **low_m_opt** *(absent = auto)* — MPO simplification rule. `on` = faster MPO simplification for
+  small-`m` / moderate-`K` runs: AD and the full B are stored explicitly (conj-free middle
+  transform) at roughly +40% operator-stack memory. `off` = the memory-lean stock rule, deriving
+  them by transpose. Absent = auto, by a threshold on `K^2*m^2` (`K` = active orbitals).
 
 ### Localization & ordering
 

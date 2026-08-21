@@ -63,6 +63,9 @@ struct dmrgci_engine {
     std::vector<double> R_active;     // n_act x n_act, [a*n_act+p]
     bool have_rotation = false;
 
+    // MPO simplification rule resolved once from cfg.low_m_opt: -1 unresolved, 0 off, 1 on.
+    int low_m_opt_res = -1;
+
     // block2 objects for the current macro-iteration (rebuilt each import_integrals)
     std::shared_ptr<FCIDUMP<double>> fcidump;
     std::shared_ptr<HamiltonianQC<SU2, double>> hamil;

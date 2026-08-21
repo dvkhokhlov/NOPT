@@ -25,6 +25,7 @@
 #include "blas_link.h"        // cblas_dgemm (warm-start rotation regularization)
 #include "mps_rotation.h"     // evolve_sa_multimps (multi-root SA MPS rotation)
 #include "dmrg_log.h"         // per-solve block2 sweep log (cout/cerr redirect)
+#include "defaults.h"         // DMRG_LOW_M_OPT_KK_MM_MAX
 
 using namespace block2;
 
@@ -154,13 +155,17 @@ void assert_stack_clean(const char *where) {
 
 // Build + simplify the conventional quantum-chemistry MPO 
 std::shared_ptr<MPO<SU2, double>>
-build_qc_mpo(const std::shared_ptr<HamiltonianQC<SU2, double>> &hamil) {
+build_qc_mpo(const std::shared_ptr<HamiltonianQC<SU2, double>> &hamil, bool low_m_opt) {
     std::shared_ptr<MPO<SU2, double>> mpo = std::make_shared<MPOQC<SU2, double>>(
         hamil, QCTypes::Conventional, "HQC", hamil->n_sites / 2 / 2 * 2, 1);
     mpo->basis = hamil->basis;
+    // low_m_opt (a=b=false): store AD and full B instead of deriving them by transpose;
+    // transposed iadd degenerates to per-column BLAS in the NC/CN transform.
+    std::shared_ptr<Rule<SU2, double>> rule =
+        low_m_opt ? std::make_shared<RuleQC<SU2, double>>(true, true, false, true, false, true)
+                  : std::make_shared<RuleQC<SU2, double>>();
     mpo = std::make_shared<SimplifiedMPO<SU2, double>>(
-        mpo, std::make_shared<RuleQC<SU2, double>>(), true, true,
-        OpNamesSet({OpNames::R, OpNames::RD}));
+        mpo, rule, true, true, OpNamesSet({OpNames::R, OpNames::RD}));
     return mpo;
 }
 
@@ -613,6 +618,23 @@ static bool rotate_retained_mps(dmrgci_engine &e) {
     return true; // rotated MPS in place; benign success is silent (keeps the CASSCF table clean)
 }
 
+// Resolve $DMRG low_m_opt once per engine (the MPO must not change rule between rebuilds) and
+// report the choice. AUTO takes the explicit AD/full-B store while K^2*m^2 stays under the cap.
+static bool resolve_low_m_opt(dmrgci_engine &e) {
+    if (e.low_m_opt_res >= 0)
+        return e.low_m_opt_res != 0;
+    const double kk_mm = (double)e.n_act * e.n_act * (double)e.cfg.m * e.cfg.m;
+    const bool by_auto = (e.cfg.low_m_opt == DMRG_LOW_M_AUTO);
+    const bool on = by_auto ? (kk_mm < DMRG_LOW_M_OPT_KK_MM_MAX) : (e.cfg.low_m_opt == DMRG_LOW_M_ON);
+    e.low_m_opt_res = on ? 1 : 0;
+    if (by_auto)
+        fprintf(out_stream, "NOTE: DMRG low_m_opt=%s (auto: K=%d m=%d)\n", on ? "on" : "off",
+                e.n_act, e.cfg.m);
+    else
+        fprintf(out_stream, "NOTE: DMRG low_m_opt=%s (input)\n", on ? "on" : "off");
+    return on;
+}
+
 // Enforce exactly the symmetries qc_hamiltonian/RuleQC assume -- Hermiticity (p,q,r,s)->(q,p,s,r)
 // and particle exchange (p,q,r,s)->(r,s,p,q). block2 prunes complementary operators on
 // |integral| < TINY reading one partner per slot, so partners must agree bit for bit. The ERI-only
@@ -711,7 +733,7 @@ void block2_casci_wrap::import_integrals(double *aaaa, double *f_act, double e_c
     SU2 vacuum(0);
     e.hamil = std::make_shared<HamiltonianQC<SU2, double>>(vacuum, n, e.orbsym, e.fcidump);
     e.hamil->opf->seq->mode = SeqTypes::Tasked;
-    e.mpo = build_qc_mpo(e.hamil);
+    e.mpo = build_qc_mpo(e.hamil, resolve_low_m_opt(e));
     e.dressed_mpo = false; // any previous dressing leaves with the rebuilt bare MPO
 }
 
@@ -778,7 +800,7 @@ static void recompute_cold_order(dmrgci_engine &e) {
     SU2 vacuum(0);
     e.hamil = std::make_shared<HamiltonianQC<SU2, double>>(vacuum, n, e.orbsym, e.fcidump);
     e.hamil->opf->seq->mode = SeqTypes::Tasked;
-    e.mpo = build_qc_mpo(e.hamil);
+    e.mpo = build_qc_mpo(e.hamil, resolve_low_m_opt(e));
 }
 
 int block2_casci_wrap::solve(int, int, bool use_prev_guess) {
