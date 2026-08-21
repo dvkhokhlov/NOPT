@@ -1,7 +1,7 @@
 # include <stdio.h>
 # include "blas_link.h"
 # include <omp.h>
-
+//// v3_2_2 testing
 
 # include "CI.h"
 # include "matr.h"
@@ -69,7 +69,7 @@ int PT_tensors::set_par(RI_data * ext_integrals,
                         double * ext_eps,
                         int ext_n_c, int ext_n_a, int ext_n_v, 
                         double * ext_H_AV, double * ext_H_CA, double * ext_H_CV,
-                        double ext_edshift){
+                        double ext_edshift, molecule * A){
     
     integrals      = ext_integrals     ; 
     n_c     = ext_n_c    ; 
@@ -84,8 +84,8 @@ int PT_tensors::set_par(RI_data * ext_integrals,
     e_a     = ext_eps+n_c    ; 
     e_v     = ext_eps+n_c+n_a;
     
-    
-    
+    n_active_el_alp = A->n_act_el_alp[0];
+    n_active_el_bet = A->n_act_el_bet[0];
     
     e_IP    = new double[n_a];for(int i=0; i<n_a; i++) e_IP[i]=e_a[i];
     e_EA    = new double[n_a];for(int i=0; i<n_a; i++) e_EA[i]=e_a[i];
@@ -345,10 +345,22 @@ int PT_tensors::IPEA(casci_solver * I, std::vector<double> avecoe){
     }
     
     int n_s =I->n_states();
+//     double * E0 = new double[n_s*n_s];
+//     I->H_calc(E0,n_s);
+    
+//     aldet_data E_IP;
+//     ci_ext(&E_IP,-1,I,i_set);
+    int n_a_2=n_a*(n_a-1)/2;
+    int n_a_AB=n_a*n_a;
     
     double * IP_H   = new double[n_a*n_a];
     double * EA_H   = new double[n_a*n_a];
-        
+    double * IP_2_H = new double[n_a_2*n_a_2];
+    double * EA_2_H = new double[n_a_2*n_a_2];
+    double * IP_AB_H = new double[n_a_AB*n_a_AB];
+    double * EA_AB_H = new double[n_a_AB*n_a_AB];
+    
+    
     I->calc_IPEA_single(IP_U, IP_H, EA_U, EA_H, 0 ,avecoe);
     
     
@@ -375,6 +387,10 @@ int PT_tensors::IPEA(casci_solver * I, std::vector<double> avecoe){
 
     delete[] IP_H   ;
     delete[] EA_H   ;
+    delete[] IP_2_H ;
+    delete[] EA_2_H ;
+    delete[] IP_AB_H;
+    delete[] EA_AB_H;
     
     return 0;
     
@@ -458,7 +474,7 @@ int PT_tensors::E2_calc_IPEA(){
     for(int u=0; u<n_a; u++)
     for(int v=0; v<n_a; v++)
     for(int w=0; w<n_a; w++)
-    for(int x=0; x<n_a; x++)
+    for(int x=0; x<n_a; x++) //// ??? TODO parallel #pragma omp parallel for
     for(int y=0; y<n_a; y++){
         RF_P3_tmp[((((t*n_a+u)*n_a+v)*n_a+w)*n_a+x)*n_a+y]=
         RF_P3_AB    [((((t*n_a+u)*n_a+x)*n_a+v)*n_a+w)*n_a+y];
@@ -801,7 +817,7 @@ int PT_tensors::calc_IPEA_2_AV(){
             dE=1.0/(-e_v[a]+e_IP[u]);
             for(int t=0; t<n_a; t++)
             for(int w=0; w<n_a; w++)
-                U[t*n_a+w]+=IP_Um[u*n_a+t]*IP_Up[u*n_a+w]*dE;
+                U[t*n_a+w]+=IP_Um[u*n_a+t]*IP_Up[u*n_a+w]*dE; //// TODO 2 matrix mults -> 1+1 mults ???
         }
         
         cblas_dgemm(CblasRowMajor,CblasNoTrans,CblasNoTrans,
@@ -1182,11 +1198,9 @@ int PT_tensors::calc_IPEA_2_CCVV(){
     double *JK[num_threads];
     for(int i=0;i<num_threads;i++) V[i] = new double[n_c];
     for(int i=0;i<num_threads;i++)JK[i] = new double[n_c*n_c];
-
-
-    set_blas_non_par();
-#pragma omp parallel for
+    
     for(int a=0; a<n_v; a++){//fprintf(stderr,"CCVV a=%d\r",a);
+#pragma omp parallel for
     for(int b=a; b<n_v; b++){/*fprintf(stderr,"CCVV a,b=%d,%d\r",a,b);*/
         
         int th_id = omp_get_thread_num();
@@ -1227,7 +1241,7 @@ int PT_tensors::calc_IPEA_2_CCVV(){
         }
     }
     }
-    set_blas_par();
+    
     
     for(int i=0;i<num_threads;i++)
         RF_PS+=R[i];
@@ -1245,7 +1259,6 @@ int PT_tensors::calc_IPEA_2_CAVV(){
     for(int i=0;i<num_threads;i++)PH_th[i]=new double[n_a*n_a];
     for(int i=0;i<num_threads;i++)set_zero_matr(PH_th[i],n_a*n_a);
     
-    set_blas_non_par();
     #pragma omp parallel
     {
         int nt = omp_get_thread_num();
@@ -1342,7 +1355,6 @@ int PT_tensors::calc_IPEA_2_CAVV(){
         delete[] K1;
         delete[] J1;
     }
-    set_blas_par();
     
     for(long j=0; j<num_threads;j++)
     #pragma omp parallel for
@@ -1357,8 +1369,16 @@ int PT_tensors::calc_IPEA_2_CAVV(){
     
 }
 
-int PT_tensors::calc_IPEA_2_AAVV(){
+int PT_tensors::calc_IPEA_2_AAVV(){  //// TODO add skipping for 1 active el
     
+
+//// ADDED AND WORKS
+    ////if (true){
+    if (((n_active_el_alp==1)&&(n_active_el_bet==0))||((n_active_el_alp==0)&&(n_active_el_bet==1))){
+        fprintf(out_stream,"only 1 alpha or 1 beta active el is present, skipping AAVV block\n");
+        return 0;
+    }
+    else{
 //     num_threads=1;
     double **JK_th= new double * [num_threads];
     for(int i=0;i<num_threads;i++)JK_th[i]=new double[n_a*n_a*n_a*n_a];
@@ -1369,7 +1389,7 @@ int PT_tensors::calc_IPEA_2_AAVV(){
     for(int i=0;i<num_threads;i++)set_zero_matr(AB_th[i],n_a*n_a*n_a*n_a);
 
     
-    set_blas_non_par();
+    
     #pragma omp parallel
     {
         int nt =omp_get_thread_num();
@@ -1399,7 +1419,7 @@ int PT_tensors::calc_IPEA_2_AAVV(){
             set_zero_matr(Ja3, n_a*n_a);
             set_zero_matr(Ja4, n_a*n_a);
             
-            
+            //// TODO 4 cycles -> 3 cycles, matrix mult
             for(int t=0  ;t<n_a;t++)
             for(int u=0  ;u<n_a;u++)
             for(int t3=0  ;t3<n_a;t3++)
@@ -1407,7 +1427,7 @@ int PT_tensors::calc_IPEA_2_AAVV(){
                 Ja3[t*n_a+u]+=Ja[t3*n_a+u3]*IP_Up[t*n_a+t3]*IP_Up[u*n_a+u3];
                 Ja4[t*n_a+u]+=Ja[u3*n_a+t3]*IP_Up[t*n_a+t3]*IP_Up[u*n_a+u3];
             }
-            
+            //// TODO optimize -- temp objects, 4 cycles with divisions, 5 cycles for rotations
             for(int t=0  ;t<n_a;t++)
             for(int u=0  ;u<n_a;u++)
             for(int t2=0  ;t2<n_a;t2++)
@@ -1460,8 +1480,6 @@ int PT_tensors::calc_IPEA_2_AAVV(){
     
     
     }
-    set_blas_par();
-    
     
 //     #pragma omp parallel for
     for(long j=0; j<num_threads;j++)
@@ -1478,18 +1496,15 @@ int PT_tensors::calc_IPEA_2_AAVV(){
     for(int i=0;i<num_threads;i++)delete[] AB_th[i];
     delete[] AB_th;
     return 0;
+    }
 }
 
 int PT_tensors::calc_IPEA_2_CCAV(){
-    
-    
-    
     
     double **RF_PH_th= new double * [num_threads];
     for(int i=0;i<num_threads;i++)RF_PH_th[i]   = new double[n_a*n_a];
     for(int i=0;i<num_threads;i++)set_zero_matr(RF_PH_th[i], n_a*n_a);
     
-    set_blas_non_par();
     #pragma omp parallel
     {
         int nt =omp_get_thread_num();
@@ -1505,7 +1520,7 @@ int PT_tensors::calc_IPEA_2_CCAV(){
         for(int i=nt; i<n_c; i+=num_threads)
         for(int j=i; j<n_c; j++){//fprintf(stderr," CCAV i,j=%d,%d\r",i,j);
             for(int a=0; a<n_v; a++)
-            for(int t=0; t<n_a; t++){
+            for(int t=0; t<n_a; t++){ //// ??? ddot -> dgemm ???
                 J[a*n_a+t]=cblas_ddot(integrals->aux_n_ao, integrals->VC_RI_M+(a*n_c+i)*integrals->aux_n_ao, 1, integrals->CA_RI_M+(j*n_a+t)*integrals->aux_n_ao, 1);
                 K[a*n_a+t]=cblas_ddot(integrals->aux_n_ao, integrals->VC_RI_M+(a*n_c+j)*integrals->aux_n_ao, 1, integrals->CA_RI_M+(i*n_a+t)*integrals->aux_n_ao, 1);
             }
@@ -1527,7 +1542,6 @@ int PT_tensors::calc_IPEA_2_CCAV(){
         delete[] K;
         delete[] J;
     }
-    set_blas_par();
     
     for(long j=1; j<num_threads;j++)
 //     #pragma omp parallel for
@@ -1564,7 +1578,7 @@ int PT_tensors::calc_IPEA_2_CCAA(){
     for(int i=0;i<num_threads;i++)set_zero_matr(RF_PV_AB_th[i], n_a*n_a*n_a*n_a);
     for(int i=0;i<num_threads;i++)set_zero_matr(RF_PV_JK_th[i], n_a*n_a*n_a*n_a);
     
-    set_blas_non_par();
+    
     #pragma omp parallel
     {
         int nt =omp_get_thread_num();
@@ -1609,7 +1623,7 @@ int PT_tensors::calc_IPEA_2_CCAA(){
             }
 
             
-            
+            //// TODO move rotation and mult by dE
             for(int t=0  ;t<n_a;t++)
             for(int u=0  ;u<n_a;u++)
             for(int v=0;v<n_a;v++)
@@ -1661,7 +1675,6 @@ int PT_tensors::calc_IPEA_2_CCAA(){
         delete[] Ja3;
         delete[] Ja4;
     }
-    set_blas_par();
     
     for(long j=1; j<num_threads;j++)
 //     #pragma omp parallel for
@@ -1801,7 +1814,7 @@ int sym_AB_CA_T(double * RF_PV_AB, double * RF_PV, int n_a){
 }
 
 int PT_tensors::calc_IPEA_1_AV(double* P_AV) {    //// AV block
-
+//// TODO parallelism
     double dE;
     double V;
 
@@ -1824,6 +1837,8 @@ int PT_tensors::calc_IPEA_1_AV(double* P_AV) {    //// AV block
     Uvirt = new double[n_a * n_a];
 
     
+    //// ADDED WRONG
+    //// #pragma omp parallel for
     for(int a=0; a<n_v; a++){
         set_zero_matr(Uvirt,n_a*n_a);
         for(int mu=0; mu<n_a; mu++){
@@ -1838,7 +1853,8 @@ int PT_tensors::calc_IPEA_1_AV(double* P_AV) {    //// AV block
                     Uvirt,n_a,
                     VAAA+a*n_a*n_a*n_a,n_a*n_a,0.0,
                     VmuAA+a*n_a*n_a*n_a,n_a*n_a);
-                    
+
+        //// #pragma omp parallel for
         for (int t = 0; t < n_a; t++)
         for (int u = 0; u < n_a; u++)
         for (int v = 0; v < n_a; v++)
@@ -1848,8 +1864,9 @@ int PT_tensors::calc_IPEA_1_AV(double* P_AV) {    //// AV block
             RF_PV[((t * n_a + u) * n_a + v) * n_a + w] += V;
         }
     }
-    
-    // #pragma omp parallel for
+
+    //// ADDED WRONG - ??? after dE evaluation ???
+    //// #pragma omp parallel for
     for (int a = 0; a < n_v; a++) {
         for (int mu = 0; mu < n_a; mu++) {
             dE = 1.0 / (e_IP[mu] - e_v[a]);
@@ -1859,8 +1876,11 @@ int PT_tensors::calc_IPEA_1_AV(double* P_AV) {    //// AV block
                 }
         }
     }
+
     for (int t = 0; t < n_a; t++)
         for (int w = 0; w < n_a; w++)
+            //// ADDED WRONG
+            //// #pragma omp parallel for
             for (int a = 0; a < n_v; a++) {
                 ////~H[t,a]*P[w,a]=H_muV[t,a]*P[w,a]
                 V = H_muV[t * n_v + a] * P_AV[w * n_v + a];
@@ -1881,7 +1901,7 @@ int PT_tensors::calc_IPEA_1_AV(double* P_AV) {    //// AV block
 }
 
 int PT_tensors::calc_IPEA_1_CA(double* P_CA) { //// CA block
-    
+//// TODO parallelism
     double dE;
     double V;
     
@@ -1898,7 +1918,7 @@ int PT_tensors::calc_IPEA_1_CA(double* P_CA) { //// CA block
     double* H_Cmu;
     double* CmuAA;
     H_Cmu = new double[n_c * n_a];
-    CmuAA  = new double[n_c * n_a * n_a * n_a];
+    CmuAA = new double[n_c * n_a * n_a * n_a];
 
     set_zero_matr(H_Cmu, n_c * n_a);
     set_zero_matr(CmuAA, n_c * n_a * n_a * n_a);
@@ -1920,18 +1940,19 @@ int PT_tensors::calc_IPEA_1_CA(double* P_CA) { //// CA block
             Ucore, n_a,
             CAAA + i * n_a * n_a * n_a, n_a * n_a, 0.0,
             CmuAA + i * n_a * n_a * n_a, n_a * n_a);
-        
+
         for (int v = 0; v < n_a; v++)
         for (int u = 0; u < n_a; u++)
         for (int t = 0; t < n_a; t++)
         for (int w = 0; w < n_a; w++) {
-
             //<it|uv>*P[w,a];<it|uv>=(iu|tv)
             V = CmuAA[((i * n_a + u) * n_a + t) * n_a + v] *P_CA[i * n_a + w];   
             RF_PV[((t * n_a + u) * n_a + v) * n_a + w] += V;
         }
     }
 
+    //// ADDED WRONG
+    //// #pragma omp parallel for
     for (int i = 0; i < n_c; i++) {
         for (int mu = 0; mu < n_a; mu++) {
             dE = 1.0 / (e_c[i] - e_EA[mu]);
@@ -1941,23 +1962,30 @@ int PT_tensors::calc_IPEA_1_CA(double* P_CA) { //// CA block
                ////  H_uE[t2 * n_v + a] += IP_Um[mu * n_a + t2] * dE * IP_Up[mu * n_a + t3] * H_AV[t3 * n_v + a];
         }
     }
+
+    //// ADDED - WRONG 
+    //// #pragma omp parallel for
     for (int i = 0; i < n_c; i++) 
         for (int t = 0; t < n_a; t++) 
         for (int w = 0; w < n_a; w++) {
-
             //~H[t,a]*P[w,a]
             V = H_Cmu[i * n_a + t] * P_CA[i * n_a + w];
             RF_PH_tmp[w * n_a + t] -= V;
         }
 
-    //// next lines are OK ?
+    //// ADDED - WRONG
+    //// #pragma omp parallel for
     for (int t = 0; t < n_a; t++)
         RF_PS -= RF_PH_tmp[t * n_a + t] * 2;
-    
+
     for (int t = 0; t < n_a; t++)
+        //// ADDED -??? 
+        //// #pragma omp parallel for
         for (int w = 0; w < n_a; w++)
             RF_PH[w * n_a + t] += RF_PH_tmp[w * n_a + t];
-    
+
+    //// ADDED - WRONG, ? MOVE TO V
+    //// #pragma omp parallel for
     for (int w = 0; w < n_a; w++)
         for (int t = 0; t < n_a; t++)
             for (int v = 0; v < n_a; v++)
@@ -1980,7 +2008,7 @@ int PT_tensors::calc_IPEA_1_CA(double* P_CA) { //// CA block
 
 
 int PT_tensors::calc_IPEA_1_CV(double* P_CV) { //// CV block
-
+//// TODO parallelism
     double V;
     double dE;
 
@@ -2009,12 +2037,13 @@ int PT_tensors::calc_IPEA_1_CV(double* P_CV) { //// CV block
                         CAVA[((i * n_a + u) * n_v + a) * n_a + t]) *
                         P_CV[i * n_v + a];
                                         
-                    dE = e_c[i] - e_v[a]; //// not CAAV but true CV block, ~ S^{(0)}_{i,a} in NEVPT
+                    dE = e_c[i] - e_v[a];
                     RF_PH[t * n_a + u] += V * dE / (dE * dE + 0.0);
-    
                 }
-    
+
     for (int i = 0; i < n_c; i++)
+        //// ADDED - WRONG
+        //// #pragma omp parallel for
         for (int a = 0; a < n_v; a++) {
             V = H_CV[i * n_v + a] * P_CV[i * n_v + a] * 2;                
             dE = e_c[i] - e_v[a];                                         

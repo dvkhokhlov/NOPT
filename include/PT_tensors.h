@@ -64,6 +64,9 @@ class PT_tensors
         double * RF_P3_JK;
         double * RF_P3_AB;
         
+        int n_active_el_alp;
+        int n_active_el_bet;
+        //// ADDED
         
         //functions
         
@@ -75,7 +78,7 @@ class PT_tensors
                     double * ext_eps_c,
                     int ext_n_c, int ext_n_a, int ext_n_v, 
                     double * ext_H_AV, double * ext_H_CA, double * ext_H_CV,
-                    double ext_edshift);
+                    double ext_edshift, molecule * A); //// ADDED - get number of alpha, beta electrons
         int IPEA(casci_solver * I, std::vector<double> avecoe);
         int MPPT(aldet_data * I, int i_set, std::vector<double> avecoe);
         int set_zero();

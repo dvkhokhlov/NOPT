@@ -933,8 +933,7 @@ int aldet_data::gen_ext_ind_PT(){
                                         e2_sign_a[i_CI*n_e2_a+i_ext] = sign1*sign2;
                                         e2_ind_a [i_CI*n_e2_a+i_ext] = get_ind_from_ON(bit_a, n_act, na, fa, buf);
                                         e2_V_a   [i_CI*n_e2_a+i_ext] =(act_INTS_AA[((t*n_act+v)*n_act+u)*n_act+w]-
-                                                                       act_INTS_AA[((t*n_act+w)*n_act+u)*n_act+v]+
-                                                                       T2_AA     [((u*n_act+t)*n_act+v)*n_act+w])*///check it!!!!!!!
+                                                                       act_INTS_AA[((t*n_act+w)*n_act+u)*n_act+v])*
                                                                        sign1*sign2;
                                         i_ext++;
 //                                     }
@@ -995,8 +994,7 @@ int aldet_data::gen_ext_ind_PT(){
                                         e2_sign_b[i_CI*n_e2_b+i_ext] = sign1*sign2;
                                         e2_ind_b [i_CI*n_e2_b+i_ext] = get_ind_from_ON(bit_b, n_act, nb, fb, buf);
                                         e2_V_b   [i_CI*n_e2_b+i_ext] =(act_INTS_BB[((t*n_act+v)*n_act+u)*n_act+w]-
-                                                                       act_INTS_BB[((t*n_act+w)*n_act+u)*n_act+v]+
-                                                                       T2_BB     [((u*n_act+t)*n_act+v)*n_act+w])*
+                                                                       act_INTS_BB[((t*n_act+w)*n_act+u)*n_act+v])*
                                                                        sign1*sign2;
                                         i_ext++;
 //                                     }
@@ -2635,6 +2633,9 @@ int aldet_data::PT_update(){
         act_INTS_AB[((i*n_act+j)*n_act+k)*n_act+l]+//AABB
         T2_AB     [((i*n_act+k)*n_act+j)*n_act+l];//ABAB
     //AAAA etc. are updated in gen_ext_ind_PT()
+
+    memcpy(act_INTS_AA,act_INTS_AB, n_act*n_act*n_act*n_act*sizeof(double));
+    memcpy(act_INTS_BB,act_INTS_AB, n_act*n_act*n_act*n_act*sizeof(double));
     
     gen_ext_ind_PT();
     
