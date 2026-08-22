@@ -9,21 +9,33 @@
 
 # include <vector>
 # include <cstdio>
+# include <cmath>
 
 //------------------------------------------------------------------------------------------------------------------------
 // sigma spectra beyond the selection boundary are printed only this far
 #define AVAS_PRINT_TAIL 20
+// smallest eigenvalue of the target overlap that still defines a target space
+#define AVAS_S22_MIN 1.0e-6
+// an unselected occupied sigma at least this large, summing to one with a selected virtual one,
+// is one target direction shared between the two blocks
+#define AVAS_SPLIT_MIN 0.05
+#define AVAS_SPLIT_TOL 0.02
 
 static const char * avas_l_labels = "spdfghik";
 
 // Reference shells of the requested atoms carrying a requested nl label. Within one atom the
-// k-th reference shell of angular momentum l is the principal number n = k+l+1.
+// k-th reference shell of angular momentum l is the principal number n = k+l+1. `below` collects
+// the non-requested shells of the same atoms up to the highest requested n.
 static std::vector<Shell> avas_ref_shells(molecule * M, const avas_par & A,
                                           const std::vector<Shell> & all,
-                                          const std::vector<int> & center)
+                                          const std::vector<int> & center,
+                                          std::vector<Shell> & below)
 {
     std::vector<Shell> out;
     int n_kw = int(A.shell_n.size());
+
+    int n_top = 0;
+    for(int k=0;k<n_kw;k++)if(A.shell_n[k]>n_top)n_top=A.shell_n[k];
 
     for(int i_sel=0; i_sel<int(A.atoms.size()); i_sel++){
 
@@ -42,11 +54,15 @@ static std::vector<Shell> avas_ref_shells(molecule * M, const avas_par & A,
             int l = all[i].contr[0].l;
             if(l>7)continue;
             n_l[l]++;
+            int n = n_l[l]+l;
+            int is_target = 0;
             for(int k=0;k<n_kw;k++)
-                if((A.shell_l[k]==l)&&(A.shell_n[k]==n_l[l]+l)){
+                if((A.shell_l[k]==l)&&(A.shell_n[k]==n)){
                     out.push_back(all[i]);
                     found[k]=1;
+                    is_target = 1;
                 }
+            if((is_target==0)&&(n<=n_top))below.push_back(all[i]);
         }
 
         for(int k=0;k<n_kw;k++)
@@ -148,15 +164,27 @@ int avas_steer(molecule * M, const avas_par & A, char * job_name)
         exit(EXIT_FAILURE);
     }
 
+    for(int i=0;i<M->n_mo;i++)
+        for(int j=0;j<n_ao;j++)
+            if(!std::isfinite(M->MO_VEC[size_t(i)*n_ao+j])){
+                fprintf(out_stream,"ERROR: AVAS input orbitals are not finite (first bad MO %d)\n",i+1);
+                fprintf(out_stream,"       RHF=0 needs _MO INP= orbitals covering core+active; supply them or set RHF=1\n");
+                exit(EXIT_FAILURE);
+            }
+
     std::vector<int>   ref_center;
     std::vector<Shell> ref_all = basis_lib_read_gbs(M,A.ref_basis.c_str(),1,0,
                                                     nullptr,&ref_center,true,nullptr,nullptr);
-    std::vector<Shell> ref_s   = avas_ref_shells(M,A,ref_all,ref_center);
+    std::vector<Shell> low_s;
+    std::vector<Shell> ref_s   = avas_ref_shells(M,A,ref_all,ref_center,low_s);
 
     int n_ref=0;
     for(auto &sh: ref_s)n_ref+=sh.size();
+    int n_low=0;
+    for(auto &sh: low_s)n_low+=sh.size();
 
     fprintf(out_stream,"Reference functions:              %d\n",n_ref);
+    fprintf(out_stream,"Orthogonalised against:           %d lower reference functions\n",n_low);
     fprintf(out_stream,"Active window:                    %d occupied + %d virtual\n\n",k_o,k_v);
 
     // AO_1el_from_2shells accumulates, so both overlaps start at zero
@@ -164,6 +192,49 @@ int avas_steer(molecule * M, const avas_par & A, char * job_name)
     std::vector<double> S12 (size_t(n_ao )*n_ref,0.0);
     AO_1el_from_2shells(S22.data(),ref_s,ref_s,n_ref,n_ref,'s',0);
     AO_1el_from_2shells(S12.data(),M->s ,ref_s,n_ao ,n_ref,'s',0);
+
+    // In a segmented basis a requested shell is not orthogonal to the shells below it (def2-SVP Cr:
+    // <3s|4s>=0.40, <3p|4p>=0.32), so span{target} holds semicore the virtual block cannot reach.
+    // Removed over all requested atoms at once - per-atom removal strands more, not less.
+    if(n_low){
+        std::vector<double> SLL(size_t(n_low)*n_low,0.0);
+        std::vector<double> SLT(size_t(n_low)*n_ref,0.0);
+        std::vector<double> S1L(size_t(n_ao )*n_low,0.0);
+        AO_1el_from_2shells(SLL.data(),low_s,low_s,n_low,n_low,'s',0);
+        AO_1el_from_2shells(SLT.data(),low_s,ref_s,n_low,n_ref,'s',0);
+        AO_1el_from_2shells(S1L.data(),M->s ,low_s,n_ao ,n_low,'s',0);
+
+        inv_matr_constr(SLL.data(),n_low);
+
+        std::vector<double> W(size_t(n_low)*n_ref);
+        nopt_par_dgemm(CblasRowMajor,CblasNoTrans,CblasNoTrans,
+                       n_low,n_ref,n_low, 1.0,
+                       SLL.data(),n_low,
+                       SLT.data(),n_ref,0.0,
+                       W  .data(),n_ref);
+
+        nopt_par_dgemm(CblasRowMajor,CblasNoTrans,CblasNoTrans,
+                       n_ao,n_ref,n_low,-1.0,
+                       S1L.data(),n_low,
+                       W  .data(),n_ref,1.0,
+                       S12.data(),n_ref);
+
+        nopt_par_dgemm(CblasRowMajor,CblasTrans,CblasNoTrans,
+                       n_ref,n_ref,n_low,-1.0,
+                       SLT.data(),n_ref,
+                       W  .data(),n_ref,1.0,
+                       S22.data(),n_ref);
+    }
+
+    // a target left inside the shells below it has no direction of its own to project on
+    std::vector<double> S22e(S22), s22_eig(n_ref);
+    symmetrization(S22e.data(),n_ref);
+    lapack_diag(S22e.data(),s22_eig.data(),n_ref);
+    if(s22_eig[0]<AVAS_S22_MIN){
+        fprintf(out_stream,"ERROR: $AVAS target overlap is singular, smallest eigenvalue %.3e\n",s22_eig[0]);
+        fprintf(out_stream,"       a requested shell of %s is spanned by the shells below it\n",A.ref_basis.c_str());
+        exit(EXIT_FAILURE);
+    }
 
     std::vector<double> S22i(S22);
     inv_matr_constr(S22i.data(),n_ref);
@@ -209,6 +280,35 @@ int avas_steer(molecule * M, const avas_par & A, char * job_name)
 
     avas_print_sigma("AVAS occupied-block sigma (descending)",sig_o_d.data(),n_occ,k_o);
     avas_print_sigma("AVAS virtual-block  sigma (descending)",sig_v  .data(),n_vir,k_v);
+
+    // sigma sums to the target dimension over both blocks, so what the window misses is the
+    // target weight the active space cannot carry
+    double w_sel=0.0, w_out_o=0.0, w_out_v=0.0;
+    for(int i=0    ;i<k_o  ;i++)w_sel  +=sig_o_d[i];
+    for(int a=0    ;a<k_v  ;a++)w_sel  +=sig_v  [a];
+    for(int i=k_o  ;i<n_occ;i++)w_out_o+=sig_o_d[i];
+    for(int a=k_v  ;a<n_vir;a++)w_out_v+=sig_v  [a];
+
+    fprintf(out_stream,"Target weight in the active space: %.3f of %d\n",w_sel,n_ref);
+    fprintf(out_stream,"          left in occupied orbitals: %.3f\n",w_out_o);
+    fprintf(out_stream,"          left in virtual  orbitals: %.3f\n\n",w_out_v);
+
+    // one target direction shared by an occupied and a virtual orbital sums to one over the pair,
+    // and the window fixed by n_alp/n_bet can hold only the virtual half of such a pair
+    int    n_split=0;
+    double w_split=0.0;
+    for(int i=k_o;i<n_occ;i++){
+        if(sig_o_d[i]<AVAS_SPLIT_MIN)break;
+        for(int a=0;a<k_v;a++)
+            if(fabs(sig_o_d[i]+sig_v[a]-1.0)<AVAS_SPLIT_TOL){
+                n_split++;
+                if(sig_o_d[i]>w_split)w_split=sig_o_d[i];
+                break;
+            }
+    }
+    if(n_split)
+        fprintf(out_stream,"NOTE: %d target directions are split between the two blocks; the largest leaves\n"
+                           "      %.3f outside the occupied window that n_alp and n_bet fix\n",n_split,w_split);
 
     if((k_o>0)&&(k_o<n_occ)&&(avas_max_gap(sig_o_d.data(),n_occ)!=k_o-1))
         fprintf(out_stream,"NOTE: the occupied boundary after %d orbitals is not the largest gap of its spectrum\n",k_o);

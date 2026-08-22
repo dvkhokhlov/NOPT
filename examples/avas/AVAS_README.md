@@ -20,6 +20,13 @@ After the reference orbitals are available (RHF, or `MO_orth` when `RHF=0`), AVA
 projector of the requested atomic shells onto the occupied and the virtual orbital block
 separately, diagonalizes each one, and rotates the two blocks so that
 
+The requested shells are first orthogonalized against the shells of the reference basis that lie
+below them, over all selected atoms at once. In a segmented basis a shell overlaps the ones under
+it (def2-SVP Cr: `<3s|4s>` = 0.40, `<3p|4p>` = 0.32), so without this the target span holds
+semicore that the virtual block cannot reach and part of it is stranded in the core. How many
+functions were removed is printed; if a requested shell turns out to lie inside them, the run
+stops rather than inverting a singular target overlap.
+
 - the σ-largest occupied orbitals become the **last** occupied orbitals, and
 - the σ-largest virtual orbitals become the **first** virtual orbitals,
 
@@ -32,6 +39,20 @@ The counts are **not** chosen by AVAS: `$act_space` stays authoritative. AVAS fi
 `k_occ = (n_alp+n_bet)/2` occupied and `n_val - k_occ` virtual slots. If the forced counts cut
 across a σ tier rather than at the largest gap of the spectrum, a `NOTE:` line says so and the
 run proceeds as asked.
+
+σ sums to the number of reference functions over both blocks, so the weight the window leaves
+behind is reported too:
+
+```
+Target weight in the active space: 27.824 of 28
+          left in occupied orbitals: 0.002
+          left in virtual  orbitals: 0.076
+```
+
+One target direction can also be shared between an occupied and a virtual orbital, in which case
+the two σ sum to one and the fixed window takes only the virtual half. Such pairs are counted in
+a `NOTE:` line. They are not always a defect — a covalent target splits this way legitimately —
+but they say the window `n_alp`/`n_bet` fixes is worth re-reading.
 
 The rotated orbitals are always written as `<NAME>_AVAS.orb`, `<NAME>_AVAS.orb_GAMESS` and
 `<NAME>_AVAS.out`, so a steered run can be inspected and restarted from its window.
