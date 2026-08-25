@@ -89,6 +89,7 @@ int backup_code_print(int a){
 rhf_par::rhf_par(){
     
     y=0;
+    guess = GUESS_HUCKEL;
 //     huckel_guess=0;
 //     h_core_guess=0;
 //     read_guess  =0;
@@ -140,7 +141,8 @@ int rhf_par::read_group(char * inp){
 
 int rhf_par::read_line(char * inp){
     
-    if(key_word_comp(inp, rhf_huckel)){
+    // GUESS=HUCKEL carries the retired bare keyword as its value
+    if(key_word_comp(inp, rhf_huckel)&&(key_word_comp(inp, guess_kw)==0)){
         fprintf(out_stream,"ERROR: while parsing $RHF group keyword HUCKEL is deprecated\n");
         exit(0);
     }
@@ -148,6 +150,15 @@ int rhf_par::read_line(char * inp){
     if(key_word_comp(inp, rhf_h_core)){
         fprintf(out_stream,"ERROR: while parsing $RHF group keyword H_CORE is deprecated\n");
         exit(0);
+    }
+    
+    if(key_word_comp(inp, guess_kw)){
+        if      (kw_to_kw(inp, guess_kw, guess_huckel_kw)) guess = GUESS_HUCKEL;
+        else if (kw_to_kw(inp, guess_kw, guess_sad_kw   )) guess = GUESS_SAD;
+        else{
+            fprintf(out_stream,"ERROR: unknown GUESS value; accepted: huckel, sad\n");
+            exit(1);
+        }
     }
     
 //     if(key_word_comp(inp, rhf_read))
@@ -1997,6 +2008,13 @@ std::vector<int> molecule_read_by_inp_par(molecule * M, inp_par * P){
         exit(EXIT_FAILURE);
     }
     
+    // Linking reorders the merged orbitals, which detaches them from the atomic
+    // occupations the SAD density is carried by.
+    if((s>1)&&(P->rhf.guess==GUESS_SAD)){
+        fprintf(out_stream,"ERROR: SAD guess does not support N_MOL>1 (got %d molecules); use GUESS=huckel\n",s);
+        exit(EXIT_FAILURE);
+    }
+
     // DMRG reads only the active-space dimensions off molecule::CI -- never the
     // determinant space, which is unbuildable at the sizes DMRG is used for.
     int ci_alloc = ALDET_ALLOC_FULL;
@@ -2094,7 +2112,7 @@ std::vector<int> molecule_read_by_inp_par(molecule * M, inp_par * P){
         
         }
         
-        Mf[i].MO_gen();
+        Mf[i].MO_gen(P->rhf.guess);
         
         if(mc)Mf[i].active_space_read(P->rhf.y,1-P->cas.y,ci_alloc);
         else

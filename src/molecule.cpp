@@ -17,6 +17,7 @@
 # include "geom.h"
 # include "ecp.h"
 #include "basis_lib_read.h"
+#include "sad_guess.h"
 #include "inp_out.h"
 
 // 
@@ -1179,7 +1180,7 @@ int molecule::project_to_full_basis(){
 }
 
 
-int molecule::MO_gen(){
+int molecule::MO_gen(int guess){
     
     MO_VEC       =new double[n_ao*n_ao];
     NO_VEC       =new double[n_ao*n_ao];
@@ -1205,7 +1206,6 @@ int molecule::MO_gen(){
     while((key_word_comp(line,MO_group_start)==0)&&(!in.r_eof())){in.r_gets(line,BUF_LINE_LENGTH);}
     if(key_word_comp(line,MO_group_start)==0){
         fprintf(out_stream,"\n");
-        fprintf(out_stream,"                      using Huckel orbitals\n");
         MO_VEC_B=MO_VEC;
         read=0;
         different_rbasis=1;
@@ -1279,8 +1279,20 @@ int molecule::MO_gen(){
     else{
         if(read_basis_name  != NULL) delete [] read_basis_name;
         read_basis_name=new char[BUF_LINE_LENGTH];
-        sprintf(read_basis_name,"%s","huckel/Huckel");
-        huckel_guess();
+
+        int have_guess=0;
+        if      (guess==GUESS_HUCKEL) have_guess=0;
+        else if (guess==GUESS_SAD   ) have_guess=sad_guess(this);
+        else{
+            fprintf(out_stream,"ERROR: unknown starting guess (%d)\n",guess);
+            exit(1);
+        }
+
+        if(have_guess==0){
+            fprintf(out_stream,"                      using Huckel orbitals\n");
+            sprintf(read_basis_name,"%s","huckel/Huckel");
+            huckel_guess();
+        }
         fprintf(out_stream,"\n\n");
 //         printf_timer("Huckel guess");
 
