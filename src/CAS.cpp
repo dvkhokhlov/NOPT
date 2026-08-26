@@ -1398,7 +1398,8 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
 
     //super-CI-PT engine
     superci_pt_engine SXPT;
-    SXPT.init(CAS->n_core, CAS->n_act, CAS->n_vac, CAS->n_ao, M->rep_num, M->S.n_rep, cas->x_max);
+    if(cas->converger==CONVERGER_SXPT)
+        SXPT.init(CAS->n_core, CAS->n_act, CAS->n_vac, CAS->n_ao, M->rep_num, M->S.n_rep, cas->x_max);
     
     dmrg_log_set_tag(dmrg_log_tag::primary);
     n_dav_conv = CAS->CI_calc(1,0,0);
