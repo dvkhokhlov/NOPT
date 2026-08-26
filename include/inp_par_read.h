@@ -149,6 +149,7 @@ class cas_par
         int ci_solver;     // cisolver_kind: ALDET (default) | DMRG
         //orbital converger
         int converger;     // converger_kind: SOSCF (default) | SXPT
+        int diis;          // orbital DIIS history depth, 0 = no extrapolation
         //convergence
         int max_it;
         double e_conv;

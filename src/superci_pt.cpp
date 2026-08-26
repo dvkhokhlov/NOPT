@@ -23,8 +23,11 @@ namespace {
 const double TAU_DROP  = 1e-10;
 const double TAU_ADMIT = 1e-9;
 
-// max|offdiag| the canonicalization is allowed to leave, relative to the block's spread
-const double CANON_TOL = 1e-9;
+// max|offdiag| the canonicalization is allowed to leave, relative to the block's spread,
+// and max|V^T V - I| it is allowed to depart from a rotation. The second is what sees a
+// block that was never filled: its off-diagonal residual is exactly zero.
+const double CANON_TOL = 1e-10;
+const double ORTHO_TOL = 1e-12;
 
 double max_abs(const double * x, long n){
     double m=0.0;
@@ -36,7 +39,8 @@ double max_abs(const double * x, long n){
 
 
 int superci_pt_engine::init(int ext_n_c, int ext_n_a, int ext_n_v, int ext_n_ao,
-                            const int * ext_rep_num, int ext_n_rep, double ext_x_max){
+                            const int * ext_rep_num, int ext_n_rep, double ext_x_max,
+                            int ext_diis){
 
     n_c   = ext_n_c;
     n_a   = ext_n_a;
@@ -46,10 +50,13 @@ int superci_pt_engine::init(int ext_n_c, int ext_n_a, int ext_n_v, int ext_n_ao,
     n_rep = ext_n_rep;
     rep_num = ext_rep_num;
     x_max = ext_x_max;
+    app_max = 0.0;
     drop_reported = false;
 
     keep_p.assign(std::max(n_rep,1), -1);
     keep_h.assign(std::max(n_rep,1), -1);
+
+    diis.init(ext_diis, (size_t)n_c*n_a + (size_t)n_c*n_v + (size_t)n_a*n_v, x_max);
 
     return 0;
 }
@@ -136,6 +143,24 @@ double superci_pt_engine::canonical_residual(const double * F, int n0, int dim,
         if(i!=j) off = std::max(off, std::fabs(buf1[(size_t)i*dim+j]));
 
     return off;
+}
+
+// max|V^T V - I|. A window the blocking loop never reached leaves V = 0, which is
+// invisible to the off-diagonal residual and O(1) here.
+double superci_pt_engine::orthogonality_defect(int dim, const std::vector<double>& V){
+
+    if(dim<1) return 0.0;
+
+    buf1.assign((size_t)dim*dim, 0.0);
+    nopt_par_dgemm(CblasRowMajor,CblasTrans,CblasNoTrans, dim,dim,dim, 1.0,
+                   V.data(),dim, V.data(),dim, 0.0, buf1.data(),dim);
+
+    double d=0.0;
+    for(int i=0;i<dim;i++)
+    for(int j=0;j<dim;j++)
+        d = std::max(d, std::fabs(buf1[(size_t)i*dim+j] - (i==j?1.0:0.0)));
+
+    return d;
 }
 
 // K[t,u] = -sum_w F^I_uw gamma_tw - sum_wxy (uw|xy) GAMMA_tw,xy, and Ktilde = K + 2 F_tot,
@@ -306,10 +331,19 @@ double superci_pt_engine::step(CAS_engine * CAS){
     const double off_v = canonical_residual(CAS->F_tot, n_c+n_a, n_v, V_v);
     const double span  = std::max(1.0, std::max(max_abs(eps_c.data(),n_c),
                                                 max_abs(eps_v.data(),n_v)));
+    const double orth_c = orthogonality_defect(n_c, V_c);
+    const double orth_v = orthogonality_defect(n_v, V_v);
     if(std::max(off_c,off_v) > CANON_TOL*span){
         fprintf(out_stream,"ERROR: super-CI-PT canonicalization left the Fock blocks non-diagonal"
                            " (core %.3e, virtual %.3e, tolerance %.3e)\n",
                            off_c, off_v, CANON_TOL*span);
+        exit(EXIT_FAILURE);
+    }
+
+    if(std::max(orth_c,orth_v) > ORTHO_TOL){
+        fprintf(out_stream,"ERROR: super-CI-PT canonicalization is not a rotation"
+                           " (core %.3e, virtual %.3e, tolerance %.3e)\n",
+                           orth_c, orth_v, ORTHO_TOL);
         exit(EXIT_FAILURE);
     }
 
@@ -414,7 +448,7 @@ double superci_pt_engine::step(CAS_engine * CAS){
     for(int a=0;a<n_v;a++)
         if(rep_num[n_c+t]!=rep_num[n_c+n_a+a]) T_ta[(size_t)t*n_v+a]=0.0;
 
-    // --- trust cap, then the rotation ------------------------------------------------
+    // --- trust cap, then DIIS, then the rotation --------------------------------------
     double mx = std::max(max_abs(T_it.data(),(long)n_c*n_a),
                 std::max(max_abs(T_ia.data(),(long)n_c*n_v),
                          max_abs(T_ta.data(),(long)n_a*n_v)));
@@ -423,28 +457,49 @@ double superci_pt_engine::step(CAS_engine * CAS){
         for(size_t i=0;i<T_it.size();i++) T_it[i]*=s;
         for(size_t i=0;i<T_ia.size();i++) T_ia[i]*=s;
         for(size_t i=0;i<T_ta.size();i++) T_ta[i]*=s;
-        fprintf(out_stream," SX-PT is scaling rotation angle matrix Xmax=%.5e                         |\n", mx);
+        fprintf(out_stream," SX-PT is scaling rotation angle matrix Xmax=%.5e                                     |\n", mx);
         mx = x_max;
     }
 
-    fprintf(out_stream," SX-PT: metric min %.1e/%.1e  kept %3d+%3d/%3d  max dir |T| %.1e       |\n",
-                       min_p, min_h, nk_p, nk_h, n_a, t_dir);
+    // the history stores the capped amplitude, so the Theta it carries stays equal to the
+    // rotation that was applied
+    const size_t o_ia = (size_t)n_c*n_a;
+    const size_t o_ta = o_ia + (size_t)n_c*n_v;
+    const double * a_it = T_it.data();
+    const double * a_ia = T_ia.data();
+    const double * a_ta = T_ta.data();
+    if(diis.active()){
+        kap_vec.resize(o_ta + (size_t)n_a*n_v);
+        std::copy(T_it.begin(), T_it.end(), kap_vec.begin());
+        std::copy(T_ia.begin(), T_ia.end(), kap_vec.begin()+o_ia);
+        std::copy(T_ta.begin(), T_ta.end(), kap_vec.begin()+o_ta);
+        diis.extrapolate(kap_vec, app_vec);
+        a_it = app_vec.data();
+        a_ia = app_vec.data()+o_ia;
+        a_ta = app_vec.data()+o_ta;
+    }
+    app_max = std::max(max_abs(a_it,(long)n_c*n_a),
+              std::max(max_abs(a_ia,(long)n_c*n_v),
+                       max_abs(a_ta,(long)n_a*n_v)));
+
+    fprintf(out_stream," SX-PT: metric min %.1e/%.1e  kept %3d+%3d/%3d  max dir |T| %.1e  diis %2d           |\n",
+                       min_p, min_h, nk_p, nk_h, n_a, t_dir, diis.in_use());
 
     kappa.assign((size_t)n_mo*n_mo, 0.0);
     for(int i=0;i<n_c;i++)
     for(int t=0;t<n_a;t++){
-        kappa[(size_t)i*n_mo + n_c+t] =  T_it[(size_t)i*n_a+t];
-        kappa[(size_t)(n_c+t)*n_mo+i] = -T_it[(size_t)i*n_a+t];
+        kappa[(size_t)i*n_mo + n_c+t] =  a_it[(size_t)i*n_a+t];
+        kappa[(size_t)(n_c+t)*n_mo+i] = -a_it[(size_t)i*n_a+t];
     }
     for(int i=0;i<n_c;i++)
     for(int a=0;a<n_v;a++){
-        kappa[(size_t)i*n_mo + n_c+n_a+a] =  T_ia[(size_t)i*n_v+a];
-        kappa[(size_t)(n_c+n_a+a)*n_mo+i] = -T_ia[(size_t)i*n_v+a];
+        kappa[(size_t)i*n_mo + n_c+n_a+a] =  a_ia[(size_t)i*n_v+a];
+        kappa[(size_t)(n_c+n_a+a)*n_mo+i] = -a_ia[(size_t)i*n_v+a];
     }
     for(int t=0;t<n_a;t++)
     for(int a=0;a<n_v;a++){
-        kappa[(size_t)(n_c+t)*n_mo + n_c+n_a+a] =  T_ta[(size_t)t*n_v+a];
-        kappa[(size_t)(n_c+n_a+a)*n_mo + n_c+t] = -T_ta[(size_t)t*n_v+a];
+        kappa[(size_t)(n_c+t)*n_mo + n_c+n_a+a] =  a_ta[(size_t)t*n_v+a];
+        kappa[(size_t)(n_c+n_a+a)*n_mo + n_c+t] = -a_ta[(size_t)t*n_v+a];
     }
 
     apply_rotation(CAS);

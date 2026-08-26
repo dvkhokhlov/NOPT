@@ -85,6 +85,8 @@ vector<const char *>converger_soscf_kw{{"soscf"}};
 
 vector<const char *>converger_sxpt_kw{{"sxpt"}};
 
+vector<const char *>cas_diis_kw{{"diis"}};
+
 vector<const char *>num_state_kw{{"n_s"},
                                  {"numstate"},
                                  {"num_state"}};

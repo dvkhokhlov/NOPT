@@ -1363,6 +1363,7 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
     
     int converged=0;
     double rot_step=1.0;
+    double rot_applied=1.0;
     bool any_maxed=false;   // a macro-iter whose CI solve hit its max sweeps while under-converged
     
     if(IS_SYM){
@@ -1399,7 +1400,8 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
     //super-CI-PT engine
     superci_pt_engine SXPT;
     if(cas->converger==CONVERGER_SXPT)
-        SXPT.init(CAS->n_core, CAS->n_act, CAS->n_vac, CAS->n_ao, M->rep_num, M->S.n_rep, cas->x_max);
+        SXPT.init(CAS->n_core, CAS->n_act, CAS->n_vac, CAS->n_ao, M->rep_num, M->S.n_rep, cas->x_max,
+                  cas->diis);
     
     dmrg_log_set_tag(dmrg_log_tag::primary);
     n_dav_conv = CAS->CI_calc(1,0,0);
@@ -1419,9 +1421,11 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
     CAS->print_av_table("CAS_SCF density averaging:");
     fprintf(out_stream,"\n");
     fprintf(out_stream,"Start CAS_SCF iterations\n");
-    fprintf(out_stream,"_________________________________________________________________________________\n");
-    fprintf(out_stream,"  N | E                 | dE         | LAG.ASYM. | ROT.STEP  | N_dav | sweep_dE  |\n");
-    fprintf(out_stream,"____|___________________|____________|___________|___________|_______|___________|\n");
+    const char * sx_rule = (cas->converger==CONVERGER_SXPT) ? "___________|" : "";
+    const char * sx_head = (cas->converger==CONVERGER_SXPT) ? " APPL.STEP |" : "";
+    fprintf(out_stream,"_________________________________________________________________________________%s\n",sx_rule);
+    fprintf(out_stream,"  N | E                 | dE         | LAG.ASYM. | ROT.STEP  | N_dav | sweep_dE  |%s\n",sx_head);
+    fprintf(out_stream,"____|___________________|____________|___________|___________|_______|___________|%s\n",sx_rule);
     disable_print_timers();
     
     while(true){
@@ -1443,7 +1447,9 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
         
         bool hit_max = CAS->CI->last_solve_hit_max();
         if(hit_max) any_maxed=true;
-        fprintf(out_stream,"%3d |% 18.10f | % .3e | %.3e | %.3e | %3d   | %.3e |%s\n",n_iter,E,E-E_old,max_grad_el, rot_step,n_dav_conv,CAS->CI->last_solve_resid(), hit_max?" *":"");
+        char sx_appl[16]; sx_appl[0]='\0';
+        if(cas->converger==CONVERGER_SXPT)snprintf(sx_appl,sizeof(sx_appl)," %.3e |",rot_applied);
+        fprintf(out_stream,"%3d |% 18.10f | % .3e | %.3e | %.3e | %3d   | %.3e |%s%s\n",n_iter,E,E-E_old,max_grad_el, rot_step,n_dav_conv,CAS->CI->last_solve_resid(), sx_appl, hit_max?" *":"");
         fflush(out_stream);
 //         getchar();
 //         exit(0);
@@ -1454,7 +1460,10 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
             if(cas->method==1)rot_step=SOSCF.step(CAS->MO_VEC,CAS->MO_BUF);
             if(cas->method==2)rot_step=j_sd.step(CAS->MO_VEC,CAS->MO_BUF);
         }
-        else if (cas->converger==CONVERGER_SXPT ) rot_step=SXPT.step(CAS);
+        else if (cas->converger==CONVERGER_SXPT ){
+            rot_step   =SXPT.step(CAS);
+            rot_applied=SXPT.applied();
+        }
 //         printf_timer("CAS_step");
 //         converged=0; break;
         dmrg_log_set_tag(dmrg_log_tag::scf);
@@ -1471,7 +1480,7 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
     
     char * name = new char[BUF_LINE_LENGTH];
     
-    fprintf(out_stream,"____|___________________|____________|___________|___________|_______|___________|\n");
+    fprintf(out_stream,"____|___________________|____________|___________|___________|_______|___________|%s\n",sx_rule);
     if(converged==0)fprintf(out_stream,"\nCASSCF did not converge");
     if(converged==1)fprintf(out_stream,"\nEnergy converged");
     if(converged==2)fprintf(out_stream,"\nLagrangian converged");

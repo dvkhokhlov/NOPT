@@ -213,6 +213,7 @@ cas_par::cas_par(){
     y=0;
     ci_solver = CISOLVER_ALDET;
     converger = CONVERGER_SOSCF;
+    diis      = CAS_DIIS_DEFAULT;
     //convergence
     max_it = CAS_MAX_IT_DEFAULT;
     e_conv = CAS_EN_CON_DEFAULT;
@@ -374,6 +375,10 @@ int cas_par::read_group(char * inp){
             nopt_printf("ERROR: converger=sxpt is state-averaged only; use SA\n");
             exit(1);
         }
+        if(diis<0){
+            nopt_printf("ERROR: diis must be a non-negative history depth (0 = off)\n");
+            exit(1);
+        }
         if(!x_max_set) x_max = CAS_X_MAX_SXPT_DEFAULT;
     }
 
@@ -431,6 +436,10 @@ int cas_par::read_line(char * inp){
     if(key_word_comp(inp, x_max_kw)){
         x_max = kw_to_f(inp, x_max_kw, CAS_X_MAX_DEFAULT);
         x_max_set = true;
+    }
+    
+    if(key_word_comp(inp, cas_diis_kw)){
+        diis = kw_to_i(inp, cas_diis_kw, CAS_DIIS_DEFAULT);
     }
     
     if(key_word_comp(inp, cas_SA_kw)){
@@ -520,8 +529,10 @@ int cas_par::write_info(int n_a, int n_b, int n_o, int n_c, int mult){
     fprintf(out_stream,"Orbital gradient convergence:     %e\n",g_conv);
     fprintf(out_stream,"Rotation matrix convergence :     %e\n",s_conv);
     fprintf(out_stream,"Maximum number of iterations:     %d\n",max_it);
-    if(converger==CONVERGER_SXPT)
+    if(converger==CONVERGER_SXPT){
         fprintf(out_stream,"Orbital converger:                super-CI-PT (sxpt)\n");
+        fprintf(out_stream,"Orbital DIIS depth          :     %d\n",diis);
+    }
     fprintf(out_stream,"Maximum SOSCF step          :     %e\n",x_max);
     fprintf(out_stream,"\n");
     if      (ci_solver==CISOLVER_ALDET){
