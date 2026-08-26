@@ -212,12 +212,14 @@ rhf_par::~rhf_par(){
 cas_par::cas_par(){
     y=0;
     ci_solver = CISOLVER_ALDET;
+    converger = CONVERGER_SOSCF;
     //convergence
     max_it = CAS_MAX_IT_DEFAULT;
     e_conv = CAS_EN_CON_DEFAULT;
     g_conv = CAS_GR_CON_DEFAULT;
     s_conv = CAS_STEP_CON_DEFAULT;
     x_max  = CAS_X_MAX_DEFAULT;
+    x_max_set = false;
     method=0;
     
     //states
@@ -365,6 +367,16 @@ int cas_par::read_group(char * inp){
     method--;
     if(method==-1)method=CAS_METHOD_DEFAULT;
 
+    // super-CI-PT is state-averaged by construction: its Koopmans matrices come from the
+    // SA RDMs and it solves one common amplitude set.
+    if(converger==CONVERGER_SXPT){
+        if(method!=1){
+            nopt_printf("ERROR: converger=sxpt is state-averaged only; use SA\n");
+            exit(1);
+        }
+        if(!x_max_set) x_max = CAS_X_MAX_SXPT_DEFAULT;
+    }
+
     if(ci_solver==CISOLVER_DMRG) dmrg.validate();
 
     return 0;
@@ -383,6 +395,15 @@ int cas_par::read_line(char * inp){
         else if (kw_to_kw(inp, cisolver_kw, cisolver_dmrg_kw )) ci_solver = CISOLVER_DMRG;
         else{
             fprintf(out_stream,"ERROR: unknown CISOLVER value; accepted: aldet, dmrg\n");
+            exit(1);
+        }
+    }
+
+    if(key_word_comp(inp, converger_kw)){
+        if      (kw_to_kw(inp, converger_kw, converger_soscf_kw)) converger = CONVERGER_SOSCF;
+        else if (kw_to_kw(inp, converger_kw, converger_sxpt_kw )) converger = CONVERGER_SXPT;
+        else{
+            fprintf(out_stream,"ERROR: unknown CONVERGER value; accepted: soscf, sxpt\n");
             exit(1);
         }
     }
@@ -409,6 +430,7 @@ int cas_par::read_line(char * inp){
     
     if(key_word_comp(inp, x_max_kw)){
         x_max = kw_to_f(inp, x_max_kw, CAS_X_MAX_DEFAULT);
+        x_max_set = true;
     }
     
     if(key_word_comp(inp, cas_SA_kw)){
@@ -498,6 +520,8 @@ int cas_par::write_info(int n_a, int n_b, int n_o, int n_c, int mult){
     fprintf(out_stream,"Orbital gradient convergence:     %e\n",g_conv);
     fprintf(out_stream,"Rotation matrix convergence :     %e\n",s_conv);
     fprintf(out_stream,"Maximum number of iterations:     %d\n",max_it);
+    if(converger==CONVERGER_SXPT)
+        fprintf(out_stream,"Orbital converger:                super-CI-PT (sxpt)\n");
     fprintf(out_stream,"Maximum SOSCF step          :     %e\n",x_max);
     fprintf(out_stream,"\n");
     if      (ci_solver==CISOLVER_ALDET){

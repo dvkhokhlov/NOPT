@@ -14,6 +14,7 @@
 # include "tensor_rotate.h"    // rotate1/rotate2 (active-basis transforms)
 # include "dmrg_log.h"         // per-solve block2 sweep log
 # include "aldet_casci_wrap.h"
+# include "superci_pt.h"
 #ifdef NOPT_HAS_BLOCK2
 # include "block2_casci_wrap.h"
 #endif
@@ -1394,6 +1395,10 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
     
     jacobi_mcscf_sd_engine j_sd;
     j_sd.init(CAS->G,CAS->B,CAS->n_core, CAS->n_act,CAS->n_vac,CAS->n_ao,CAS->n_s_opt,cas->x_max);
+
+    //super-CI-PT engine
+    superci_pt_engine SXPT;
+    SXPT.init(CAS->n_core, CAS->n_act, CAS->n_vac, CAS->n_ao, M->rep_num, M->S.n_rep, cas->x_max);
     
     dmrg_log_set_tag(dmrg_log_tag::primary);
     n_dav_conv = CAS->CI_calc(1,0,0);
@@ -1424,8 +1429,15 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
         if(cas->method==1)E = CAS->SA_grad_hess_calc();
         if(cas->method==2)E = CAS->SM_grad_hess_calc();
         
-        if(cas->method==1)max_grad_el = SOSCF.calc(CAS->G,CAS->B);
-        if(cas->method==2)max_grad_el = j_sd.find_max_el();
+        if      (cas->converger==CONVERGER_SOSCF){
+            if(cas->method==1)max_grad_el = SOSCF.calc(CAS->G,CAS->B);
+            if(cas->method==2)max_grad_el = j_sd.find_max_el();
+        }
+        else if (cas->converger==CONVERGER_SXPT ) max_grad_el = SXPT.calc(CAS->G);
+        else{
+            fprintf(out_stream,"ERROR: unknown CASSCF converger (%d); accepted: soscf, sxpt\n",cas->converger);
+            exit(EXIT_FAILURE);
+        }
         
         
         bool hit_max = CAS->CI->last_solve_hit_max();
@@ -1437,8 +1449,11 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
         if(fabs(E-E_old)<cas->e_conv){converged=1; break;}
         if(max_grad_el  <cas->g_conv){converged=2; break;}
         
-        if(cas->method==1)rot_step=SOSCF.step(CAS->MO_VEC,CAS->MO_BUF);
-        if(cas->method==2)rot_step=j_sd.step(CAS->MO_VEC,CAS->MO_BUF);
+        if      (cas->converger==CONVERGER_SOSCF){
+            if(cas->method==1)rot_step=SOSCF.step(CAS->MO_VEC,CAS->MO_BUF);
+            if(cas->method==2)rot_step=j_sd.step(CAS->MO_VEC,CAS->MO_BUF);
+        }
+        else if (cas->converger==CONVERGER_SXPT ) rot_step=SXPT.step(CAS);
 //         printf_timer("CAS_step");
 //         converged=0; break;
         dmrg_log_set_tag(dmrg_log_tag::scf);

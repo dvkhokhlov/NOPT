@@ -70,6 +70,7 @@ enum guess_kind { GUESS_HUCKEL = 0, GUESS_SAD = 1 };
 
 // CI backend driving the CAS-SCF active-space solve.
 enum cisolver_kind { CISOLVER_ALDET = 0, CISOLVER_DMRG = 1 };
+enum converger_kind { CONVERGER_SOSCF = 0, CONVERGER_SXPT = 1 };
 
 // $DMRG group — value sets validated against keyword lists (dmrg_par::read_line).
 enum dmrg_hf_occ_kind   { DMRG_HF_OCC_UNKNOWN = -1, DMRG_HF_OCC_INTEGRAL = 0 };
@@ -146,6 +147,8 @@ class cas_par
         int y;
         //CI backend
         int ci_solver;     // cisolver_kind: ALDET (default) | DMRG
+        //orbital converger
+        int converger;     // converger_kind: SOSCF (default) | SXPT
         //convergence
         int max_it;
         double e_conv;
@@ -153,6 +156,7 @@ class cas_par
         double s_conv;
         
         double x_max;
+        bool x_max_set;   // user gave x_max, so the converger default does not apply
         
         int method;
         int SA;

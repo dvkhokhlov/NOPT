@@ -26,6 +26,9 @@ extern vector<const char *>cas_group_end        ;
 extern vector<const char *>cisolver_kw          ;
 extern vector<const char *>cisolver_aldet_kw    ;
 extern vector<const char *>cisolver_dmrg_kw     ;
+extern vector<const char *>converger_kw         ;
+extern vector<const char *>converger_soscf_kw   ;
+extern vector<const char *>converger_sxpt_kw    ;
 extern vector<const char *>num_state_kw         ;
 
 extern vector<const char *>num_frozen_orb_kw    ;

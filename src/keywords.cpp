@@ -79,6 +79,12 @@ vector<const char *>cisolver_aldet_kw{{"aldet"}};
 
 vector<const char *>cisolver_dmrg_kw{{"dmrg"}};
 
+vector<const char *>converger_kw{{"converger"}};
+
+vector<const char *>converger_soscf_kw{{"soscf"}};
+
+vector<const char *>converger_sxpt_kw{{"sxpt"}};
+
 vector<const char *>num_state_kw{{"n_s"},
                                  {"numstate"},
                                  {"num_state"}};
