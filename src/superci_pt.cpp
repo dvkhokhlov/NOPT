@@ -185,6 +185,16 @@ void superci_pt_engine::build_koopmans(CAS_engine * CAS){
     nopt_par_dgemm(CblasRowMajor,CblasNoTrans,CblasTrans, n_a,n_a,na3, -1.0,
                    CAS->GAMMA,na3, CAS->aaaa_ints,na3, 1.0, K.data(),n_a);
 
+    // K is symmetric only through the 2-RDM's permutational symmetry, which a truncated
+    // MPS satisfies to truncation accuracy; lapack_diag keeps one triangle, so without
+    // this the pencil sees an arbitrary half of the asymmetry rather than its mean.
+    for(int t=0;t<n_a;t++)
+    for(int u=0;u<t;u++){
+        const double s = 0.5*(K[(size_t)t*n_a+u] + K[(size_t)u*n_a+t]);
+        K[(size_t)t*n_a+u] = s;
+        K[(size_t)u*n_a+t] = s;
+    }
+
     for(int t=0;t<n_a;t++)
     for(int u=0;u<n_a;u++)
         K_t[(size_t)t*n_a+u] = K[(size_t)t*n_a+u] + 2.0*CAS->F_tot[(size_t)(n_c+t)*n_ao + n_c+u];
@@ -368,13 +378,18 @@ double superci_pt_engine::step(CAS_engine * CAS){
     // --- Koopmans matrices and the two pencils ---------------------------------------
     build_koopmans(CAS);
 
-    std::vector<double> gam_h((size_t)n_a*n_a, 0.0);
+    // both metrics go through lapack_diag too, and CAS->gamma is shared and must not be
+    // touched, so the symmetric part goes into local copies
+    std::vector<double> gam_p((size_t)n_a*n_a, 0.0), gam_h((size_t)n_a*n_a, 0.0);
     for(int t=0;t<n_a;t++)
-    for(int u=0;u<n_a;u++)
-        gam_h[(size_t)t*n_a+u] = (t==u?2.0:0.0) - CAS->gamma[(size_t)t*n_a+u];
+    for(int u=0;u<n_a;u++){
+        const double g = 0.5*(CAS->gamma[(size_t)t*n_a+u] + CAS->gamma[(size_t)u*n_a+t]);
+        gam_p[(size_t)t*n_a+u] = g;
+        gam_h[(size_t)t*n_a+u] = (t==u?2.0:0.0) - g;
+    }
 
     double min_p=2.0, min_h=2.0;
-    solve_pencil(K  .data(), CAS->gamma  , -1.0, keep_p, C_p, e_p, min_p, "particle");
+    solve_pencil(K  .data(), gam_p.data(), -1.0, keep_p, C_p, e_p, min_p, "particle");
     solve_pencil(K_t.data(), gam_h.data(), +1.0, keep_h, C_h, e_h, min_h, "hole");
 
     const int nk_p = e_p.size();
