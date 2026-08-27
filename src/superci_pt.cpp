@@ -448,36 +448,39 @@ double superci_pt_engine::step(CAS_engine * CAS){
     for(int a=0;a<n_v;a++)
         if(rep_num[n_c+t]!=rep_num[n_c+n_a+a]) T_ta[(size_t)t*n_v+a]=0.0;
 
-    // --- trust cap, then DIIS, then the rotation --------------------------------------
+    // --- DIIS, then the trust cap, then the rotation ----------------------------------
+    // The history takes the raw amplitude: a capped error vector has the same norm every
+    // iteration, and a Gram of equal-norm near-parallel vectors makes the Pulay solve
+    // singular. The cap belongs on the rotation that is applied.
     double mx = std::max(max_abs(T_it.data(),(long)n_c*n_a),
                 std::max(max_abs(T_ia.data(),(long)n_c*n_v),
                          max_abs(T_ta.data(),(long)n_a*n_v)));
-    if(mx>x_max){
-        const double s = x_max/mx;
-        for(size_t i=0;i<T_it.size();i++) T_it[i]*=s;
-        for(size_t i=0;i<T_ia.size();i++) T_ia[i]*=s;
-        for(size_t i=0;i<T_ta.size();i++) T_ta[i]*=s;
-        fprintf(out_stream," SX-PT is scaling rotation angle matrix Xmax=%.5e                                     |\n", mx);
-        mx = x_max;
-    }
 
-    // the history stores the capped amplitude, so the Theta it carries stays equal to the
-    // rotation that was applied
     const size_t o_ia = (size_t)n_c*n_a;
     const size_t o_ta = o_ia + (size_t)n_c*n_v;
     const double * a_it = T_it.data();
     const double * a_ia = T_ia.data();
     const double * a_ta = T_ta.data();
+    double pre_cap = mx;                // |rotation| the trust cap was handed
     if(diis.active()){
         kap_vec.resize(o_ta + (size_t)n_a*n_v);
         std::copy(T_it.begin(), T_it.end(), kap_vec.begin());
         std::copy(T_ia.begin(), T_ia.end(), kap_vec.begin()+o_ia);
         std::copy(T_ta.begin(), T_ta.end(), kap_vec.begin()+o_ta);
-        diis.extrapolate(kap_vec, app_vec);
+        pre_cap = diis.extrapolate(kap_vec, app_vec);
         a_it = app_vec.data();
         a_ia = app_vec.data()+o_ia;
         a_ta = app_vec.data()+o_ta;
     }
+    else if(mx>x_max){
+        const double s = x_max/mx;
+        for(size_t i=0;i<T_it.size();i++) T_it[i]*=s;
+        for(size_t i=0;i<T_ia.size();i++) T_ia[i]*=s;
+        for(size_t i=0;i<T_ta.size();i++) T_ta[i]*=s;
+    }
+    if(pre_cap>x_max)
+        fprintf(out_stream," SX-PT is scaling rotation angle matrix Xmax=%.5e                                     |\n", pre_cap);
+
     app_max = std::max(max_abs(a_it,(long)n_c*n_a),
               std::max(max_abs(a_ia,(long)n_c*n_v),
                        max_abs(a_ta,(long)n_a*n_v)));

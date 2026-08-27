@@ -14,9 +14,6 @@ namespace {
 // no significant digits.
 const double DIIS_MIN_EIG = 1e-12;
 
-// Multiple of x_max the extrapolated rotation may reach before it is discarded.
-const double DIIS_X_FACTOR = 4.0;
-
 }   // namespace
 
 
@@ -73,7 +70,7 @@ void orbital_diis::solve_pulay(){
     for(int i=0;i<n;i++) tau[i] /= denom;
 }
 
-void orbital_diis::extrapolate(const std::vector<double>& kappa, std::vector<double>& applied){
+double orbital_diis::extrapolate(const std::vector<double>& kappa, std::vector<double>& applied){
 
     if((int)kap.size()==depth){
         kap  .pop_front();
@@ -85,34 +82,32 @@ void orbital_diis::extrapolate(const std::vector<double>& kappa, std::vector<dou
     if(kap.size()>1) solve_pulay();
 
     // a single history entry forces tau = 1, so the extrapolation is exactly the identity
-    if(kap.size()==1){
-        applied = kappa;
-        for(size_t p=0;p<n_rot;p++) theta_cur[p] += kappa[p];
-        return;
+    if(kap.size()==1) applied = kappa;
+    else{
+        const int n = (int)kap.size();
+        std::vector<double> tbar(n_rot, 0.0), kbar(n_rot, 0.0);
+        for(int i=0;i<n;i++){
+            cblas_daxpy((lapack_int)n_rot, tau[i], theta[i].data(),1, tbar.data(),1);
+            cblas_daxpy((lapack_int)n_rot, tau[i], kap  [i].data(),1, kbar.data(),1);
+        }
+        const std::vector<double>& th = theta.back();
+        applied.assign(n_rot, 0.0);
+        for(size_t p=0;p<n_rot;p++) applied[p] = -th[p] + tbar[p] + kbar[p];
     }
 
-    const int n = (int)kap.size();
-    std::vector<double> tbar(n_rot, 0.0), kbar(n_rot, 0.0);
-    for(int i=0;i<n;i++){
-        cblas_daxpy((lapack_int)n_rot, tau[i], theta[i].data(),1, tbar.data(),1);
-        cblas_daxpy((lapack_int)n_rot, tau[i], kap  [i].data(),1, kbar.data(),1);
-    }
-
-    const std::vector<double>& th_k = theta.back();
-    applied.assign(n_rot, 0.0);
+    // one trust region for the whole converger: the extrapolated rotation obeys the same
+    // x_max the bare amplitude does
     double mx = 0.0;
-    for(size_t p=0;p<n_rot;p++){
-        applied[p] = -th_k[p] + tbar[p] + kbar[p];
-        mx = std::max(mx, std::fabs(applied[p]));
+    for(size_t p=0;p<n_rot;p++) mx = std::max(mx, std::fabs(applied[p]));
+    if(mx>x_max){
+        const double s = x_max/mx;
+        for(size_t p=0;p<n_rot;p++) applied[p] *= s;
     }
 
-    // outside the trust region the extrapolation is discarded, not scaled: scaling would
-    // leave the carried Theta no longer equal to the rotation applied
-    if(mx > DIIS_X_FACTOR*x_max){
-        applied = kappa;
-        restart();
-        return;
-    }
+    // Theta carries the rotation that was applied -- identical to Theta_bar + kappa_bar
+    // when nothing was scaled, and still exact when it was
+    const std::vector<double>& th_k = theta.back();
+    for(size_t p=0;p<n_rot;p++) theta_cur[p] = th_k[p] + applied[p];
 
-    for(size_t p=0;p<n_rot;p++) theta_cur[p] = tbar[p] + kbar[p];
+    return mx;
 }
