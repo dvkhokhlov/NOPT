@@ -121,7 +121,8 @@ Default shown in parentheses.
 
 - **warm_start** *(on)* — reuse the previous macro-iteration's MPS as the next guess.
   `on | off`.
-- **warm_sweeps** *(0 = auto)* — max sweeps for a warm re-solve. `0` = auto = `sweeps/2`.
+- **warm_sweeps** *(0 = auto)* — clean-sweep budget of a warm re-solve. `0` = auto = `sweeps/2`.
+  Two noisy sweeps are prepended when `warm_noise_scale` is on.
 - **warm_start_after** *(0)* — CI solves run cold before the localized frame is frozen
   and warm start begins.
 - **warm_rotate** *(on)* — rotate the reused MPS into the new orbital basis.

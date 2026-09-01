@@ -806,6 +806,7 @@ dmrg_par::dmrg_par(){
     loc_order = DMRG_LOCORDER_FIEDLER;
     warm_start       = DMRG_WARM_START_DEFAULT;
     warm_sweeps      = DMRG_WARM_SWEEPS_DEFAULT;
+    warm_noise_scale = DMRG_WARM_NOISE_SCALE_DEFAULT;
     rot_m            = DMRG_ROT_M_DEFAULT;
     rot_steps        = DMRG_ROT_STEPS_DEFAULT;
     warm_start_after = DMRG_WARM_START_AFTER_DEFAULT;
@@ -902,6 +903,10 @@ int dmrg_par::read_line(char * inp){
 
     if(key_word_comp(inp, dmrg_warm_sweeps_kw)){
         warm_sweeps = kw_to_i(inp, dmrg_warm_sweeps_kw, DMRG_WARM_SWEEPS_DEFAULT);
+    }
+
+    if(key_word_comp(inp, dmrg_warm_noise_scale_kw)){
+        warm_noise_scale = kw_to_f(inp, dmrg_warm_noise_scale_kw, DMRG_WARM_NOISE_SCALE_DEFAULT);
     }
 
     if(key_word_comp(inp, dmrg_rot_m_kw)){
@@ -1036,6 +1041,10 @@ int dmrg_par::validate(){
         ok=0;
     }
     if(warm_start==DMRG_WARM_ON){
+        if(warm_noise_scale<0){
+            fprintf(out_stream,"ERROR: $DMRG warm_noise_scale=%g must be >= 0 (0 = noise-free warm re-solve)\n",warm_noise_scale);
+            ok=0;
+        }
         if(rot_m<0){
             fprintf(out_stream,"ERROR: $DMRG rot_m=%d must be >= 0 (0 = use m)\n",rot_m);
             ok=0;
@@ -1088,6 +1097,7 @@ int dmrg_par::write_info(){
     if(warm_start==DMRG_WARM_ON){
         fprintf(out_stream,"MPS warm-start:                   on (after %d cold iter)\n",warm_start_after);
         fprintf(out_stream,"Warm re-solve sweeps:             %d\n",warm_sweeps);
+        fprintf(out_stream,"Warm noise scale (x discarded w): %g\n",warm_noise_scale);
         fprintf(out_stream,"Rotate reused MPS:                %s\n",warm_rotate==DMRG_WARM_ON?"yes":"no (reuse-only)");
         fprintf(out_stream,"MPS-rotation bond dim (rot_m):    %d\n",rot_m==0?m:rot_m);
         if(warm_rotate==DMRG_WARM_ON)
