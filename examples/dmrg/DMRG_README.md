@@ -123,6 +123,8 @@ Default shown in parentheses.
   `on | off`.
 - **warm_sweeps** *(0 = auto)* — clean-sweep budget of a warm re-solve. `0` = auto = `sweeps/2`.
   Two noisy sweeps are prepended when `warm_noise_scale` is on.
+- **warm_noise_scale** *(0 = off)* — noise of those two sweeps as a multiple of the last solve's
+  discarded weight; below `1e-10` the re-solve stays noise-free.
 - **warm_start_after** *(0)* — CI solves run cold before the localized frame is frozen
   and warm start begins.
 - **warm_rotate** *(on)* — rotate the reused MPS into the new orbital basis.
