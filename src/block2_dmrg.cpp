@@ -867,6 +867,12 @@ int block2_casci_wrap::solve(int, int, bool use_prev_guess) {
         // else reuse-only: the reloaded MPS is the (unrotated) warm guess; the short re-solve corrects
         // the basis change. Proven crash-free and == cold; the safe fallback if rotation is declined.
     }
+    // A solve armed for a warm restart -- a rotation was supplied, or the host forced cold with
+    // use_prev_guess -- that ran cold regardless. Read before the cold branch replaces e.mps. Solves
+    // before the warm frame is frozen carry no rotation and are cold by design, so they are not this.
+    e.last_cold_fallback = (e.cfg.warm_start == DMRG_WARM_ON && !warm &&
+                            e.mps != nullptr && e.mps_info != nullptr &&
+                            (e.have_rotation || !use_prev_guess));
     e.have_rotation = false; // consumed; the host supplies a fresh R each warm iteration
     if (!warm && order_frozen && !e.dressed_mpo)
         recompute_cold_order(e); // the order was pinned to a basis we are no longer in; never over a

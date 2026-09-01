@@ -18,6 +18,9 @@ class orbital_diis{
         // magnitude before that scaling. Must not alias kappa.
         double extrapolate(const std::vector<double>& kappa, std::vector<double>& applied);
 
+        // Drop the history: the surface it was accumulated on is gone.
+        void restart();
+
     private:
         int    depth;
         size_t n_rot;
@@ -28,7 +31,6 @@ class orbital_diis{
         std::vector<double> theta_cur, tau, sig;
 
         void solve_pulay();
-        void restart();
 };
 
 #endif

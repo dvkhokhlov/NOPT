@@ -96,6 +96,7 @@ struct dmrgci_engine {
     bool last_hit_max = false;                  // last solve used its full sweep budget with dE > sweep_tol
     std::vector<uint16_t> reorder_perm;         // DMRG lattice order (Fiedler); empty => input order
     double last_ord_drift = 1.0;                // reorder_perm's ordering cost over a fresh Fiedler order's
+    bool last_cold_fallback = false;            // a warm-armed solve that still ran cold
 
     dmrgci_engine(int n_act_, int n_elec_, int twos_, int twosz_, int mult_, int n_s_,
                   int print_number_, const dmrg_par &c)

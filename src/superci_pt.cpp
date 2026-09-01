@@ -61,6 +61,15 @@ int superci_pt_engine::init(int ext_n_c, int ext_n_a, int ext_n_v, int ext_n_ao,
     return 0;
 }
 
+// keep_p/keep_h ratchet the kept metric rank against the previous macro-iteration, which assumes
+// the occupation spectrum moves smoothly; -1 is init()'s "no previous iteration" state.
+void superci_pt_engine::reset_history(){
+
+    diis.restart();
+    keep_p.assign(std::max(n_rep,1), -1);
+    keep_h.assign(std::max(n_rep,1), -1);
+}
+
 double superci_pt_engine::calc(const double * G){
 
     return max_abs(G, (long)n_c*n_a + (long)n_c*n_v + (long)n_a*n_v);

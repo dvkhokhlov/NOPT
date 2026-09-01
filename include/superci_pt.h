@@ -19,6 +19,7 @@ class superci_pt_engine{
         double calc(const double * G);      // max|g| over the three rotatable blocks
         double step(CAS_engine * CAS);      // build kappa, apply the rotation; returns max|kappa|
         double applied() const { return app_max; }   // max|rotation actually applied|
+        void   reset_history();             // drop everything carried across macro-iterations
 
     private:
         int n_c, n_a, n_v, n_ao, n_mo, n_rep;
