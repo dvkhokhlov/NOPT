@@ -670,6 +670,19 @@ static void symmetrize_active_integrals(const double *h1, const double *h2, int 
                 }
 }
 
+// block2's ordering metric (pyblock2 parser.py): the exchange graph, with the one-electron
+// coupling as a tie-break so a disconnected or tied graph still orders reproducibly.
+static std::vector<double> ordering_metric(const double *h1, const double *h2, int n) {
+    std::vector<double> kmat((size_t)n * n, 0.0);
+    for (int i = 0; i < n; i++)
+        for (int j = 0; j < n; j++)
+            if (i != j)
+                kmat[(size_t)i * n + j] =
+                    std::fabs(h2[(((size_t)i * n + j) * n + j) * n + i]) +
+                    1e-7 * std::fabs(h1[(size_t)i * n + j]);
+    return kmat;
+}
+
 void block2_casci_wrap::import_integrals(double *aaaa, double *f_act, double e_core) {
     dmrgci_engine &e = *impl_;
     n_act_ = e.n_act;
@@ -712,26 +725,36 @@ void block2_casci_wrap::import_integrals(double *aaaa, double *f_act, double e_c
     // RDMs come back in this order and are un-permuted in ensure_2rdm. A warm solve reuses the
     // retained MPS's order -- that order is a function of the localized orbitals, so it is pinned
     // together with the frozen localization. A cold solve recomputes it.
+    const bool ordered = (e.cfg.loc_order == DMRG_LOCORDER_FIEDLER ||
+                          e.cfg.loc_order == DMRG_LOCORDER_GAOPT);
+    std::vector<double> kmat;
+    std::vector<uint16_t> fresh; // Fiedler order of the incoming orbitals
+    if (ordered) {
+        kmat = ordering_metric(h1, h2, n);
+        fresh = OrbitalOrdering::fiedler((uint16_t)n, kmat);
+    }
     if (e.have_rotation && !e.reorder_perm.empty()) {
         e.fcidump->reorder(e.reorder_perm); // frozen order (warm restart)
     } else {
         e.reorder_perm.clear();
-        if (e.cfg.loc_order == DMRG_LOCORDER_FIEDLER || e.cfg.loc_order == DMRG_LOCORDER_GAOPT) {
-            // block2's metric (pyblock2 parser.py): the exchange graph, with the one-electron
-            // coupling as a tie-break so a disconnected or tied graph still orders reproducibly.
-            std::vector<double> kmat((size_t)n * n, 0.0);
-            for (int i = 0; i < n; i++)
-                for (int j = 0; j < n; j++)
-                    if (i != j)
-                        kmat[(size_t)i * n + j] =
-                            std::fabs(h2[(((size_t)i * n + j) * n + j) * n + i]) +
-                            1e-7 * std::fabs(h1[(size_t)i * n + j]);
+        if (ordered) {
             if (e.cfg.loc_order == DMRG_LOCORDER_FIEDLER)
-                e.reorder_perm = OrbitalOrdering::fiedler((uint16_t)n, kmat);
+                e.reorder_perm = fresh;
             else if (e.cfg.loc_order == DMRG_LOCORDER_GAOPT)
                 e.reorder_perm = dmrg_gaopt_order(n, kmat);
             e.fcidump->reorder(e.reorder_perm);
         }
+    }
+    // Staleness of the lattice order carried into this solve: its ordering cost over that of a fresh
+    // Fiedler order, both in the incoming orbitals. Read before solve() may re-pin, so a cold-fallback
+    // iteration reports the staleness that justified the re-pin. Under gaopt it can sit just below 1
+    // (gaopt seeds from Fiedler and only improves on it).
+    if (ordered && !e.reorder_perm.empty()) {
+        const double c_fresh = OrbitalOrdering::evaluate((uint16_t)n, kmat, fresh);
+        e.last_ord_drift =
+            (c_fresh > 0.0)
+                ? OrbitalOrdering::evaluate((uint16_t)n, kmat, e.reorder_perm) / c_fresh
+                : 1.0;
     }
 
     SU2 vacuum(0);

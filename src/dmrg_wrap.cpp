@@ -86,4 +86,5 @@ double block2_casci_wrap::P_state(int)    const { return 0.0; } // parity: defer
 double *block2_casci_wrap::E_states_ptr() const { return impl_->E_states.data(); }
 double block2_casci_wrap::last_solve_resid() const { return impl_->last_sweep_dE; }
 bool block2_casci_wrap::last_solve_hit_max() const { return impl_->last_hit_max; }
+double block2_casci_wrap::last_order_drift() const { return impl_->last_ord_drift; }
 void block2_casci_wrap::gen_ext_ind() { /* aldet determinant index tables; n/a for an MPS backend */ }

@@ -95,6 +95,7 @@ public:
     double* E_states_ptr()    const override;
     double last_solve_resid() const override;
     bool last_solve_hit_max() const override;
+    double last_order_drift() const override;
 
     // --- IO / diagnostics ---
     void gen_ext_ind() override;
