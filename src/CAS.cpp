@@ -1429,7 +1429,7 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
                           (cas->dmrg.loc_order==DMRG_LOCORDER_FIEDLER ||
                            cas->dmrg.loc_order==DMRG_LOCORDER_GAOPT));
     const char * od_rule = ord_col ? "___________|" : "";
-    const char * od_head = ord_col ? " ORD.DRIFT |" : "";
+    const char * od_head = ord_col ? " OPTIM.LAT |" : "";
     fprintf(out_stream,"_________________________________________________________________________________%s%s\n",sx_rule,od_rule);
     fprintf(out_stream,"  N | E                 | dE         | LAG.ASYM. | ROT.STEP  | N_dav | sweep_dE  |%s%s\n",sx_head,od_head);
     fprintf(out_stream,"____|___________________|____________|___________|___________|_______|___________|%s%s\n",sx_rule,od_rule);
@@ -1459,7 +1459,11 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
         char sx_appl[16]; sx_appl[0]='\0';
         if(cas->converger==CONVERGER_SXPT)snprintf(sx_appl,sizeof(sx_appl)," %.3e |",rot_applied);
         char od_val[16]; od_val[0]='\0';
-        if(ord_col)snprintf(od_val,sizeof(od_val)," %9.4f |",CAS->CI->last_order_drift());
+        if(ord_col){
+            const double od = CAS->CI->last_order_drift(); // FALSE: a cheaper lattice order is in hand
+            if(std::isnan(od))snprintf(od_val,sizeof(od_val),"     -     |"); // nothing pinned to price
+            else snprintf(od_val,sizeof(od_val)," %9s |",od>DMRG_ORD_DRIFT_TOL?"FALSE":"TRUE");
+        }
         fprintf(out_stream,"%3d |% 18.10f | % .3e | %.3e | %.3e | %3d   | %.3e |%s%s%s%s\n",n_iter,E,E-E_old,max_grad_el, rot_step,n_dav_conv,CAS->CI->last_solve_resid(), sx_appl, od_val, hit_max?" *":"", cold_fb?" c":"");
         fflush(out_stream);
 //         getchar();

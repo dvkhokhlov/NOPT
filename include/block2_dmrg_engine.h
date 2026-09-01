@@ -19,6 +19,7 @@
 #include <cstdio>
 #include <memory>
 #include <string>
+#include <limits>
 #include <vector>
 #include <omp.h>
 
@@ -95,7 +96,8 @@ struct dmrgci_engine {
     double last_sweep_dE = 0.0;                 // |dE| between the final two sweeps (achieved convergence)
     bool last_hit_max = false;                  // last solve used its full sweep budget with dE > sweep_tol
     std::vector<uint16_t> reorder_perm;         // DMRG lattice order (Fiedler); empty => input order
-    double last_ord_drift = 1.0;                // reorder_perm's ordering cost over a fresh Fiedler order's
+    double last_ord_drift = std::numeric_limits<double>::quiet_NaN(); // pinned order's cost over a
+                                                // freshly derived one's; NaN until an order is pinned
     bool last_cold_fallback = false;            // a warm-armed solve that still ran cold
     double last_dw = 0.0;                       // max discarded weight over the last solve's two-site sweeps at m
 
