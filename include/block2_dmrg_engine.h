@@ -100,6 +100,8 @@ struct dmrgci_engine {
     bool last_cold_fallback = false;            // a warm-armed solve that still ran cold
     double last_dw = 0.0;                       // max discarded weight over the last solve's two-site sweeps at the
                                                 // schedule's final bond dim, noise-free sweeps preferred
+    double last_two_dot_dw = std::numeric_limits<double>::quiet_NaN(); // discarded weight of the last
+                                                // two-site sweep: the truncation the stored MPS carries
 
     dmrgci_engine(int n_act_, int n_elec_, int twos_, int twosz_, int mult_, int n_s_,
                   int print_number_, const dmrg_par &c)
