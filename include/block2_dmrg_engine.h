@@ -97,6 +97,7 @@ struct dmrgci_engine {
     std::vector<uint16_t> reorder_perm;         // DMRG lattice order (Fiedler); empty => input order
     double last_ord_drift = 1.0;                // reorder_perm's ordering cost over a fresh Fiedler order's
     bool last_cold_fallback = false;            // a warm-armed solve that still ran cold
+    double last_dw = 0.0;                       // max discarded weight over the last solve's two-site sweeps at m
 
     dmrgci_engine(int n_act_, int n_elec_, int twos_, int twosz_, int mult_, int n_s_,
                   int print_number_, const dmrg_par &c)

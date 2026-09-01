@@ -26,7 +26,7 @@
 #include "mps_rotation.h"     // evolve_sa_multimps (multi-root SA MPS rotation)
 #include "dmrg_log.h"         // per-solve block2 sweep log (cout/cerr redirect)
 #include "dmrg_gaopt.h"       // genetic (GAopt) lattice ordering
-#include "defaults.h"         // DMRG_LOW_M_OPT_KK_MM_MAX
+#include "defaults.h"         // DMRG_LOW_M_OPT_KK_MM_MAX, DMRG_WARM_NOISE_MIN
 
 using namespace block2;
 
@@ -237,18 +237,25 @@ dmrg_schedule build_default_schedule(int max_m, int user_sweeps, double sweep_to
     return s;
 }
 
-// Warm re-solve schedule: no cold ramp (the rotated MPS is already at full M) -- a short noise-free
-// run at the target bond dim. The exact rotation gives a near-perfect guess, so no perturbative noise
-// is needed to re-expand the bond space. All-zero noise also satisfies block2's convergence rule
-// (it declares convergence only once the sweep noise equals the final noise; sweep_algorithm.hpp).
-dmrg_schedule build_warm_schedule(int max_m, int warm_sweeps, double sweep_tol) {
+// Warm re-solve schedule: no cold ramp (the rotated MPS is already at full M) -- a short run at the
+// target bond dim. `noise` > 0 prepends a forward and a backward noisy sweep (block2 alternates
+// direction each sweep), re-ranking the density matrix so the truncation can see directions the
+// reused MPS does not occupy. The schedule must end at noise 0: block2 declares convergence only
+// once the sweep noise equals the final noise (sweep_algorithm.hpp).
+dmrg_schedule build_warm_schedule(int max_m, int warm_sweeps, double sweep_tol, double noise) {
     int nsw = warm_sweeps > 0 ? warm_sweeps : 4;
     const double dav_final = (sweep_tol <= 0 ? 1e-9 : sweep_tol / 10.0);
+    const double dav_noisy = 5e-6; // a deliberately perturbed state does not need a tight Davidson
+    const int n_noisy = noise > 0.0 ? 2 : 0;
     dmrg_schedule s;
-    s.n_sweeps = nsw;
-    s.bond_dims.assign(nsw, (ubond_t)max_m);
-    s.noises.assign(nsw, 0.0);
-    s.dav_thrds.assign(nsw, dav_final);
+    s.n_sweeps = nsw + n_noisy;
+    s.bond_dims.assign(s.n_sweeps, (ubond_t)max_m);
+    s.noises.assign(s.n_sweeps, 0.0);
+    s.dav_thrds.assign(s.n_sweeps, dav_final);
+    for (int sw = 0; sw < n_noisy; sw++) {
+        s.noises[sw] = noise;
+        s.dav_thrds[sw] = dav_noisy;
+    }
     return s;
 }
 
@@ -881,7 +888,11 @@ int block2_casci_wrap::solve(int, int, bool use_prev_guess) {
     // --- sweep schedule: short warm re-solve vs full cold ramp ---
     dmrg_schedule sch;
     if (warm) {
-        sch = build_warm_schedule(e.cfg.m, e.cfg.warm_sweeps, e.cfg.sweep_tol);
+        // Noise sized by what the last solve's truncation actually discarded: nothing discarded (m
+        // saturating the lattice) leaves the re-solve noise-free, exactly as before.
+        const double wnoise = e.cfg.warm_noise_scale * e.last_dw;
+        sch = build_warm_schedule(e.cfg.m, e.cfg.warm_sweeps, e.cfg.sweep_tol,
+                                  wnoise >= DMRG_WARM_NOISE_MIN ? wnoise : 0.0);
     } else if (e.cfg.schedule == DMRG_SCHED_DEFAULT) {
         sch = build_default_schedule(e.cfg.m, e.cfg.sweeps, e.cfg.sweep_tol);
     } else {
@@ -935,6 +946,23 @@ int block2_casci_wrap::solve(int, int, bool use_prev_guess) {
     dmrg->davidson_soft_max_iter = 200;
     dmrg->iprint = DMRG_LOG_IPRINT;
     dmrg->solve(sch.n_sweeps, e.mps->center == 0, e.cfg.sweep_tol);
+
+    // Truncation carried by this solve, sizing the next warm re-solve's noise: sweeps at the final
+    // bond dim and noise-free, so the measure cannot feed back on the noise it sets. Read before the
+    // one-site tail appends to the same history -- the tail cannot expand the bond space, so its
+    // discarded weight collapses to ~1e-15.
+    e.last_dw = 0.0;
+    bool dw_clean = false;
+    const size_t n_dw = std::min(dmrg->discarded_weights.size(), sch.bond_dims.size());
+    for (size_t i = 0; i < n_dw; i++)
+        if (sch.bond_dims[i] == sch.bond_dims.back() && sch.noises[i] == 0.0) {
+            e.last_dw = std::max(e.last_dw, (double)dmrg->discarded_weights[i]);
+            dw_clean = true;
+        }
+    if (!dw_clean) // budget exhausted inside the cold ramp: no noise-free sweep at the final m ran
+        for (size_t i = 0; i < n_dw; i++)
+            if (sch.bond_dims[i] == sch.bond_dims.back())
+                e.last_dw = std::max(e.last_dw, (double)dmrg->discarded_weights[i]);
 
     // Convergence of the variational (two-site) phase, taken before the tail appends to the same
     // history. Residual = max over roots of the last two sweeps' |dE|; a mean would cancel

@@ -41,6 +41,8 @@
 #define DMRG_MEMORY_DEFAULT 1.0            // block2 double-stack size, GB
 #define DMRG_WARM_START_DEFAULT 1          // MPS warm-start across macro-iterations: on by default
 #define DMRG_WARM_SWEEPS_DEFAULT 0         // max sweeps for the warm re-solve; 0 = auto (sweeps/2)
+#define DMRG_WARM_NOISE_SCALE_DEFAULT 1.0  // warm-schedule noise as a multiple of the last solve's discarded weight
+#define DMRG_WARM_NOISE_MIN 1e-10          // scaled noise below this: the warm re-solve stays noise-free
 #define DMRG_ROT_M_DEFAULT 0               // MPS-rotation time-evolution bond dim (0 = use m)
 #define DMRG_ROT_STEPS_DEFAULT 1           // MPS-rotation TE steps (dt = 1/rot_steps; total time 1)
 #define DMRG_WARM_START_AFTER_DEFAULT 0    // CI solves run cold before the localized frame is frozen
