@@ -962,6 +962,9 @@ int block2_casci_wrap::solve(int, int, bool use_prev_guess) {
     // one-site tail appends to the same history -- the tail cannot expand the bond space, so its
     // discarded weight collapses to ~1e-15.
     e.last_dw = 0.0;
+    e.last_two_dot_dw = dmrg->discarded_weights.empty()
+                            ? std::numeric_limits<double>::quiet_NaN()
+                            : (double)dmrg->discarded_weights.back();
     bool dw_clean = false;
     const size_t n_dw = std::min(dmrg->discarded_weights.size(), sch.bond_dims.size());
     for (size_t i = 0; i < n_dw; i++)

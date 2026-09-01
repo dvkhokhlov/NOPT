@@ -408,8 +408,6 @@ double superci_pt_engine::step(CAS_engine * CAS){
     T_it.assign((size_t)n_c*n_a, 0.0);
     T_ia.assign((size_t)n_c*n_v, 0.0);
     T_ta.assign((size_t)n_a*n_v, 0.0);
-    double t_dir = 0.0;         // largest amplitude any single pencil direction carries
-
     std::vector<double> Tc_it((size_t)n_c*n_a, 0.0);
     std::vector<double> Tc_ia((size_t)n_c*n_v, 0.0);
     std::vector<double> Tc_ta((size_t)n_a*n_v, 0.0);
@@ -427,9 +425,6 @@ double superci_pt_engine::step(CAS_engine * CAS){
             Y[(size_t)mu*n_v+a] *= -0.5/(eps_v[a]-e_p[mu]);
         nopt_par_dgemm(CblasRowMajor,CblasTrans,CblasNoTrans, n_a,n_v,nk_p, 1.0,
                        C_p.data(),n_a, Y.data(),n_v, 0.0, Tc_ta.data(),n_v);
-        for(int mu=0;mu<nk_p;mu++)
-            t_dir = std::max(t_dir, max_abs(C_p.data()+(size_t)mu*n_a,n_a)
-                                   *max_abs(Y  .data()+(size_t)mu*n_v,n_v));
     }
 
     if(nk_h&&n_c){
@@ -441,9 +436,6 @@ double superci_pt_engine::step(CAS_engine * CAS){
             Y[(size_t)mu*n_c+i] *= -0.5/(e_h[mu]-eps_c[i]);
         nopt_par_dgemm(CblasRowMajor,CblasTrans,CblasNoTrans, n_c,n_a,nk_h, 1.0,
                        Y.data(),n_c, C_h.data(),n_a, 0.0, Tc_it.data(),n_a);
-        for(int mu=0;mu<nk_h;mu++)
-            t_dir = std::max(t_dir, max_abs(C_h.data()+(size_t)mu*n_a,n_a)
-                                   *max_abs(Y  .data()+(size_t)mu*n_c,n_c));
     }
 
     // --- back out of the canonical frame ---------------------------------------------
@@ -508,9 +500,6 @@ double superci_pt_engine::step(CAS_engine * CAS){
     app_max = std::max(max_abs(a_it,(long)n_c*n_a),
               std::max(max_abs(a_ia,(long)n_c*n_v),
                        max_abs(a_ta,(long)n_a*n_v)));
-
-    fprintf(out_stream," SX-PT: metric min %.1e/%.1e  kept %3d+%3d/%3d  max dir |T| %.1e  diis %2d           |\n",
-                       min_p, min_h, nk_p, nk_h, n_a, t_dir, diis.in_use());
 
     kappa.assign((size_t)n_mo*n_mo, 0.0);
     for(int i=0;i<n_c;i++)

@@ -1363,7 +1363,6 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
     
     int converged=0;
     double rot_step=1.0;
-    double rot_applied=1.0;
     bool any_maxed=false;   // a macro-iter whose CI solve hit its max sweeps while under-converged
     bool any_cold=false;    // a macro-iter whose CI solve fell back to a cold start
     
@@ -1422,17 +1421,26 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
     CAS->print_av_table("CAS_SCF density averaging:");
     fprintf(out_stream,"\n");
     fprintf(out_stream,"Start CAS_SCF iterations\n");
-    const char * sx_rule = (cas->converger==CONVERGER_SXPT) ? "___________|" : "";
-    const char * sx_head = (cas->converger==CONVERGER_SXPT) ? " APPL.STEP |" : "";
+    // A DMRG solve reports sweeps, a sweep-to-sweep energy and a discarded weight where a
+    // determinant CI reports Davidson iterations and nothing else; the header follows the backend.
+    const bool dmrg_ci = (cas->ci_solver==CISOLVER_DMRG);
+    const char * ni_head = dmrg_ci ? " N_SWP |" : " N_dav |";
+    const char * de_rule = dmrg_ci ? "___________|" : "";
+    const char * de_head = dmrg_ci ? " DMRG_DE   |" : "";
+    const char * dw_rule = dmrg_ci ? "___________|" : "";
+    const char * dw_head = dmrg_ci ? " DMRG_DW   |" : "";
     // The CI backend's lattice order is pinned across warm solves, so its staleness is a run diagnostic.
     const bool ord_col = (cas->ci_solver==CISOLVER_DMRG &&
                           (cas->dmrg.loc_order==DMRG_LOCORDER_FIEDLER ||
                            cas->dmrg.loc_order==DMRG_LOCORDER_GAOPT));
     const char * od_rule = ord_col ? "___________|" : "";
     const char * od_head = ord_col ? " OPTIM.LAT |" : "";
-    fprintf(out_stream,"_________________________________________________________________________________%s%s\n",sx_rule,od_rule);
-    fprintf(out_stream,"  N | E                 | dE         | LAG.ASYM. | ROT.STEP  | N_dav | sweep_dE  |%s%s\n",sx_head,od_head);
-    fprintf(out_stream,"____|___________________|____________|___________|___________|_______|___________|%s%s\n",sx_rule,od_rule);
+    fprintf(out_stream,"______________________________________________________________________");
+    if(dmrg_ci)fprintf(out_stream,"________________________");
+    if(ord_col)fprintf(out_stream,"____________");
+    fprintf(out_stream,"\n");
+    fprintf(out_stream,"  N | E                 | dE         | LAG.ASYM. | ROT.STEP  |%s%s%s%s\n",ni_head,de_head,dw_head,od_head);
+    fprintf(out_stream,"____|___________________|____________|___________|___________|_______|%s%s%s\n",de_rule,dw_rule,od_rule);
     disable_print_timers();
     
     while(true){
@@ -1456,15 +1464,21 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
         if(hit_max) any_maxed=true;
         bool cold_fb = CAS->CI->last_solve_cold();
         if(cold_fb) any_cold=true;
-        char sx_appl[16]; sx_appl[0]='\0';
-        if(cas->converger==CONVERGER_SXPT)snprintf(sx_appl,sizeof(sx_appl)," %.3e |",rot_applied);
+        char de_val[16]; de_val[0]='\0';
+        if(dmrg_ci)snprintf(de_val,sizeof(de_val)," %.3e |",CAS->CI->last_solve_resid());
+        char dw_val[16]; dw_val[0]='\0';
+        if(dmrg_ci){
+            const double dw = CAS->CI->last_solve_dw();
+            if(std::isnan(dw))snprintf(dw_val,sizeof(dw_val),"     -     |"); // backend never truncates
+            else              snprintf(dw_val,sizeof(dw_val)," %9.2e |",dw);
+        }
         char od_val[16]; od_val[0]='\0';
         if(ord_col){
             const double od = CAS->CI->last_order_drift(); // FALSE: a cheaper lattice order is in hand
             if(std::isnan(od))snprintf(od_val,sizeof(od_val),"     -     |"); // nothing pinned to price
             else snprintf(od_val,sizeof(od_val)," %9s |",od>DMRG_ORD_DRIFT_TOL?"FALSE":"TRUE");
         }
-        fprintf(out_stream,"%3d |% 18.10f | % .3e | %.3e | %.3e | %3d   | %.3e |%s%s%s%s\n",n_iter,E,E-E_old,max_grad_el, rot_step,n_dav_conv,CAS->CI->last_solve_resid(), sx_appl, od_val, hit_max?" *":"", cold_fb?" c":"");
+        fprintf(out_stream,"%3d |% 18.10f | % .3e | %.3e | %.3e | %3d   |%s%s%s%s%s\n",n_iter,E,E-E_old,max_grad_el, rot_step,n_dav_conv, de_val, dw_val, od_val, hit_max?" *":"", cold_fb?" c":"");
         fflush(out_stream);
 //         getchar();
 //         exit(0);
@@ -1477,7 +1491,6 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
         }
         else if (cas->converger==CONVERGER_SXPT ){
             rot_step   =SXPT.step(CAS);
-            rot_applied=SXPT.applied();
         }
 //         printf_timer("CAS_step");
 //         converged=0; break;
@@ -1501,7 +1514,7 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
     
     char * name = new char[BUF_LINE_LENGTH];
     
-    fprintf(out_stream,"____|___________________|____________|___________|___________|_______|___________|%s%s\n",sx_rule,od_rule);
+    fprintf(out_stream,"____|___________________|____________|___________|___________|_______|%s%s%s\n",de_rule,dw_rule,od_rule);
     if(converged==0)fprintf(out_stream,"\nCASSCF did not converge");
     if(converged==1)fprintf(out_stream,"\nEnergy converged");
     if(converged==2)fprintf(out_stream,"\nLagrangian converged");

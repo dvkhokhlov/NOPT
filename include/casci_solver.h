@@ -111,6 +111,10 @@ public:
     // an order derived afresh, in the orbitals of the last solve. 1.0 = as good as fresh, larger =
     // the pinned lattice has drifted. NaN where nothing was pinned, and for backends with no lattice.
     virtual double last_order_drift() const { return std::numeric_limits<double>::quiet_NaN(); }
+    // Truncation the last solve's stored wavefunction carries: the discarded weight of its final
+    // variational (two-site) sweep, worst over that sweep's decimations. A state-averaged solve
+    // truncates one averaged density matrix, so this covers all roots. Untruncated backends: NaN.
+    virtual double last_solve_dw() const { return std::numeric_limits<double>::quiet_NaN(); }
     // True if the last solve was armed for a warm restart but ran cold anyway (DMRG: the
     // basis-change rotation declined, or the host withheld it), rebuilding the wavefunction from
     // scratch: the energy steps there, and an orbital converger's history predates a surface that
