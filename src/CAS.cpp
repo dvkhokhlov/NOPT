@@ -1363,6 +1363,7 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
     int converged=0;
     double rot_step=1.0;
     bool any_maxed=false;   // a macro-iter whose CI solve hit its max sweeps while under-converged
+    bool any_cold=false;    // a macro-iter whose CI solve fell back to a cold start
     
     if(IS_SYM){
         int n_ao  = M->n_ao;
@@ -1436,9 +1437,11 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
         
         bool hit_max = CAS->CI->last_solve_hit_max();
         if(hit_max) any_maxed=true;
+        bool cold_fb = CAS->CI->last_solve_cold();
+        if(cold_fb) any_cold=true;
         char od_val[16]; od_val[0]='\0';
         if(ord_col)snprintf(od_val,sizeof(od_val)," %9.4f |",CAS->CI->last_order_drift());
-        fprintf(out_stream,"%3d |% 18.10f | % .3e | %.3e | %.3e | %3d   | %.3e |%s%s\n",n_iter,E,E-E_old,max_grad_el, rot_step,n_dav_conv,CAS->CI->last_solve_resid(), od_val, hit_max?" *":"");
+        fprintf(out_stream,"%3d |% 18.10f | % .3e | %.3e | %.3e | %3d   | %.3e |%s%s%s\n",n_iter,E,E-E_old,max_grad_el, rot_step,n_dav_conv,CAS->CI->last_solve_resid(), od_val, hit_max?" *":"", cold_fb?" c":"");
         fflush(out_stream);
 //         getchar();
 //         exit(0);
@@ -1451,6 +1454,11 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
 //         converged=0; break;
         dmrg_log_set_tag(dmrg_log_tag::scf);
         n_dav_conv =CAS->CI_calc(0,0,1);
+        // That solve rebuilt the wavefunction from scratch: the energy surface the converger's
+        // history was accumulated on is gone, so extrapolating across it fits a defunct surface.
+        if(CAS->CI->last_solve_cold()){
+            SOSCF.reset_history();
+        }
         if(rot_step  <cas->s_conv){converged=3; break;}
                 
 //         printf_timer("CAS-CI");
@@ -1472,6 +1480,9 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
     if(any_maxed)
         fprintf(out_stream," * CI solve reached the maximum DMRG sweep count without meeting sweep_tol;\n"
                            "   that iteration's CI vector may be under-converged -- raise $DMRG sweeps or m.\n\n");
+    if(any_cold)
+        fprintf(out_stream," c CI solve fell back to a cold start: the wavefunction was rebuilt from\n"
+                           "   scratch, so the energy steps there and the orbital converger was reset.\n\n");
     printf_timer("CAS_SCF iterations");
     
     

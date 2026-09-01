@@ -110,6 +110,11 @@ public:
     // a freshly derived order, in the orbitals of the last solve. 1.0 = as good as fresh, larger =
     // the pinned lattice has drifted. Backends with no lattice: 1.0.
     virtual double last_order_drift() const { return 1.0; }
+    // True if the last solve was armed for a warm restart but ran cold anyway (DMRG: the
+    // basis-change rotation declined, or the host withheld it), rebuilding the wavefunction from
+    // scratch: the energy steps there, and an orbital converger's history predates a surface that
+    // no longer exists. A uniformly cold backend -- aldet re-solves every iteration -- is false.
+    virtual bool last_solve_cold() const { return false; }
 
     // --- relating the wavefunction across an active-orbital-basis change (capability-gated) ---
     // All three operations need the same thing: representing/comparing the wavefunction
