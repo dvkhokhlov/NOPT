@@ -845,6 +845,8 @@ static void recompute_cold_order(dmrgci_engine &e) {
     for (int k = 0; k < n; k++)
         composed[k] = e.reorder_perm[p2[k]];
     e.reorder_perm.swap(composed);
+    // The drift priced at import describes the order just dropped, not the one this solve runs on.
+    e.last_ord_drift = std::numeric_limits<double>::quiet_NaN();
 
     SU2 vacuum(0);
     e.hamil = std::make_shared<HamiltonianQC<SU2, double>>(vacuum, n, e.orbsym, e.fcidump);
