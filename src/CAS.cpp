@@ -1363,8 +1363,10 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
     
     int converged=0;
     double rot_step=1.0;
+    double grad_old=0;      // max|g| at the point the current rot_step was taken from
     bool any_maxed=false;   // a macro-iter whose CI solve hit its max sweeps while under-converged
     bool any_cold=false;    // a macro-iter whose CI solve fell back to a cold start
+    bool any_reset=false;   // a macro-iter whose energy rise restarted the orbital converger
     
     if(IS_SYM){
         int n_ao  = M->n_ao;
@@ -1460,6 +1462,15 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
         }
         
         
+        // An energy rise the applied rotation cannot account for: to first order an honest step
+        // moves the energy by |g||kappa|, so orders above that the CI solution itself moved and the
+        // amplitude behind it is not an error vector the history can fit. Restart, as SCF DIIS does.
+        const bool diis_reset = (n_iter>0 && E-E_old>0 && E-E_old > grad_old*rot_step);
+        if(diis_reset){
+            if     (cas->converger==CONVERGER_SOSCF) SOSCF.reset_history();
+            else if(cas->converger==CONVERGER_SXPT ) SXPT .reset_history();
+            any_reset=true;
+        }
         bool hit_max = CAS->CI->last_solve_hit_max();
         if(hit_max) any_maxed=true;
         bool cold_fb = CAS->CI->last_solve_cold();
@@ -1478,7 +1489,7 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
             if(std::isnan(od))snprintf(od_val,sizeof(od_val),"     -     |"); // nothing pinned to price
             else snprintf(od_val,sizeof(od_val)," %9s |",od>DMRG_ORD_DRIFT_TOL?"FALSE":"TRUE");
         }
-        fprintf(out_stream,"%3d |% 18.10f | % .3e | %.3e | %.3e | %3d   |%s%s%s%s%s\n",n_iter,E,E-E_old,max_grad_el, rot_step,n_dav_conv, de_val, dw_val, od_val, hit_max?" *":"", cold_fb?" c":"");
+        fprintf(out_stream,"%3d |% 18.10f | % .3e | %.3e | %.3e | %3d   |%s%s%s%s%s%s\n",n_iter,E,E-E_old,max_grad_el, rot_step,n_dav_conv, de_val, dw_val, od_val, hit_max?" *":"", cold_fb?" c":"", diis_reset?" r":"");
         fflush(out_stream);
 //         getchar();
 //         exit(0);
@@ -1510,6 +1521,7 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
                 
 //         printf_timer("CAS-CI");
         E_old=E;
+        grad_old=max_grad_el;
         n_iter++;
 //         PrintMatr(M->nat_orb_occ,M->n_act_orb[0],1,1);
     }
@@ -1530,6 +1542,9 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
     if(any_cold)
         fprintf(out_stream," c CI solve fell back to a cold start: the wavefunction was rebuilt from\n"
                            "   scratch, so the energy steps there and the orbital converger was reset.\n\n");
+    if(any_reset)
+        fprintf(out_stream," r energy rose by more than the applied rotation accounts for: that CI solve\n"
+                           "   landed on a different solution, so the converger history was restarted.\n\n");
     printf_timer("CAS_SCF iterations");
     
     
