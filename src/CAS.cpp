@@ -1498,11 +1498,15 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
         n_dav_conv =CAS->CI_calc(0,0,1);
         // That solve rebuilt the wavefunction from scratch: the energy surface the converger's
         // history was accumulated on is gone, so extrapolating across it fits a defunct surface.
-        if(CAS->CI->last_solve_cold()){
+        const bool cold_now = CAS->CI->last_solve_cold();
+        if(cold_now){
             if     (cas->converger==CONVERGER_SOSCF) SOSCF.reset_history();
             else if(cas->converger==CONVERGER_SXPT ) SXPT .reset_history();
+            any_cold=true;  // this solve may never reach a row of its own
         }
-        if(rot_step  <cas->s_conv){converged=3; break;}
+        // rot_step was measured against a surface that no longer exists; judge it one iteration
+        // later, once the rebuilt wavefunction has an energy and a gradient of its own.
+        if(!cold_now && rot_step  <cas->s_conv){converged=3; break;}
                 
 //         printf_timer("CAS-CI");
         E_old=E;
