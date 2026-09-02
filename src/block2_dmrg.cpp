@@ -12,6 +12,7 @@
 #include <cerrno>
 #include <csignal>
 #include <filesystem>
+#include <iostream>
 #include <map>
 #include <numeric>
 #include <string>
@@ -854,6 +855,60 @@ static void recompute_cold_order(dmrgci_engine &e) {
     e.mpo = build_qc_mpo(e.hamil, resolve_low_m_opt(e));
 }
 
+// State-averaged occupations of the last solve's 1-RDM, in this solve's site basis and lattice
+// order. Values are on block2's 0..2 scale, one per site. False when no solve has produced a
+// density yet, which is the first solve of a run.
+static bool prev_occupations(const dmrgci_engine &e, std::vector<double> &occ) {
+    const int n = e.n_act;
+    const size_t blk1 = (size_t)n * n;
+    if (e.d1_states.size() != blk1 * (size_t)e.n_s)
+        return false;
+
+    // Weights the host optimizes under; absent a weight vector the roots are equally weighted.
+    std::vector<double> w(e.n_s, 1.0);
+    if ((int)e.w_state.size() == e.n_s)
+        w = e.w_state;
+    double wsum = 0.0;
+    for (int st = 0; st < e.n_s; st++)
+        wsum += w[st];
+
+    std::vector<double> d(blk1, 0.0);
+    for (int st = 0; st < e.n_s; st++) {
+        const double *d1 = e.d1_states.data() + (size_t)st * blk1;
+        for (size_t k = 0; k < blk1; k++)
+            d[k] += w[st] * d1[k];
+    }
+    for (size_t k = 0; k < blk1; k++)
+        d[k] /= wsum;
+
+    // The stored RDM was delocalized on read-out; the sites are the localized orbitals.
+    if (e.localize_on) {
+        std::vector<double> loc(blk1);
+        rotate1(d.data(), e.U_loc.data(), n, loc.data(), /*forward=*/true);
+        d.swap(loc);
+    }
+
+    occ.assign(n, 0.0);
+    for (int k = 0; k < n; k++) {
+        const int p = e.reorder_perm.empty() ? k : (int)e.reorder_perm[k];
+        occ[k] = d[(size_t)p * n + p];
+    }
+
+    // The trace is the active electron count. A mismatch means this is not the quantity
+    // set_bond_dimension_using_occ expects, and a wrong guess is worse than none.
+    double tr = 0.0;
+    for (int k = 0; k < n; k++)
+        tr += occ[k];
+    if (std::fabs(tr - (double)e.n_elec) > 1e-6 * std::max(1.0, (double)e.n_elec)) {
+        std::cout << "NOTE: 1-RDM trace " << tr << " != " << e.n_elec
+                  << " active electrons; restart keeps the flat envelope" << std::endl;
+        return false;
+    }
+    for (int k = 0; k < n; k++) // set_bond_dimension_using_occ asserts 0 <= occ/2 <= 1
+        occ[k] = std::min(2.0, std::max(0.0, occ[k]));
+    return true;
+}
+
 int block2_casci_wrap::solve(int, int, bool use_prev_guess) {
     dmrgci_engine &e = *impl_;
     dmrg_log_guard log(true); // block2's sweep output for this solve only
@@ -928,7 +983,15 @@ int block2_casci_wrap::solve(int, int, bool use_prev_guess) {
                           std::to_string(e.solve_count++);
         // --- initial MPS occupancy (only hf_occ=integral built; others provisioned) ---
         if (e.cfg.hf_occ == DMRG_HF_OCC_INTEGRAL) {
-            e.mps_info->set_bond_dimension((ubond_t)e.cfg.m); // full FCI envelope
+            std::vector<double> occ;
+            if (prev_occupations(e, occ)) {
+                // A re-solve, not a start guess: the sectors follow the density the previous
+                // macro-iteration measured. The fill within them stays random.
+                e.mps_info->set_bond_dimension_using_occ((ubond_t)e.cfg.m, occ);
+                std::cout << "MPS restart occupancy: previous macro-iteration 1-RDM" << std::endl;
+            } else {
+                e.mps_info->set_bond_dimension((ubond_t)e.cfg.m); // full FCI envelope
+            }
         } else {
             fprintf(out_stream,
                     "ERROR: DMRG hf_occ option not implemented yet (only 'integral')\n");
