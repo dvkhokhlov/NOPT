@@ -50,7 +50,8 @@ int superci_pt_engine::init(int ext_n_c, int ext_n_a, int ext_n_v, int ext_n_ao,
     n_rep = ext_n_rep;
     rep_num = ext_rep_num;
     x_max = ext_x_max;
-    drop_reported = false;
+    drop_rep_p = false;
+    drop_rep_h = false;
 
     keep_p.assign(std::max(n_rep,1), -1);
     keep_h.assign(std::max(n_rep,1), -1);
@@ -241,12 +242,11 @@ void superci_pt_engine::build_koopmans(CAS_engine * CAS){
 // through a canonical orthogonalization of the metric. Rows of C are the C_mu.
 void superci_pt_engine::solve_pencil(const double * M_in, const double * metric, double sign,
                                      std::vector<int>& keep, std::vector<double>& C,
-                                     std::vector<double>& eig, double & min_metric,
+                                     std::vector<double>& eig, bool & reported,
                                      const char * what){
 
     C.clear();
     eig.clear();
-    min_metric = 2.0;
     if(n_a==0) return;
 
     std::vector<int> reps;
@@ -266,7 +266,6 @@ void superci_pt_engine::solve_pencil(const double * M_in, const double * metric,
         for(int j=0;j<m;j++)
             g_r[(size_t)i*m+j] = metric[(size_t)mem[i]*n_a + mem[j]];
         lapack_diag(g_r.data(), n_r.data(), m);   // ascending
-        min_metric = std::min(min_metric, n_r[0]);
 
         int n_lo=0, n_hi=0;
         for(int k=0;k<m;k++){
@@ -277,11 +276,11 @@ void superci_pt_engine::solve_pencil(const double * M_in, const double * metric,
         int nk = n_lo;
         if(prev>=0 && n_lo>prev) nk = std::max(prev, n_hi);
         prev = nk;
-        if(nk<m && !drop_reported){
-            drop_reported = true;
+        if(nk<m && !reported){
+            reported = true;
             fprintf(out_stream,"NOTE: super-CI-PT drops %d %s direction(s) of the active metric"
-                               " (smallest occupation %.2e); those rotations are frozen\n",
-                               m-nk, what, n_r[0]);
+                               " (smallest %s occupation %.2e); those rotations are frozen\n",
+                               m-nk, what, what, n_r[0]);
         }
         if(nk==0) continue;
 
@@ -425,9 +424,8 @@ double superci_pt_engine::step(CAS_engine * CAS){
         gam_h[(size_t)t*n_a+u] = (t==u?2.0:0.0) - g;
     }
 
-    double min_p=2.0, min_h=2.0;
-    solve_pencil(K  .data(), gam_p.data(), -1.0, keep_p, C_p, e_p, min_p, "particle");
-    solve_pencil(K_t.data(), gam_h.data(), +1.0, keep_h, C_h, e_h, min_h, "hole");
+    solve_pencil(K  .data(), gam_p.data(), -1.0, keep_p, C_p, e_p, drop_rep_p, "particle");
+    solve_pencil(K_t.data(), gam_h.data(), +1.0, keep_h, C_h, e_h, drop_rep_h, "hole");
 
     const int nk_p = e_p.size();
     const int nk_h = e_h.size();

@@ -23,7 +23,6 @@ void orbital_diis::restart(){
     kap  .clear();
     theta.clear();
     theta_cur.assign(n_rot, 0.0);
-    n_keep = 0;
 }
 
 // tau minimizes <kappa_bar|kappa_bar> under sum(tau) = 1. Substitution and elimination:
@@ -34,7 +33,6 @@ void orbital_diis::solve_pulay(){
 
     const lapack_int n = (lapack_int)kap.size();
     tau.assign(n, 0.0);
-    n_keep = 1;
     if(n==1){ tau[0] = 1.0; return; }
 
     // the eliminated coefficient becomes the right-hand side, so it must be the smallest
@@ -81,10 +79,8 @@ void orbital_diis::solve_pulay(){
     std::vector<double> y(nc, 0.0);
     cblas_dgemv(CblasColMajor, CblasTrans, m, nc, 1.0, U.data(), m,
                 kap[p].data(),1, 0.0, y.data(),1);
-    n_keep = 1;
     for(lapack_int mu=0;mu<nc;mu++){
         if(sig[mu]<=cut) continue;
-        n_keep++;
         const double s = -y[mu]/sig[mu];
         for(lapack_int j=0;j<nc;j++) tau[col[j]] += VT[mu+(size_t)nc*j]*s;
     }
@@ -105,7 +101,7 @@ double orbital_diis::extrapolate(const std::vector<double>& kappa, std::vector<d
     if(kap.size()>1) solve_pulay();
 
     // a single history entry forces tau = 1, so the extrapolation is exactly the identity
-    if(kap.size()==1){ applied = kappa; n_keep = 1; }
+    if(kap.size()==1){ applied = kappa; }
     else{
         const int n = (int)kap.size();
         std::vector<double> tbar(n_rot, 0.0), kbar(n_rot, 0.0);

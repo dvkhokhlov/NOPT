@@ -24,7 +24,7 @@ class superci_pt_engine{
         int n_c, n_a, n_v, n_ao, n_mo, n_rep;
         const int * rep_num;
         double x_max;
-        bool   drop_reported;
+        bool   drop_rep_p, drop_rep_h;   // one drop NOTE per pencil, not per engine
         orbital_diis diis;
 
         // canonical frame: V[p*dim+mu] holds eigenvectors as columns, mu reusing the
@@ -47,7 +47,7 @@ class superci_pt_engine{
         void build_koopmans(CAS_engine * CAS);
         void solve_pencil(const double * M_in, const double * metric, double sign,
                           std::vector<int>& keep, std::vector<double>& C,
-                          std::vector<double>& eig, double & min_metric, const char * what);
+                          std::vector<double>& eig, bool & reported, const char * what);
         void apply_rotation(CAS_engine * CAS);
 };
 
