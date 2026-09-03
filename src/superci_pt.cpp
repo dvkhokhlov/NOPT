@@ -127,28 +127,45 @@ void superci_pt_engine::canonicalize_block(const double * F, int n0, int dim,
     }
 }
 
-// max|offdiag(V^T F_blk V)|. Everything downstream assumes the two blocks are diagonal,
-// and the transformation is silent when it is not.
+// max|offdiag(V^T F V)| within each irrep block: V is block-diagonal, so the inter-irrep
+// part of F passes through it untouched and no amplitude ever sees it. Everything
+// downstream assumes the blocks are diagonal, and the transformation is silent when
+// they are not.
 double superci_pt_engine::canonical_residual(const double * F, int n0, int dim,
                                              const std::vector<double>& V){
 
     if(dim<2) return 0.0;
 
-    buf1.assign((size_t)dim*dim, 0.0);
-    buf2.assign((size_t)dim*dim, 0.0);
-    for(int i=0;i<dim;i++)
-    for(int j=0;j<dim;j++)
-        buf1[(size_t)i*dim+j] = F[(size_t)(n0+i)*n_ao + n0+j];
+    std::vector<int> reps;
+    if(IS_SYM==0) reps.push_back(-1);
+    else          for(int r=0;r<n_rep;r++) reps.push_back(r);
 
-    nopt_par_dgemm(CblasRowMajor,CblasNoTrans,CblasNoTrans, dim,dim,dim, 1.0,
-                   buf1.data(),dim, V.data(),dim, 0.0, buf2.data(),dim);
-    nopt_par_dgemm(CblasRowMajor,CblasTrans  ,CblasNoTrans, dim,dim,dim, 1.0,
-                   V.data(),dim, buf2.data(),dim, 0.0, buf1.data(),dim);
-
+    std::vector<int> mem;
+    std::vector<double> V_b;
     double off=0.0;
-    for(int i=0;i<dim;i++)
-    for(int j=0;j<dim;j++)
-        if(i!=j) off = std::max(off, std::fabs(buf1[(size_t)i*dim+j]));
+    for(size_t ir=0; ir<reps.size(); ir++){
+        members(n0, dim, reps[ir], mem);
+        const int m = mem.size();
+        if(m<2) continue;
+
+        buf1.assign((size_t)m*m, 0.0);
+        buf2.assign((size_t)m*m, 0.0);
+        V_b .assign((size_t)m*m, 0.0);
+        for(int i=0;i<m;i++)
+        for(int j=0;j<m;j++){
+            buf1[(size_t)i*m+j] = F[(size_t)(n0+mem[i])*n_ao + n0+mem[j]];
+            V_b [(size_t)i*m+j] = V[(size_t)mem[i]*dim + mem[j]];
+        }
+
+        nopt_par_dgemm(CblasRowMajor,CblasNoTrans,CblasNoTrans, m,m,m, 1.0,
+                       buf1.data(),m, V_b.data(),m, 0.0, buf2.data(),m);
+        nopt_par_dgemm(CblasRowMajor,CblasTrans  ,CblasNoTrans, m,m,m, 1.0,
+                       V_b.data(),m, buf2.data(),m, 0.0, buf1.data(),m);
+
+        for(int i=0;i<m;i++)
+        for(int j=0;j<m;j++)
+            if(i!=j) off = std::max(off, std::fabs(buf1[(size_t)i*m+j]));
+    }
 
     return off;
 }
