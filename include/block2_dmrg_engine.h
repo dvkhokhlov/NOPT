@@ -103,6 +103,7 @@ struct dmrgci_engine {
     double last_two_dot_dw = std::numeric_limits<double>::quiet_NaN(); // discarded weight of the last
                                                 // two-site sweep: the truncation the stored MPS carries
     double last_trunc_de = 0.0;                 // one-site tail energy minus the last two-site sweep's, max over roots
+    double last_resolution = 0.0;               // sqrt of the final sweep's Davidson threshold: gap-free energy bound
 
     dmrgci_engine(int n_act_, int n_elec_, int twos_, int twosz_, int mult_, int n_s_,
                   int print_number_, const dmrg_par &c)

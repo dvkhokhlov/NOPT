@@ -119,6 +119,11 @@ public:
     // last variational (two-site) sweep's, worst over roots. An energy change below a fraction of
     // it is within the CI method's own scatter. Untruncated backends: 0.
     virtual double last_solve_trunc_de() const { return 0.0; }
+    // Energy resolution of the last solve from its own stop thresholds, gap-free: a stop on a
+    // squared residual r bounds the eigenvalue by sqrt(r), a stop on an energy change by that
+    // change (aldet: max(de, sqrt(dr)); DMRG: sqrt of the final sweep's Davidson threshold).
+    // Untracked backends: 0.
+    virtual double energy_resolution() const { return 0.0; }
     // True if the last solve was armed for a warm restart but ran cold anyway (DMRG: the
     // basis-change rotation declined, or the host withheld it), rebuilding the wavefunction from
     // scratch: the energy steps there, and an orbital converger's history predates a surface that

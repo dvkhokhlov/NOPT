@@ -1086,6 +1086,9 @@ int block2_casci_wrap::solve(int, int, bool use_prev_guess) {
         adjust_mps_two_dot(e); // ... and back to a two-site center for those consumers
     }
 
+    // The sweeps' Davidson stop is a squared-residual threshold; its square root bounds the energy.
+    e.last_resolution = sch.dav_thrds.empty() ? 0.0 : std::sqrt(sch.dav_thrds.back());
+
     // Energy the truncation to m costs this solve: the tail's final energy over the last two-site
     // sweep's, worst over roots. Nothing measurable without a tail.
     e.last_trunc_de = 0.0;

@@ -1462,12 +1462,15 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
         }
         
         
-        // An energy rise neither the applied rotation nor the CI solve accounts for: to first order
-        // an honest step moves the energy by |g||kappa|, and a truncated CI solve resolves it only to
-        // a fraction of its own truncation energy. Above both, the CI solution itself moved and the
-        // amplitude behind it is not an error vector the history can fit. Restart, as SCF DIIS does.
+        // An energy rise nothing accounts for: an honest step moves the energy by |g||kappa| to first
+        // order, and a CI solve resolves it only to a fraction of its truncation energy and to what
+        // its stop thresholds bound. Above all three the CI solution itself moved, and the amplitude
+        // behind it is not an error vector the history can fit. Restart, as SCF DIIS does.
         const double ci_floor  = CAS_RESET_TRUNC_FRAC*CAS->CI->last_solve_trunc_de();
-        const double rise_ref  = grad_old*rot_step > ci_floor ? grad_old*rot_step : ci_floor;
+        const double ci_res    = CAS->CI->energy_resolution();
+        double rise_ref = grad_old*rot_step;
+        if(ci_floor>rise_ref) rise_ref = ci_floor;
+        if(ci_res  >rise_ref) rise_ref = ci_res;
         const bool diis_reset = (n_iter>0 && E-E_old>0 && E-E_old > rise_ref);
         if(diis_reset){
             if     (cas->converger==CONVERGER_SOSCF) SOSCF.reset_history();
