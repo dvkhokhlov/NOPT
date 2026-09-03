@@ -17,15 +17,13 @@ class superci_pt_engine{
                     const int * ext_rep_num, int ext_n_rep, double ext_x_max,
                     int ext_diis);
         double calc(const double * G);      // max|g| over the three rotatable blocks
-        double step(CAS_engine * CAS);      // build kappa, apply the rotation; returns max|kappa|
-        double applied() const { return app_max; }   // max|rotation actually applied|
+        double step(CAS_engine * CAS);      // build kappa, apply the rotation; returns max|rotation applied|
         void   reset_history();             // drop everything carried across macro-iterations
 
     private:
         int n_c, n_a, n_v, n_ao, n_mo, n_rep;
         const int * rep_num;
         double x_max;
-        double app_max;
         bool   drop_reported;
         orbital_diis diis;
 

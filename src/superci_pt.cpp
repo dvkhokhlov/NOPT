@@ -50,7 +50,6 @@ int superci_pt_engine::init(int ext_n_c, int ext_n_a, int ext_n_v, int ext_n_ao,
     n_rep = ext_n_rep;
     rep_num = ext_rep_num;
     x_max = ext_x_max;
-    app_max = 0.0;
     drop_reported = false;
 
     keep_p.assign(std::max(n_rep,1), -1);
@@ -497,9 +496,9 @@ double superci_pt_engine::step(CAS_engine * CAS){
     if(pre_cap>x_max)
         fprintf(out_stream," SX-PT is scaling rotation angle matrix Xmax=%.5e                                     |\n", pre_cap);
 
-    app_max = std::max(max_abs(a_it,(long)n_c*n_a),
-              std::max(max_abs(a_ia,(long)n_c*n_v),
-                       max_abs(a_ta,(long)n_a*n_v)));
+    const double applied = std::max(max_abs(a_it,(long)n_c*n_a),
+                           std::max(max_abs(a_ia,(long)n_c*n_v),
+                                    max_abs(a_ta,(long)n_a*n_v)));
 
     kappa.assign((size_t)n_mo*n_mo, 0.0);
     for(int i=0;i<n_c;i++)
@@ -520,5 +519,5 @@ double superci_pt_engine::step(CAS_engine * CAS){
 
     apply_rotation(CAS);
 
-    return mx;
+    return applied;
 }

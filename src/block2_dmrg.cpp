@@ -1082,6 +1082,17 @@ int block2_casci_wrap::solve(int, int, bool use_prev_guess) {
         adjust_mps_two_dot(e); // ... and back to a two-site center for those consumers
     }
 
+    // Energy the truncation to m costs this solve: the tail's final energy over the last two-site
+    // sweep's, worst over roots. Nothing measurable without a tail.
+    e.last_trunc_de = 0.0;
+    if (DMRG_ONEDOT_TAIL > 0 && n2 >= 1 && (int)dmrg->energies.size() > n2) {
+        const auto &e2 = dmrg->energies[n2 - 1];
+        const auto &e1 = dmrg->energies.back();
+        const int nr = (int)e1.size() < (int)e2.size() ? (int)e1.size() : (int)e2.size();
+        for (int r = 0; r < nr; r++)
+            e.last_trunc_de = std::max(e.last_trunc_de, (double)e1[r] - (double)e2[r]);
+    }
+
     // per-root energies (ascending; root 0 = ground state). block2's energy precision is FPLS
     // (long double for FL=double), so bind via auto and narrow to NOPT's double.
     if (dmrg->energies.empty()) {

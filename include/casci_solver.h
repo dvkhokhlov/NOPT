@@ -115,6 +115,10 @@ public:
     // variational (two-site) sweep, worst over that sweep's decimations. A state-averaged solve
     // truncates one averaged density matrix, so this covers all roots. Untruncated backends: NaN.
     virtual double last_solve_dw() const { return std::numeric_limits<double>::quiet_NaN(); }
+    // Energy the last solve gave up to its truncation: the stored wavefunction's energy minus the
+    // last variational (two-site) sweep's, worst over roots. An energy change below a fraction of
+    // it is within the CI method's own scatter. Untruncated backends: 0.
+    virtual double last_solve_trunc_de() const { return 0.0; }
     // True if the last solve was armed for a warm restart but ran cold anyway (DMRG: the
     // basis-change rotation declined, or the host withheld it), rebuilding the wavefunction from
     // scratch: the energy steps there, and an orbital converger's history predates a surface that

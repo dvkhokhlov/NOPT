@@ -1462,10 +1462,13 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
         }
         
         
-        // An energy rise the applied rotation cannot account for: to first order an honest step
-        // moves the energy by |g||kappa|, so orders above that the CI solution itself moved and the
+        // An energy rise neither the applied rotation nor the CI solve accounts for: to first order
+        // an honest step moves the energy by |g||kappa|, and a truncated CI solve resolves it only to
+        // a fraction of its own truncation energy. Above both, the CI solution itself moved and the
         // amplitude behind it is not an error vector the history can fit. Restart, as SCF DIIS does.
-        const bool diis_reset = (n_iter>0 && E-E_old>0 && E-E_old > grad_old*rot_step);
+        const double ci_floor  = CAS_RESET_TRUNC_FRAC*CAS->CI->last_solve_trunc_de();
+        const double rise_ref  = grad_old*rot_step > ci_floor ? grad_old*rot_step : ci_floor;
+        const bool diis_reset = (n_iter>0 && E-E_old>0 && E-E_old > rise_ref);
         if(diis_reset){
             if     (cas->converger==CONVERGER_SOSCF) SOSCF.reset_history();
             else if(cas->converger==CONVERGER_SXPT ) SXPT .reset_history();
@@ -1543,8 +1546,9 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
         fprintf(out_stream," c CI solve fell back to a cold start: the wavefunction was rebuilt from\n"
                            "   scratch, so the energy steps there and the orbital converger was reset.\n\n");
     if(any_reset)
-        fprintf(out_stream," r energy rose by more than the applied rotation accounts for: that CI solve\n"
-                           "   landed on a different solution, so the converger history was restarted.\n\n");
+        fprintf(out_stream," r energy rose by more than the applied rotation and the CI resolution account\n"
+                           "   for: that CI solve landed on a different solution, so the converger history\n"
+                           "   was restarted.\n\n");
     printf_timer("CAS_SCF iterations");
     
     

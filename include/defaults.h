@@ -19,6 +19,7 @@
 #define CAS_X_MAX_DEFAULT 0.1
 #define CAS_X_MAX_SXPT_DEFAULT 0.2
 #define CAS_DIIS_DEFAULT 15
+#define CAS_RESET_TRUNC_FRAC 0.05          // converger restarts only on an energy rise above this fraction of the CI solve's truncation energy
 #define CAS_PRINT_NUMBER_DEFAULT 10
 #define CAS_METHOD_DEFAULT 1
 
