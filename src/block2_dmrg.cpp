@@ -763,8 +763,8 @@ void block2_casci_wrap::import_integrals(double *aaaa, double *f_act, double e_c
     }
     // Staleness of the lattice order carried into this solve: its ordering cost over that of an order
     // derived from the incoming orbitals by the same loc_order, so 1 means re-deriving would gain
-    // nothing. Undefined where this solve derived the order itself. Read before solve() may re-pin, so
-    // a cold-fallback iteration reports the staleness that justified the re-pin.
+    // nothing. Undefined where this solve derived the order itself, and again where a cold fallback
+    // re-pins it inside solve().
     e.last_ord_drift = std::numeric_limits<double>::quiet_NaN();
     if (ordered && pinned) {
         const std::vector<uint16_t> fresh =
@@ -836,10 +836,14 @@ static void recompute_cold_order(dmrgci_engine &e) {
         p2 = OrbitalOrdering::fiedler((uint16_t)n, kmat);
     else if (e.cfg.loc_order == DMRG_LOCORDER_GAOPT)
         p2 = dmrg_gaopt_order(n, kmat);
-    bool unchanged = true;
-    for (int k = 0; k < n && unchanged; k++)
-        unchanged = (p2[k] == (uint16_t)k);
-    if (unchanged)
+    // Fiedler's sign gauge maps an already-ordered lattice to its reversal, which is the same
+    // chain read backwards and carries the same ordering cost.
+    bool unchanged = true, reversed = true;
+    for (int k = 0; k < n && (unchanged || reversed); k++) {
+        unchanged = unchanged && (p2[k] == (uint16_t)k);
+        reversed = reversed && (p2[k] == (uint16_t)(n - 1 - k));
+    }
+    if (unchanged || reversed)
         return; // the frozen order already is the fresh one: nothing to rebuild
     e.fcidump->reorder(p2);
     std::vector<uint16_t> composed((size_t)n); // site k now carries the orbital that sat at site p2[k]

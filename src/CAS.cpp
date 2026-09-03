@@ -1489,7 +1489,7 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
         char od_val[16]; od_val[0]='\0';
         if(ord_col){
             const double od = CAS->CI->last_order_drift(); // FALSE: a cheaper lattice order is in hand
-            if(std::isnan(od))snprintf(od_val,sizeof(od_val),"     -     |"); // nothing pinned to price
+            if(std::isnan(od))snprintf(od_val,sizeof(od_val),"     -     |"); // nothing pinned to price, or a cold re-pin dropped it
             else snprintf(od_val,sizeof(od_val)," %9s |",od>DMRG_ORD_DRIFT_TOL?"FALSE":"TRUE");
         }
         fprintf(out_stream,"%3d |% 18.10f | % .3e | %.3e | %.3e | %3d   |%s%s%s%s%s%s\n",n_iter,E,E-E_old,max_grad_el, rot_step,n_dav_conv, de_val, dw_val, od_val, hit_max?" *":"", cold_fb?" c":"", diis_reset?" r":"");
