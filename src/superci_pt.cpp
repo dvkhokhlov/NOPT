@@ -55,6 +55,18 @@ int superci_pt_engine::init(int ext_n_c, int ext_n_a, int ext_n_v, int ext_n_ao,
     keep_p.assign(std::max(n_rep,1), -1);
     keep_h.assign(std::max(n_rep,1), -1);
 
+    // Active-window labels: the pencils are solved per irrep, and an orbital outside them
+    // would sit in no block at all, its rotations frozen at zero for the whole run.
+    if(IS_SYM!=0)
+    for(int p=0;p<n_a;p++){
+        const int r = rep_num[n_c+p];
+        if(r<0 || r>=n_rep){
+            fprintf(out_stream,"ERROR: converger=sxpt needs an irrep label on every optimized orbital,"
+                               " but MO %d carries rep_num=%d; use converger=soscf\n", n_c+p, r);
+            exit(EXIT_FAILURE);
+        }
+    }
+
     diis.init(ext_diis, (size_t)n_c*n_a + (size_t)n_c*n_v + (size_t)n_a*n_v, x_max);
 
     return 0;
