@@ -68,6 +68,7 @@
 // Auto threshold on K^2*m^2 (K active orbitals, m bond dimension): above it the transpose-lean MPO
 // rule is kept, the explicit AD/full-B store growing as K^2*m^2 (boundary near K=30, m=3000).
 #define DMRG_LOW_M_OPT_KK_MM_MAX 8.0e9
+#define DMRG_GPU_DEFAULT DMRG_WARM_OFF     // block2 GPU backend: 0 = off, 1 = on (needs USE_BLOCK2_GPU=yes)
 
 #define DSRG_S_DEFAULT 0.5                 // DSRG flow parameter
 #define DSRG_ROOT_DEFAULT 0                // state-specific root (unrelaxed)
