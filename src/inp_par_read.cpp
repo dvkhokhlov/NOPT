@@ -872,6 +872,7 @@ dmrg_par::dmrg_par(){
     extract_cutoff   = DMRG_EXTRACT_CUTOFF_DEFAULT;
     h2caa_m          = DMRG_H2CAA_M_DEFAULT;
     low_m_opt        = DMRG_LOW_M_OPT_DEFAULT;
+    gpu              = DMRG_GPU_DEFAULT;
 
 }
 
@@ -1021,6 +1022,12 @@ int dmrg_par::read_line(char * inp){
         else                                                        low_m_opt = DMRG_LOW_M_UNKNOWN;
     }
 
+    if(key_word_comp(inp, dmrg_gpu_kw)){
+        if     (kw_to_kw(inp, dmrg_gpu_kw, dmrg_warm_off_kw)) gpu = DMRG_WARM_OFF;
+        else if(kw_to_kw(inp, dmrg_gpu_kw, dmrg_warm_on_kw))  gpu = DMRG_WARM_ON;
+        else                                                  gpu = DMRG_WARM_UNKNOWN;
+    }
+
     return 0;
 }
 
@@ -1111,6 +1118,16 @@ int dmrg_par::validate(){
         fprintf(out_stream,"ERROR: $DMRG unknown low_m_opt value; accepted: off, on\n");
         ok=0;
     }
+    if(gpu==DMRG_WARM_UNKNOWN){
+        fprintf(out_stream,"ERROR: $DMRG unknown gpu value; accepted: off, on\n");
+        ok=0;
+    }
+#ifndef NOPT_BLOCK2_GPU
+    if(gpu==DMRG_WARM_ON){
+        fprintf(out_stream,"ERROR: $DMRG gpu=on: this binary carries no GPU backend (USE_BLOCK2_GPU=no)\n");
+        ok=0;
+    }
+#endif
     if(warm_start==DMRG_WARM_ON){
         if(warm_noise_scale<0){
             fprintf(out_stream,"ERROR: $DMRG warm_noise_scale=%g must be >= 0 (0 = noise-free warm re-solve)\n",warm_noise_scale);
@@ -1170,6 +1187,10 @@ int dmrg_par::write_info(){
         fprintf(out_stream,"Low-m MPO optimization:           on\n");
     if(low_m_opt==DMRG_LOW_M_OFF)
         fprintf(out_stream,"Low-m MPO optimization:           off\n");
+    if(gpu==DMRG_WARM_OFF)
+        fprintf(out_stream,"GPU backend (block2):             off\n");
+    if(gpu==DMRG_WARM_ON)
+        fprintf(out_stream,"GPU backend (block2):             on\n");
     if(warm_start==DMRG_WARM_ON){
         fprintf(out_stream,"MPS warm-start:                   on (after %d cold iter)\n",warm_start_after);
         fprintf(out_stream,"Warm re-solve sweeps:             %d\n",warm_sweeps);

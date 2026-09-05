@@ -99,6 +99,7 @@ extern vector<const char *>dmrg_extract_m_kw         ;
 extern vector<const char *>dmrg_extract_cutoff_kw    ;
 extern vector<const char *>dmrg_h2caa_m_kw           ;
 extern vector<const char *>dmrg_low_m_opt_kw         ;
+extern vector<const char *>dmrg_gpu_kw               ;
 extern vector<const char *>avas_group_start      ;
 extern vector<const char *>avas_group_end        ;
 extern vector<const char *>avas_atoms_kw         ;

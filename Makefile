@@ -72,6 +72,15 @@ BLOCK2_OBJ:=src/block2_dmrg.o src/dmrg_wrap.o src/block2_mps_to_det.o src/mps_ro
 NOPT_BLOCK2_DEF:=-DNOPT_HAS_BLOCK2
 endif
 
+# GPU backend of libblock2 (a CLIB built with -D_GPU_CAPTURE, exporting the engage trio).
+# -DNOPT_BLOCK2_GPU is global: it also gates the $DMRG gpu=on input check.
+ifeq ($(USE_BLOCK2_GPU),yes)
+ifneq ($(USE_BLOCK2),yes)
+$(error USE_BLOCK2_GPU=yes needs USE_BLOCK2=yes)
+endif
+NOPT_BLOCK2_DEF:=$(NOPT_BLOCK2_DEF) -DNOPT_BLOCK2_GPU
+endif
+
 
 
 LIBS:=-lgfortran -lint2 -lpthread $(XDR_LIB) $(BLOCK2_LIB) $(BLAS_LIB) $(GRPP_LIB)

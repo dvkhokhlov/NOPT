@@ -28,6 +28,7 @@
 #include "dmrg_log.h"         // per-solve block2 sweep log (cout/cerr redirect)
 #include "dmrg_gaopt.h"       // genetic (GAopt) lattice ordering
 #include "defaults.h"         // DMRG_LOW_M_OPT_KK_MM_MAX, DMRG_WARM_NOISE_MIN
+#include "block2_gpu_guard.h" // $DMRG gpu=on: the block2 GPU backend for the two-site sweeps
 
 using namespace block2;
 
@@ -1005,6 +1006,8 @@ int block2_casci_wrap::solve(int, int, bool use_prev_guess) {
                                                                        "DMRG");
     me->delayed_contraction = OpNamesSet::normal_ops();
     me->cached_contraction = true;
+    // The backend takes the MPO's tensor functions, so it engages before the environments are built.
+    block2_gpu_guard gpu_guard(e.cfg.gpu, me);
     me->init_environments(false);
 
     auto dmrg = std::make_shared<DMRG<SU2, double, double>>(me, sch.bond_dims, sch.noises);
@@ -1015,6 +1018,7 @@ int block2_casci_wrap::solve(int, int, bool use_prev_guess) {
     dmrg->davidson_soft_max_iter = 200;
     dmrg->iprint = DMRG_LOG_IPRINT;
     dmrg->solve(sch.n_sweeps, e.mps->center == 0, e.cfg.sweep_tol);
+    gpu_guard.finish(); // the one-site tail below runs on the CPU
 
     // Truncation carried by this solve, sizing the next warm re-solve's noise: sweeps at the final
     // bond dim and noise-free, so the measure cannot feed back on the noise it sets. Read before the

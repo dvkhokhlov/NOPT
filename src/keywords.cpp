@@ -233,6 +233,7 @@ vector<const char *>dmrg_extract_m_kw{{"extract_m"}};
 vector<const char *>dmrg_extract_cutoff_kw{{"extract_cutoff"}};
 vector<const char *>dmrg_h2caa_m_kw{{"h2caa_m"}};
 vector<const char *>dmrg_low_m_opt_kw{{"low_m_opt"}};
+vector<const char *>dmrg_gpu_kw{{"gpu"}};
 
 vector<const char *>avas_group_start{{"$avas"}};
 
