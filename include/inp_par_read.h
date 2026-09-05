@@ -118,6 +118,8 @@ class dmrg_par // settings for the DMRG (block2) CI backend; see $DMRG group
         int    h2caa_m;          // compressed-intermediate bond dim for the DSRG h2caa overlap (0 = auto: 2m)
         int    low_m_opt;        // MPO simplification rule (dmrg_lowm_kind): on = store AD/full B explicitly
                                  //   (faster solve, ~+40% operator stack) | off = transpose-lean | auto by K^2*m^2
+        int    gpu;              // engage the block2 GPU backend for the two-site sweeps
+                                 //   (dmrg_warm_kind): off | on; needs a binary built USE_BLOCK2_GPU=yes
 
         dmrg_par();
         int read_group(char * inp);
