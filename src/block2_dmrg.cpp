@@ -353,10 +353,15 @@ static void ensure_2rdm(dmrgci_engine &e) {
 
         auto p2me = std::make_shared<MovingEnvironment<SU2, double, double>>(p2mpo, imps, imps,
                                                                              "2PDM");
-        p2me->init_environments(false);
+        // Zero-dot expectation with fused contraction-rotation: the enlarged-block operator set is
+        // never materialised whole, one operator per thread instead. Caching conflicts with fusion.
+        p2me->cached_contraction = false;
+        p2me->fused_contraction_rotation = true;
+        p2me->init_environments(DMRG_LOG_IPRINT >= 2);
         auto ex2 = std::make_shared<Expect<SU2, double, double>>(p2me, (ubond_t)e.cfg.m,
                                                                  (ubond_t)e.cfg.m);
         ex2->iprint = DMRG_LOG_IPRINT;
+        ex2->zero_dot_algo = true; // extract_root_single leaves the one-dot end-center form
         ex2->solve(true, imps->center == 0);
         std::shared_ptr<GTensor<double>> d2 = ex2->get_2pdm_spatial(); // shape {n,n,n,n}
 
@@ -489,7 +494,7 @@ static void ensure_dm_full(dmrgci_engine &e) {
 
             auto p1me = std::make_shared<MovingEnvironment<SU2, double, double>>(p1mpo, imps, jmps,
                                                                                  "1PDM");
-            p1me->init_environments(false);
+            p1me->init_environments(DMRG_LOG_IPRINT >= 2);
             auto ex1 = std::make_shared<Expect<SU2, double, double>>(p1me, (ubond_t)e.cfg.m,
                                                                      (ubond_t)e.cfg.m);
             ex1->iprint = DMRG_LOG_IPRINT;
