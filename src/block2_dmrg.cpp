@@ -91,6 +91,10 @@ struct Block2Runtime {
         frame_<double>()->use_main_stack = false;
         frame_<double>()->minimal_disk_usage = true;
         frame_<double>()->minimal_memory_usage = false;
+        // Every renormalized-operator partition file is written and read through this codec, at
+        // the pyblock2 driver's precision. Lossy: values below the cutoff do not survive a round trip.
+        frame_<double>()->fp_codec =
+            std::make_shared<FPCodec<double>>(DMRG_FP_CODEC_CUTOFF, DMRG_FP_CODEC_CHUNK);
 
         threading_() = std::make_shared<Threading>(
             ThreadingTypes::OperatorBatchedGEMM | ThreadingTypes::Global,

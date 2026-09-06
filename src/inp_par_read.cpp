@@ -1100,6 +1100,8 @@ int dmrg_par::write_info(){
         fprintf(out_stream,"DMRG orbital ordering:            none (input order)\n");
     fprintf(out_stream,"Scratch directory (save_dir):     %s\n",save_dir.c_str());
     fprintf(out_stream,"Memory (block2 double stack):     %g GB\n",memory);
+    fprintf(out_stream,"Partition files:                  fp_codec cutoff %g, chunk %d\n",
+            (double)DMRG_FP_CODEC_CUTOFF,(int)DMRG_FP_CODEC_CHUNK);
     if(low_m_opt==DMRG_LOW_M_AUTO)
         fprintf(out_stream,"Low-m MPO optimization:           auto\n");
     if(low_m_opt==DMRG_LOW_M_ON)
