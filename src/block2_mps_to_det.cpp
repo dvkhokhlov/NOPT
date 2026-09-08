@@ -144,7 +144,7 @@ static bool rotate_multimps_to_canonical(dmrgci_engine &e,
                                          const std::shared_ptr<MultiMPS<SU2, double>> &mps,
                                          const double *U, int rot_m, int rot_steps) {
     auto res = apply_orbital_rotation_mps(mps, U, e.n_act, e.n_elec, e.twos, e.orbsym,
-                                          e.reorder_perm, rot_m, rot_steps);
+                                          e.reorder_perm, rot_m, rot_steps, e.cfg.gpu);
     if (res.complex_generator) {
         fprintf(out_stream, "  warning: read-out rotation generator not real -> reporting in solve basis\n");
         return false;
