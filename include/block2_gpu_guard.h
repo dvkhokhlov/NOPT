@@ -1,6 +1,6 @@
 #pragma once
 //
-// block2_gpu_guard — the block2 GPU backend engaged for one two-site DMRG solve. Include
+// block2_gpu_guard — the block2 GPU backend engaged for one DMRG solve. Include
 // ONLY from a block2 backend TU, after block2_core.hpp / block2_dmrg.hpp; without
 // NOPT_BLOCK2_GPU every member compiles away, so callers carry no #ifdef of their own.
 
@@ -18,9 +18,9 @@
 #include "common_vars.h"    // out_stream
 #include "inp_par_read.h"   // DMRG_WARM_ON
 
-// The backend declines every step whose center arity is not two, so the one-site tail must run
-// disengaged: finish() ends the engagement there, the destructor covers the other exits. The
-// moving environment must outlive the guard — the restore goes back through it.
+// The guard engages the backend for one DMRG solve: finish() ends the engagement, the
+// destructor covers the other exits. The moving environment must outlive the guard — the
+// restore goes back through it.
 class block2_gpu_guard {
 public:
     block2_gpu_guard(

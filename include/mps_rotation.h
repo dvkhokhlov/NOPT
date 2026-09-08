@@ -14,12 +14,13 @@
 
 // Rotate `mps` in place by the one-body propagator in `mpo_rot` (the anti-Hermitian NC MPO
 // exp(-kappa t), kappa = log(U)) over t in [0,1] as `n_steps` TangentSpace TE sweeps at bond
-// dimension `rot_m`. Works for any nroots. Returns the mean per-root norm^2 after the sweeps (~1 for
-// a faithful rotation; large drift means the basis change was too big to carry).
+// dimension `rot_m`; `gpu` is the $DMRG gpu knob, which serves the sweeps from the block2 GPU
+// backend. Works for any nroots. Returns the mean per-root norm^2 after the sweeps (~1 for a
+// faithful rotation; large drift means the basis change was too big to carry).
 double evolve_sa_multimps(
     const std::shared_ptr<block2::MultiMPS<block2::SU2, double>> &mps,
     const std::shared_ptr<block2::MPO<block2::SU2, double>> &mpo_rot,
-    block2::ubond_t rot_m, double dt, int n_steps);
+    block2::ubond_t rot_m, double dt, int n_steps, int gpu);
 
 // Outcome of apply_orbital_rotation_mps (below). Each caller applies its own thresholds/messages.
 struct mps_rotation_result {
@@ -31,10 +32,11 @@ struct mps_rotation_result {
 
 // Rotate `mps` in place by a proper one-body active-orbital unitary U (n x n, [a*n+p]): kappa =
 // log(U), reindexed into the frozen lattice (reorder_perm) order, applied as the anti-Hermitian NC
-// MPO exp(-kappa) over `rot_steps` TE sweeps at bond dim `rot_m`. Shared by the warm-start MPS reuse
-// and the determinant read-out. A near-identity U (kappa below threshold) is a no-op.
+// MPO exp(-kappa) over `rot_steps` TE sweeps at bond dim `rot_m`, with `gpu` the $DMRG gpu knob.
+// Shared by the warm-start MPS reuse and the determinant read-out. A near-identity U (kappa below
+// threshold) is a no-op.
 mps_rotation_result apply_orbital_rotation_mps(
     const std::shared_ptr<block2::MultiMPS<block2::SU2, double>> &mps,
     const double *U, int n, int n_elec, int twos,
     const std::vector<uint8_t> &orbsym, const std::vector<uint16_t> &reorder_perm,
-    int rot_m, int rot_steps);
+    int rot_m, int rot_steps, int gpu);
