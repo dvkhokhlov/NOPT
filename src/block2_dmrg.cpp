@@ -28,7 +28,7 @@
 #include "dmrg_log.h"         // per-solve block2 sweep log (cout/cerr redirect)
 #include "dmrg_gaopt.h"       // genetic (GAopt) lattice ordering
 #include "defaults.h"         // DMRG_LOW_M_OPT_KK_MM_MAX, DMRG_WARM_NOISE_MIN
-#include "block2_gpu_guard.h" // $DMRG gpu=on: the block2 GPU backend for the two-site sweeps
+#include "block2_gpu_guard.h" // $DMRG gpu=on: the block2 GPU backend for the sweeps
 
 using namespace block2;
 
@@ -577,7 +577,7 @@ static bool rotate_retained_mps(dmrgci_engine &e) {
     const int rot_m = e.cfg.rot_m > 0 ? e.cfg.rot_m : e.cfg.m;
     const int n_steps = e.cfg.rot_steps > 0 ? e.cfg.rot_steps : 10;
     auto res = apply_orbital_rotation_mps(e.mps, U.data(), n, e.n_elec, e.twos, e.orbsym,
-                                          e.reorder_perm, rot_m, n_steps);
+                                          e.reorder_perm, rot_m, n_steps, e.cfg.gpu);
     if (res.complex_generator) { // non-real generator -> not a proper rotation
         fprintf(out_stream, "  warm-start: complex generator (|Im k|=%.2e) -> cold fallback\n",
                 res.im_norm);
@@ -1018,7 +1018,6 @@ int block2_casci_wrap::solve(int, int, bool use_prev_guess) {
     dmrg->davidson_soft_max_iter = 200;
     dmrg->iprint = DMRG_LOG_IPRINT;
     dmrg->solve(sch.n_sweeps, e.mps->center == 0, e.cfg.sweep_tol);
-    gpu_guard.finish(); // the one-site tail below runs on the CPU
 
     // Truncation carried by this solve, sizing the next warm re-solve's noise: sweeps at the final
     // bond dim and noise-free, so the measure cannot feed back on the noise it sets. Read before the
@@ -1079,6 +1078,7 @@ int block2_casci_wrap::solve(int, int, bool use_prev_guess) {
         e.mps->save_data(); // that reads canonical_form/center/dot builds a two-site layout on it
         adjust_mps_two_dot(e); // ... and back to a two-site center for those consumers
     }
+    gpu_guard.finish(); // the density matrices below run disengaged
 
     // The sweeps' Davidson stop is a squared-residual threshold; its square root is the energy scale.
     e.last_resolution = sch.dav_thrds.empty() ? 0.0 : std::sqrt(sch.dav_thrds.back());

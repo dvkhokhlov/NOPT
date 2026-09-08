@@ -79,6 +79,9 @@ ifneq ($(USE_BLOCK2),yes)
 $(error USE_BLOCK2_GPU=yes needs USE_BLOCK2=yes)
 endif
 NOPT_BLOCK2_DEF:=$(NOPT_BLOCK2_DEF) -DNOPT_BLOCK2_GPU
+# The block2 TUs carry the library's seam flag: a consumer that calls
+# EffectiveHamiltonian::precompute()/post_precompute() itself compiles with it.
+BLOCK2_DEF:=$(BLOCK2_DEF) -D_GPU_CAPTURE
 endif
 
 

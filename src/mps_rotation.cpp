@@ -5,40 +5,83 @@
 
 #include "mps_rotation.h"
 
+#include <algorithm>
+#include <chrono>
 #include <cmath>
+#include <cstdio>
+#include <iostream>
 #include <vector>
+
+#include "block2_gpu_guard.h" // $DMRG gpu=on: the block2 GPU backend for the rotation sweeps
+#include "common_vars.h"      // out_stream
 
 using namespace block2;
 
 namespace {
+
+using rot_clock = std::chrono::steady_clock;
+
+// Wall clocks (seconds), Krylov counters and the largest expo workspace (doubles) of one rotation.
+struct rot_meter {
+    double t_eff = 0, t_expo2 = 0, t_expobp = 0, t_pre = 0, t_mv = 0, t_dm = 0, t_mve = 0,
+           t_io = 0, t_engage = 0;
+    long nmult2 = 0, nmultbp = 0, nexpo = 0, nmult_max = 0, nexpo_split = 0;
+    size_t work_max = 0;
+};
+
+// Add the time since `t0` to `acc` and restart `t0`.
+void lap(double &acc, rot_clock::time_point &t0) {
+    const auto t1 = rot_clock::now();
+    acc += std::chrono::duration<double>(t1 - t0).count();
+    t0 = t1;
+}
+
+// One telemetry line to the per-solve sweep log and to the main output.
+void rot_emit(const char *line) {
+    std::cout << line << std::endl;
+    fprintf(out_stream, "%s\n", line);
+}
 
 // exp(t*(H_eff+const_e)) applied independently to each root's center wavefunction. Equivalent to
 // what block2's EffectiveFunctions::expo_apply does for size==2 (a real generator decouples the
 // re/im channels), generalized to arbitrary nroots. Returns the total (summed-over-roots) norm^2.
 double expo_apply_multi_roots(
     const std::shared_ptr<EffectiveHamiltonian<SU2, double, MultiMPS<SU2, double>>> &h_eff,
-    double t, double const_e, double conv_thrd, int krylov_size) {
+    double t, double const_e, double conv_thrd, int krylov_size, rot_meter *mt, bool two_site) {
+    auto tc = rot_clock::now();
     h_eff->precompute();
+    lap(mt->t_pre, tc);
     double anorm =
         MatrixFunctions::norm(MatrixRef(h_eff->diag->data, (MKL_INT)h_eff->diag->total_memory, 1));
     const bool tasked = (h_eff->tf->opf->seq->mode == SeqTypes::Auto) ||
                         (h_eff->tf->opf->seq->mode & SeqTypes::Tasked);
-    auto g = [&h_eff, tasked](const GMatrix<double> &a, const GMatrix<double> &b) {
+    auto g = [&h_eff, tasked, mt](const GMatrix<double> &a, const GMatrix<double> &b) {
+        auto tg = rot_clock::now();
         if (tasked)
             h_eff->tf->operator()(a, b, (double)1.0);
         else
             (*h_eff)(a, b, 0, (double)1.0);
+        lap(mt->t_mv, tg);
     };
     double nsq = 0.0;
     for (int r = 0; r < (int)h_eff->ket.size(); r++) {
-        GMatrix<double> v(h_eff->ket[r]->data, (MKL_INT)h_eff->ket[r]->total_memory, 1);
-        IterativeMatrixFunctions<double>::expo_apply(
+        const size_t n = h_eff->ket[r]->total_memory;
+        GMatrix<double> v(h_eff->ket[r]->data, (MKL_INT)n, 1);
+        const int nm = IterativeMatrixFunctions<double>::expo_apply(
             g, t, anorm, v, const_e, /*symmetric=*/false, /*iprint=*/false,
             (std::shared_ptr<ParallelCommunicator<SU2>>)nullptr, conv_thrd, krylov_size);
+        const size_t m = std::min((size_t)krylov_size, n - 1);
+        mt->work_max = std::max(mt->work_max, n * (m + 2) + 5 * (m + 2) * (m + 2) + 7);
+        (two_site ? mt->nmult2 : mt->nmultbp) += nm;
+        mt->nexpo++;
+        mt->nmult_max = std::max(mt->nmult_max, (long)nm);
+        mt->nexpo_split += (nm > krylov_size + 1);
         double nr = MatrixFunctions::norm(v);
         nsq += nr * nr;
     }
+    tc = rot_clock::now();
     h_eff->post_precompute();
+    lap(mt->t_pre, tc);
     return nsq;
 }
 
@@ -46,7 +89,8 @@ double expo_apply_multi_roots(
 // of the (forward) evolved center before truncation.
 double multi_two_dot_ext(const std::shared_ptr<MovingEnvironment<SU2, double, double>> &me, int i,
                          bool forward, double beta, ubond_t bond_dim, double cutoff,
-                         double conv_thrd, int krylov_size) {
+                         double conv_thrd, int krylov_size, rot_meter *mt) {
+    auto tc = rot_clock::now();
     auto mket = std::dynamic_pointer_cast<MultiMPS<SU2, double>>(me->ket);
     frame_<double>()->activate(0);
     if (mket->tensors[i] != nullptr || mket->tensors[i + 1] != nullptr)
@@ -55,10 +99,14 @@ double multi_two_dot_ext(const std::shared_ptr<MovingEnvironment<SU2, double, do
         mket->load_tensor(i);
         mket->tensors[i] = mket->tensors[i + 1] = nullptr;
     }
+    lap(mt->t_io, tc);
     std::vector<std::shared_ptr<SparseMatrixGroup<SU2, double>>> old_wfns = mket->wfns;
     auto h_eff = me->multi_eff_ham(FuseTypes::FuseLR, forward, true);
-    double nsq = expo_apply_multi_roots(h_eff, -beta, me->mpo->const_e, conv_thrd, krylov_size);
+    lap(mt->t_eff, tc);
+    double nsq =
+        expo_apply_multi_roots(h_eff, -beta, me->mpo->const_e, conv_thrd, krylov_size, mt, true);
     h_eff->deallocate();
+    lap(mt->t_expo2, tc);
 
     std::vector<double> wfn_spectra;
     std::shared_ptr<SparseMatrix<SU2, double>> dm =
@@ -68,6 +116,7 @@ double multi_two_dot_ext(const std::shared_ptr<MovingEnvironment<SU2, double, do
         dm, old_wfns, (int)bond_dim, forward, false, mket->wfns,
         forward ? mket->tensors[i] : mket->tensors[i + 1], cutoff, false, wfn_spectra,
         TruncationTypes::Physical);
+    lap(mt->t_dm, tc);
 
     std::shared_ptr<StateInfo<SU2>> info = nullptr;
     if (forward) {
@@ -102,28 +151,40 @@ double multi_two_dot_ext(const std::shared_ptr<MovingEnvironment<SU2, double, do
     for (int k = mket->nroots - 1; k >= 0; k--)
         old_wfns[k]->deallocate();
     old_wfns[0]->deallocate_infos();
+    lap(mt->t_io, tc);
 
     // TangentSpace back-propagation: exp(+beta*H_eff) on the moved single-site center.
     if (forward && i + 1 != me->n_sites - 1) {
         me->move_to(i + 1, true);
+        lap(mt->t_mve, tc);
         mket->load_wavefunction(i + 1);
+        lap(mt->t_io, tc);
         auto k_eff = me->multi_eff_ham(FuseTypes::FuseR, forward, true);
-        expo_apply_multi_roots(k_eff, beta, me->mpo->const_e, conv_thrd, krylov_size);
+        lap(mt->t_eff, tc);
+        expo_apply_multi_roots(k_eff, beta, me->mpo->const_e, conv_thrd, krylov_size, mt, false);
         k_eff->deallocate();
+        lap(mt->t_expobp, tc);
         mket->save_wavefunction(i + 1);
         mket->unload_wavefunction(i + 1);
+        lap(mt->t_io, tc);
     } else if (!forward && i != 0) {
         me->move_to(i - 1, true);
+        lap(mt->t_mve, tc);
         mket->load_wavefunction(i);
+        lap(mt->t_io, tc);
         auto k_eff = me->multi_eff_ham(FuseTypes::FuseL, forward, true);
-        expo_apply_multi_roots(k_eff, beta, me->mpo->const_e, conv_thrd, krylov_size);
+        lap(mt->t_eff, tc);
+        expo_apply_multi_roots(k_eff, beta, me->mpo->const_e, conv_thrd, krylov_size, mt, false);
         k_eff->deallocate();
+        lap(mt->t_expobp, tc);
         mket->save_wavefunction(i);
         mket->unload_wavefunction(i);
+        lap(mt->t_io, tc);
     }
     MovingEnvironment<SU2, double, double>::propagate_multi_wfn(i, 0, me->n_sites, mket, forward,
                                                                 me->mpo->tf->opf->cg);
     mket->save_data();
+    lap(mt->t_io, tc);
     return nsq;
 }
 
@@ -131,7 +192,7 @@ double multi_two_dot_ext(const std::shared_ptr<MovingEnvironment<SU2, double, do
 // total norm^2 (a unitary-propagation accuracy gauge).
 double multi_te_sweep(const std::shared_ptr<MovingEnvironment<SU2, double, double>> &me,
                       bool forward, double beta, ubond_t bond_dim, double cutoff, double conv_thrd,
-                      int krylov_size) {
+                      int krylov_size, rot_meter *mt) {
     me->prepare();
     std::vector<int> sweep_range;
     if (forward)
@@ -142,8 +203,10 @@ double multi_te_sweep(const std::shared_ptr<MovingEnvironment<SU2, double, doubl
             sweep_range.push_back(it);
     double nsq = 0.0;
     for (int i : sweep_range) {
+        auto tc = rot_clock::now();
         me->move_to(i);
-        nsq = multi_two_dot_ext(me, i, forward, beta, bond_dim, cutoff, conv_thrd, krylov_size);
+        lap(mt->t_mve, tc);
+        nsq = multi_two_dot_ext(me, i, forward, beta, bond_dim, cutoff, conv_thrd, krylov_size, mt);
     }
     return nsq;
 }
@@ -152,25 +215,47 @@ double multi_te_sweep(const std::shared_ptr<MovingEnvironment<SU2, double, doubl
 
 double evolve_sa_multimps(const std::shared_ptr<MultiMPS<SU2, double>> &mps,
                           const std::shared_ptr<MPO<SU2, double>> &mpo_rot, ubond_t rot_m, double dt,
-                          int n_steps) {
-    auto saved_seq = threading_()->seq_type;
-    threading_()->seq_type = SeqTypes::Simple; // Tasked corrupts time evolution
+                          int n_steps, int gpu) {
+    rot_meter mt;
+    char line[768];
+    auto t_wall = rot_clock::now();
     auto rme = std::make_shared<MovingEnvironment<SU2, double, double>>(mpo_rot, mps, mps, "ROT");
+    auto tg = rot_clock::now();
+    block2_gpu_guard guard(gpu, rme);
+    lap(mt.t_engage, tg);
+    snprintf(line, sizeof(line), "ROT begin sites=%d rot_m=%d steps=%d nroots=%d", (int)mps->n_sites,
+             (int)rot_m, n_steps, mps->nroots);
+    rot_emit(line);
     rme->init_environments(false);
     double nsq = mps->nroots; // if n_steps == 0, treat as unrotated (mean per-root norm^2 = 1)
     for (int s = 0; s < n_steps; s++) {
         bool forward = (mps->center == 0);
-        nsq = multi_te_sweep(rme, forward, -dt, rot_m, 1e-20, 1e-12, 40); // -dt: toward the new basis
+        // -dt: toward the new basis
+        nsq = multi_te_sweep(rme, forward, -dt, rot_m, 1e-20, 1e-12, 40, &mt);
     }
+    tg = rot_clock::now();
+    guard.finish();
+    lap(mt.t_engage, tg);
     rme->remove_partition_files();
-    threading_()->seq_type = saved_seq;
-    return mps->nroots > 0 ? nsq / mps->nroots : nsq; // mean per-root norm^2
+    const double norm2 = mps->nroots > 0 ? nsq / mps->nroots : nsq; // mean per-root norm^2
+    snprintf(line, sizeof(line),
+             "ROT end sites=%d rot_m=%d steps=%d nroots=%d wall=%.3f t_engage=%.3f t_eff=%.3f "
+             "t_expo2=%.3f t_expobp=%.3f t_pre=%.3f t_mv=%.3f t_dm=%.3f t_mve=%.3f t_io=%.3f "
+             "nmult2=%ld nmultbp=%ld nexpo=%ld nmult_max=%ld nexpo_split=%ld krylov_work_GiB=%.3f "
+             "norm2=%.12f",
+             (int)mps->n_sites, (int)rot_m, n_steps, mps->nroots,
+             std::chrono::duration<double>(rot_clock::now() - t_wall).count(), mt.t_engage, mt.t_eff,
+             mt.t_expo2, mt.t_expobp, mt.t_pre, mt.t_mv, mt.t_dm, mt.t_mve, mt.t_io, mt.nmult2,
+             mt.nmultbp, mt.nexpo, mt.nmult_max, mt.nexpo_split,
+             (double)mt.work_max * 8.0 / 1073741824.0, norm2);
+    rot_emit(line);
+    return norm2;
 }
 
 mps_rotation_result apply_orbital_rotation_mps(
     const std::shared_ptr<MultiMPS<SU2, double>> &mps, const double *U, int n, int n_elec, int twos,
     const std::vector<uint8_t> &orbsym, const std::vector<uint16_t> &reorder_perm,
-    int rot_m, int rot_steps) {
+    int rot_m, int rot_steps, int gpu) {
     const size_t nn = (size_t)n * n;
     mps_rotation_result res;
 
@@ -221,7 +306,7 @@ mps_rotation_result apply_orbital_rotation_mps(
         mpo_rot,
         std::make_shared<AntiHermitianRuleQC<SU2, double>>(std::make_shared<RuleQC<SU2, double>>()),
         true);
-    res.norm2 = evolve_sa_multimps(mps, mpo_rot, (ubond_t)rot_m, 1.0 / rot_steps, rot_steps);
+    res.norm2 = evolve_sa_multimps(mps, mpo_rot, (ubond_t)rot_m, 1.0 / rot_steps, rot_steps, gpu);
     mpo_rot->deallocate();
     return res;
 }
