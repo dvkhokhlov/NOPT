@@ -297,6 +297,11 @@ void block2_casci_wrap::G3_calc_diag(double *G3, int state) {
         rotate3(G3, e.U_loc.data(), n, rot.data(), /*forward=*/false);
         std::copy(rot.begin(), rot.end(), G3);
     }
+    if (std::getenv("NOPT_RDM3_STOP") != nullptr) { // the run ends once the 3-RDM is built
+        fprintf(out_stream, "[RDM] stop after N=3 (NOPT_RDM3_STOP)\n");
+        fflush(out_stream);
+        exit(EXIT_SUCCESS);
+    }
 }
 
 #if 0  // DIRECT lambda3 path (superseded by the explicit lattice-3RDM route; revive for nact >~ 30)
