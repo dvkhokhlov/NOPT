@@ -3,6 +3,7 @@
 // (G2_calc_diag) and the 3-body moment (G3_calc_diag). Split from block2_dmrg.cpp, same idiom.
 
 #include "block2_dmrg_engine.h"   // block2 headers + dmrgci_engine + shared helpers
+#include "block2_gpu_guard.h" // $DMRG gpu=on: the block2 GPU backend for the sweeps
 
 #include <algorithm>
 #include <cmath>
@@ -184,7 +185,8 @@ std::shared_ptr<GTensor<double>> nopt_block2::npdm_lattice(dmrgci_engine &e, int
     const int n = e.n_act;
     size_t nel = 1;
     for (int k = 0; k < 2 * N; k++) nel *= (size_t)n;
-    const int passes = e.cfg.rdm_passes < 1 ? 1 : e.cfg.rdm_passes;
+    // the divider pays only for the 3-RDM: the lower orders buy no memory with it
+    const int passes = (N == 3 && e.cfg.rdm_passes > 1) ? e.cfg.rdm_passes : 1;
 
     const std::string ktag = e.mps_info->tag + "-" + tag + std::to_string(ket_state);
     const std::string kstag = ktag + "-s";
@@ -236,6 +238,7 @@ std::shared_ptr<GTensor<double>> nopt_block2::npdm_lattice(dmrgci_engine &e, int
             auto me = std::make_shared<MovingEnvironment<SU2, double, double>>(pmpo, bra, ket, tag);
             me->cached_contraction = false; // conflicts with the fused zero-dot contraction
             me->fused_contraction_rotation = true;
+            block2_gpu_guard g(e.cfg.gpu, me);
             me->init_environments(DMRG_LOG_IPRINT >= 2);
             auto ex = std::make_shared<Expect<SU2, double, double>>(me, (ubond_t)e.cfg.m,
                                                                     (ubond_t)e.cfg.m);
@@ -246,6 +249,7 @@ std::shared_ptr<GTensor<double>> nopt_block2::npdm_lattice(dmrgci_engine &e, int
             ex->cutoff = 1e-24;
             ex->solve(true, ket->center == 0);
             std::vector<std::shared_ptr<GTensor<double>>> npdm = ex->get_npdm();
+            g.finish();
             remove_npdm_fragments(*me);
             me->remove_partition_files();
 
