@@ -761,10 +761,14 @@ static void recompute_cold_order(dmrgci_engine &e) {
                 kmat[(size_t)i * n + j] = std::fabs(e.fcidump->v(i, j, j, i)) +
                                           1e-7 * std::fabs(e.fcidump->t(i, j));
     std::vector<uint16_t> p2 = OrbitalOrdering::fiedler((uint16_t)n, kmat);
-    bool unchanged = true;
-    for (int k = 0; k < n && unchanged; k++)
-        unchanged = (p2[k] == (uint16_t)k);
-    if (unchanged)
+    // Fiedler's sign gauge maps an already-ordered lattice to its reversal, which is the same
+    // chain read backwards and carries the same ordering cost.
+    bool unchanged = true, reversed = true;
+    for (int k = 0; k < n && (unchanged || reversed); k++) {
+        unchanged = unchanged && (p2[k] == (uint16_t)k);
+        reversed = reversed && (p2[k] == (uint16_t)(n - 1 - k));
+    }
+    if (unchanged || reversed)
         return; // the frozen order already is the fresh one: nothing to rebuild
     e.fcidump->reorder(p2);
     std::vector<uint16_t> composed((size_t)n); // site k now carries the orbital that sat at site p2[k]
