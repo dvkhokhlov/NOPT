@@ -351,9 +351,10 @@ void nopt_block2::ensure_2rdm(dmrgci_engine &e) {
         wsum += w[st];
 
     const double inv = (e.n_elec >= 2) ? 1.0 / (e.n_elec - 1) : 0.0;
+    const int dir = rdm_sweep_dir();
 
     for (int st = 0; st < e.n_s; st++) {
-        std::shared_ptr<GTensor<double>> raw = npdm_lattice(e, 2, st, st, "2PDM");
+        std::shared_ptr<GTensor<double>> raw = npdm_lattice(e, 2, st, st, dir, "2PDM");
 
         // Contiguous row-major [p,q,r,s] = the block2 D2 layout, sqrt(2)^2 for the SU2 convention.
         double *d2p = e.d2_states.data() + (size_t)st * blk;
@@ -462,12 +463,13 @@ static void ensure_dm_full(dmrgci_engine &e) {
         for (int i = 0; i < n; i++) iperm[e.reorder_perm[i]] = i;
     }
 
+    const int dir = rdm_sweep_dir();
 
     for (int i = 0; i < e.n_s; i++)
         for (int j = i; j < e.n_s; j++) {
             // sqrt(2)^1 for the SU2 convention; bra = i, ket = j, so the raw tensor is already the
             // (i,j) block's orientation.
-            std::shared_ptr<GTensor<double>> raw = npdm_lattice(e, 1, j, i, "1PDM");
+            std::shared_ptr<GTensor<double>> raw = npdm_lattice(e, 1, j, i, dir, "1PDM");
             double *bij = e.dmfull_cache.data() + (size_t)(i * e.n_s + j) * blk;
             const double *rd = raw->data->data();
             for (size_t k = 0; k < blk; k++)

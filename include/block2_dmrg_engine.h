@@ -211,10 +211,12 @@ void drop_state_set(dmrgci_engine &e, const std::string &name);
 
 // One root pair's spin-summed N-body density in block2's lattice order, from one general-NPDM
 // Expect sweep on transient single-root extracts. The result is unscaled (block2's convention);
-// callers apply sqrt(2)^N and their own gathers.
+// callers apply sqrt(2)^N and their own gathers. dir picks the sweep end (rdm_sweep_dir).
 std::shared_ptr<GTensor<double>> npdm_lattice(dmrgci_engine &e, int N, int ket_state,
-                                              int bra_state, const char *tag);
+                                              int bra_state, int dir, const char *tag);
 
+// Sweep direction of every RDM read-out: +1 from site 0, -1 from the last site, 0 as extracted.
+int rdm_sweep_dir();
 
 // State-averaged 2-RDM, the per-state 2-RDMs, 1-RDMs and energies, once per solve.
 void ensure_2rdm(dmrgci_engine &e);
