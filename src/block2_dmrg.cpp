@@ -651,6 +651,25 @@ static std::vector<double> ordering_metric(const double *h1, const double *h2, i
     return kmat;
 }
 
+// Lattice order of the incoming orbitals under the configured loc_order. `ga_tasks` sizes the GA
+// search; one task prices an order closely enough for a diagnostic, but the order a solve runs on
+// takes the full count. A loc_order that orders nothing is a caller's contract failure.
+static std::vector<uint16_t> fresh_lattice_order(const dmrgci_engine &e, int n,
+                                                 const std::vector<double> &kmat, int ga_tasks) {
+    if (e.cfg.loc_order == DMRG_LOCORDER_GAOPT)
+        return dmrg_gaopt_order(n, kmat, ga_tasks);
+    else if (e.cfg.loc_order == DMRG_LOCORDER_FIEDLER)
+        return OrbitalOrdering::fiedler((uint16_t)n, kmat);
+    else {
+        fprintf(out_stream, "ERROR: fresh_lattice_order: loc_order %d orders nothing (fiedler or gaopt)\n",
+                (int)e.cfg.loc_order);
+        exit(EXIT_FAILURE);
+    }
+}
+
+// GA tasks pricing the drift baseline: it never becomes the solved order, so one is enough.
+static const int DMRG_GAOPT_DRIFT_TASKS = 1;
+
 void block2_casci_wrap::import_integrals(double *aaaa, double *f_act, double e_core) {
     dmrgci_engine &e = *impl_;
     n_act_ = e.n_act;
@@ -696,33 +715,30 @@ void block2_casci_wrap::import_integrals(double *aaaa, double *f_act, double e_c
     const bool ordered = (e.cfg.loc_order == DMRG_LOCORDER_FIEDLER ||
                           e.cfg.loc_order == DMRG_LOCORDER_GAOPT);
     std::vector<double> kmat;
-    std::vector<uint16_t> fresh; // Fiedler order of the incoming orbitals
-    if (ordered) {
+    if (ordered)
         kmat = ordering_metric(h1, h2, n);
-        fresh = OrbitalOrdering::fiedler((uint16_t)n, kmat);
-    }
-    if (e.have_rotation && !e.reorder_perm.empty()) {
+    const bool pinned = (e.have_rotation && !e.reorder_perm.empty());
+    if (pinned) {
         e.fcidump->reorder(e.reorder_perm); // frozen order (warm restart)
     } else {
         e.reorder_perm.clear();
         if (ordered) {
-            if (e.cfg.loc_order == DMRG_LOCORDER_FIEDLER)
-                e.reorder_perm = fresh;
-            else if (e.cfg.loc_order == DMRG_LOCORDER_GAOPT)
-                e.reorder_perm = dmrg_gaopt_order(n, kmat);
+            e.reorder_perm = fresh_lattice_order(e, n, kmat, DMRG_GAOPT_TASKS);
             e.fcidump->reorder(e.reorder_perm);
         }
     }
-    // Staleness of the lattice order carried into this solve: its ordering cost over that of a fresh
-    // Fiedler order, both in the incoming orbitals. Read before solve() may re-pin, so a cold-fallback
-    // iteration reports the staleness that justified the re-pin. Under gaopt it can sit just below 1
-    // (gaopt seeds from Fiedler and only improves on it).
-    if (ordered && !e.reorder_perm.empty()) {
+    // Staleness of the lattice order carried into this solve: its ordering cost over that of an order
+    // derived from the incoming orbitals by the same loc_order, so 1 means re-deriving would gain
+    // nothing. Undefined where this solve derived the order itself, and again where a cold fallback
+    // re-pins it inside solve().
+    e.last_ord_drift = std::numeric_limits<double>::quiet_NaN();
+    if (ordered && pinned) {
+        const std::vector<uint16_t> fresh =
+            fresh_lattice_order(e, n, kmat, DMRG_GAOPT_DRIFT_TASKS);
         const double c_fresh = OrbitalOrdering::evaluate((uint16_t)n, kmat, fresh);
-        e.last_ord_drift =
-            (c_fresh > 0.0)
-                ? OrbitalOrdering::evaluate((uint16_t)n, kmat, e.reorder_perm) / c_fresh
-                : 1.0;
+        if (c_fresh > 0.0)
+            e.last_ord_drift =
+                OrbitalOrdering::evaluate((uint16_t)n, kmat, e.reorder_perm) / c_fresh;
     }
 
     SU2 vacuum(0);
@@ -800,6 +816,8 @@ static void recompute_cold_order(dmrgci_engine &e) {
     for (int k = 0; k < n; k++)
         composed[k] = e.reorder_perm[p2[k]];
     e.reorder_perm.swap(composed);
+    // The drift priced at import describes the order just dropped, not the one this solve runs on.
+    e.last_ord_drift = std::numeric_limits<double>::quiet_NaN();
 
     SU2 vacuum(0);
     e.hamil = std::make_shared<HamiltonianQC<SU2, double>>(vacuum, n, e.orbsym, e.fcidump);

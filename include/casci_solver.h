@@ -16,6 +16,7 @@
 // flat-array code; this interface introduces no ownership.
 
 class aldet_data;  // opaque to consumers; only the aldet adapter dereferences it
+#include <limits>
 #include <vector>
 
 class casci_solver {
@@ -107,9 +108,9 @@ public:
     // possibly under-converged CI vector in the CAS-SCF table. Backends that don't track it: false.
     virtual bool last_solve_hit_max() const { return false; }
     // Staleness of a pinned orbital ordering the backend solves on: its ordering cost over that of
-    // a freshly derived order, in the orbitals of the last solve. 1.0 = as good as fresh, larger =
-    // the pinned lattice has drifted. Backends with no lattice: 1.0.
-    virtual double last_order_drift() const { return 1.0; }
+    // an order derived afresh, in the orbitals of the last solve. 1.0 = as good as fresh, larger =
+    // the pinned lattice has drifted. NaN where nothing was pinned, and for backends with no lattice.
+    virtual double last_order_drift() const { return std::numeric_limits<double>::quiet_NaN(); }
     // True if the last solve was armed for a warm restart but ran cold anyway (DMRG: the
     // basis-change rotation declined, or the host withheld it), rebuilding the wavefunction from
     // scratch: the energy steps there, and an orbital converger's history predates a surface that
