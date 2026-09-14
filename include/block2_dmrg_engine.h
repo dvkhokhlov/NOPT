@@ -94,6 +94,7 @@ struct dmrgci_engine {
     double last_sweep_dE = 0.0;                 // |dE| between the final two sweeps (achieved convergence)
     bool last_hit_max = false;                  // last solve used its full sweep budget with dE > sweep_tol
     std::vector<uint16_t> reorder_perm;         // DMRG lattice order (Fiedler); empty => input order
+    double last_ord_drift = 1.0;                // reorder_perm's ordering cost over a fresh Fiedler order's
     double last_dw = 0.0;                       // max discarded weight over the last solve's two-site sweeps at the
                                                 // schedule's final bond dim, noise-free sweeps preferred
 

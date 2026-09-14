@@ -106,6 +106,10 @@ public:
     // threshold (DMRG: reached the schedule's max sweeps with |dE| still above sweep_tol). Flags a
     // possibly under-converged CI vector in the CAS-SCF table. Backends that don't track it: false.
     virtual bool last_solve_hit_max() const { return false; }
+    // Staleness of a pinned orbital ordering the backend solves on: its ordering cost over that of
+    // a freshly derived order, in the orbitals of the last solve. 1.0 = as good as fresh, larger =
+    // the pinned lattice has drifted. Backends with no lattice: 1.0.
+    virtual double last_order_drift() const { return 1.0; }
 
     // --- relating the wavefunction across an active-orbital-basis change (capability-gated) ---
     // All three operations need the same thing: representing/comparing the wavefunction

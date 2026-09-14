@@ -1413,9 +1413,15 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
     CAS->print_av_table("CAS_SCF density averaging:");
     fprintf(out_stream,"\n");
     fprintf(out_stream,"Start CAS_SCF iterations\n");
-    fprintf(out_stream,"_________________________________________________________________________________\n");
-    fprintf(out_stream,"  N | E                 | dE         | LAG.ASYM. | ROT.STEP  | N_dav | sweep_dE  |\n");
-    fprintf(out_stream,"____|___________________|____________|___________|___________|_______|___________|\n");
+    // The CI backend's lattice order is pinned across warm solves, so its staleness is a run diagnostic.
+    const bool ord_col = (cas->ci_solver==CISOLVER_DMRG &&
+                          (cas->dmrg.loc_order==DMRG_LOCORDER_FIEDLER ||
+                           cas->dmrg.loc_order==DMRG_LOCORDER_GAOPT));
+    const char * od_rule = ord_col ? "___________|" : "";
+    const char * od_head = ord_col ? " ORD.DRIFT |" : "";
+    fprintf(out_stream,"_________________________________________________________________________________%s\n",od_rule);
+    fprintf(out_stream,"  N | E                 | dE         | LAG.ASYM. | ROT.STEP  | N_dav | sweep_dE  |%s\n",od_head);
+    fprintf(out_stream,"____|___________________|____________|___________|___________|_______|___________|%s\n",od_rule);
     disable_print_timers();
     
     while(true){
@@ -1430,7 +1436,9 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
         
         bool hit_max = CAS->CI->last_solve_hit_max();
         if(hit_max) any_maxed=true;
-        fprintf(out_stream,"%3d |% 18.10f | % .3e | %.3e | %.3e | %3d   | %.3e |%s\n",n_iter,E,E-E_old,max_grad_el, rot_step,n_dav_conv,CAS->CI->last_solve_resid(), hit_max?" *":"");
+        char od_val[16]; od_val[0]='\0';
+        if(ord_col)snprintf(od_val,sizeof(od_val)," %9.4f |",CAS->CI->last_order_drift());
+        fprintf(out_stream,"%3d |% 18.10f | % .3e | %.3e | %.3e | %3d   | %.3e |%s%s\n",n_iter,E,E-E_old,max_grad_el, rot_step,n_dav_conv,CAS->CI->last_solve_resid(), od_val, hit_max?" *":"");
         fflush(out_stream);
 //         getchar();
 //         exit(0);
@@ -1455,7 +1463,7 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
     
     char * name = new char[BUF_LINE_LENGTH];
     
-    fprintf(out_stream,"____|___________________|____________|___________|___________|_______|___________|\n");
+    fprintf(out_stream,"____|___________________|____________|___________|___________|_______|___________|%s\n",od_rule);
     if(converged==0)fprintf(out_stream,"\nCASSCF did not converge");
     if(converged==1)fprintf(out_stream,"\nEnergy converged");
     if(converged==2)fprintf(out_stream,"\nLagrangian converged");
