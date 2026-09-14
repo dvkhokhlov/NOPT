@@ -1362,8 +1362,10 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
     
     int converged=0;
     double rot_step=1.0;
+    double grad_old=0;      // max|g| at the point the current rot_step was taken from
     bool any_maxed=false;   // a macro-iter whose CI solve hit its max sweeps while under-converged
     bool any_cold=false;    // a macro-iter whose CI solve fell back to a cold start
+    bool any_reset=false;   // a macro-iter whose energy rise restarted the orbital converger
     
     if(IS_SYM){
         int n_ao  = M->n_ao;
@@ -1446,10 +1448,25 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
         if(cas->method==2)max_grad_el = j_sd.find_max_el();
         
         
-        bool hit_max = CAS->CI->last_solve_hit_max();
-        if(hit_max) any_maxed=true;
+        // An energy rise nothing accounts for: an honest step moves the energy by |g||kappa| to first
+        // order, and a CI solve resolves it only to a fraction of its truncation energy and to what
+        // its stop thresholds bound. Above all three the CI solution itself moved, and the amplitude
+        // behind it is not an error vector the history can fit. Restart, as SCF DIIS does.
         bool cold_fb = CAS->CI->last_solve_cold();
         if(cold_fb) any_cold=true;
+        double step_ref = rot_step;                                    // SOSCF returns the step it applied
+        const double ci_floor  = CAS_RESET_TRUNC_FRAC*CAS->CI->last_solve_trunc_de();
+        const double ci_res    = CAS->CI->energy_resolution();
+        double rise_ref = grad_old*step_ref;
+        if(ci_floor>rise_ref) rise_ref = ci_floor;
+        if(ci_res  >rise_ref) rise_ref = ci_res;
+        const bool diis_reset = (n_iter>0 && !cold_fb && E-E_old>0 && E-E_old > rise_ref); // a cold solve's rise is expected, its reset done
+        if(diis_reset){
+            SOSCF.reset_history();
+            any_reset=true;
+        }
+        bool hit_max = CAS->CI->last_solve_hit_max();
+        if(hit_max) any_maxed=true;
         char de_val[16]; de_val[0]='\0';
         if(dmrg_ci)snprintf(de_val,sizeof(de_val)," %.3e |",CAS->CI->last_solve_resid());
         char dw_val[16]; dw_val[0]='\0';
@@ -1464,7 +1481,7 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
             if(std::isnan(od))snprintf(od_val,sizeof(od_val),"     -     |"); // nothing pinned to price, or a cold re-pin dropped it
             else snprintf(od_val,sizeof(od_val)," %9s |",od>DMRG_ORD_DRIFT_TOL?"FALSE":"TRUE");
         }
-        fprintf(out_stream,"%3d |% 18.10f | % .3e | %.3e | %.3e | %3d   |%s%s%s%s%s\n",n_iter,E,E-E_old,max_grad_el, rot_step,n_dav_conv, de_val, dw_val, od_val, hit_max?" *":"", cold_fb?" c":"");
+        fprintf(out_stream,"%3d |% 18.10f | % .3e | %.3e | %.3e | %3d   |%s%s%s%s%s%s\n",n_iter,E,E-E_old,max_grad_el, rot_step,n_dav_conv, de_val, dw_val, od_val, hit_max?" *":"", cold_fb?" c":"", diis_reset?" r":"");
         fflush(out_stream);
 //         getchar();
 //         exit(0);
@@ -1490,6 +1507,7 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
                 
 //         printf_timer("CAS-CI");
         E_old=E;
+        grad_old=max_grad_el;
         n_iter++;
 //         PrintMatr(M->nat_orb_occ,M->n_act_orb[0],1,1);
     }
@@ -1510,6 +1528,10 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
     if(any_cold)
         fprintf(out_stream," c CI solve fell back to a cold start: the wavefunction was rebuilt from\n"
                            "   scratch, so the energy steps there and the orbital converger was reset.\n\n");
+    if(any_reset)
+        fprintf(out_stream," r energy rose by more than the applied rotation and the CI resolution account\n"
+                           "   for, consistent with that CI solve landing on a different solution: the\n"
+                           "   converger history was restarted.\n\n");
     printf_timer("CAS_SCF iterations");
     
     

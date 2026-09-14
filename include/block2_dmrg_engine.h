@@ -102,6 +102,9 @@ struct dmrgci_engine {
                                                 // schedule's final bond dim, noise-free sweeps preferred
     double last_two_dot_dw = std::numeric_limits<double>::quiet_NaN(); // discarded weight of the last
                                                 // two-site sweep: the truncation the stored MPS carries
+    std::vector<double> last_two_dot_E;         // last two-site sweep's energy per root
+    double last_trunc_de = 0.0;                 // stored MPS's RDM energy minus last_two_dot_E, max over roots
+    double last_resolution = 0.0;               // sqrt of the final sweep's Davidson threshold: the solve's energy scale
 
     dmrgci_engine(int n_act_, int n_elec_, int twos_, int twosz_, int mult_, int n_s_,
                   int print_number_, const dmrg_par &c)

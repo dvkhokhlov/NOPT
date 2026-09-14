@@ -364,8 +364,11 @@ void nopt_block2::ensure_2rdm(dmrgci_engine &e) {
 
         // This root's true energy, not the solver's pre-truncation sweep value. Taken while the
         // 2-RDM is still in the solver's basis and lattice order, the one e.fcidump is in.
-        if (e.n_elec >= 2)
+        if (e.n_elec >= 2) {
             e.E_states[st] = rdm_energy(e, d2p);
+            if (st < (int)e.last_two_dot_E.size()) // what this root gave up to the tail's truncation
+                e.last_trunc_de = std::max(e.last_trunc_de, e.E_states[st] - e.last_two_dot_E[st]);
+        }
 
         // This root's 1-RDM, D1[p,s] = 1/(N-1) sum_k D2[p,k,k,s]. The trace commutes with the
         // orthogonal un-permutation and back-transform below, which the n_act^2 matrix carries.
@@ -988,6 +991,18 @@ int block2_casci_wrap::solve(int, int, bool use_prev_guess) {
         e.mps->save_data(); // that reads canonical_form/center/dot builds a two-site layout on it
         adjust_mps_two_dot(e); // ... and back to a two-site center for those consumers
     }
+
+    // The sweeps' Davidson stop is a squared-residual threshold; its square root is the energy scale.
+    e.last_resolution = sch.dav_thrds.empty() ? 0.0 : std::sqrt(sch.dav_thrds.back());
+
+    // Energy the truncation to m costs this solve: the stored MPS's energy over the last two-site
+    // sweep's, worst over roots. The MPS side is its RDM-contracted energy, so ensure_2rdm fills the
+    // difference in; only the two-site side is known here. Nothing measurable without a tail.
+    e.last_trunc_de = 0.0;
+    e.last_two_dot_E.clear();
+    if (DMRG_ONEDOT_TAIL > 0 && n2 >= 1 && (int)dmrg->energies.size() > n2)
+        for (const auto &er : dmrg->energies[n2 - 1])
+            e.last_two_dot_E.push_back((double)er);
 
     // per-root energies (ascending; root 0 = ground state). block2's energy precision is FPLS
     // (long double for FL=double), so bind via auto and narrow to NOPT's double.
