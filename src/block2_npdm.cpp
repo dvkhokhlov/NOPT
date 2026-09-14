@@ -74,6 +74,25 @@ static void require_solved(const dmrgci_engine &e, const char *what) {
 
 // ---- the general NPDM read-out every density matrix runs through ---------------------------
 
+// NOPT_RDM_DUMP=<dir>: the raw lattice-order tensor, one file per root pair and body order.
+static void dump_lattice(const GTensor<double> &t, int N, int ket_state, int bra_state) {
+    const char *dir = std::getenv("NOPT_RDM_DUMP");
+    if (dir == nullptr || *dir == '\0')
+        return;
+    std::error_code ec;
+    std::filesystem::create_directories(dir, ec);
+    const std::string path = std::string(dir) + "/N" + std::to_string(N) + "_ket" +
+                             std::to_string(ket_state) + "_bra" + std::to_string(bra_state) +
+                             ".bin";
+    FILE *f = fopen(path.c_str(), "wb");
+    if (f == nullptr) {
+        fprintf(out_stream, "ERROR: DMRG RDM dump cannot open %s\n", path.c_str());
+        exit(EXIT_FAILURE);
+    }
+    fwrite(t.data->data(), sizeof(double), t.size(), f);
+    fclose(f);
+}
+
 // One process plays every rank in turn, so block2's cross-rank sum of a pass's NPDM fragment has
 // nothing to add: each pass keeps its own share and the caller sums the passes. Every other
 // collective keeps the base class's single-rank assertion.
@@ -119,11 +138,47 @@ static void remove_npdm_fragments(const MovingEnvironment<SU2, double, double> &
     }
 }
 
+// Canonicalize a one-site extract to the end dir asks for (+1 = center 0 'K', -1 = center
+// n_sites-1 'S'); dir 0 keeps the end the solve left. The split runs at the MPS's own maximum
+// bond dimension, so it is lossless. The walked site tensors are dropped again: they are on disk.
+static void move_to_end(const std::shared_ptr<MPS<SU2, double>> &mps, int dir) {
+    if (dir == 0)
+        return;
+    const int want = dir > 0 ? 0 : mps->n_sites - 1;
+    if (mps->center == want)
+        return;
+    auto cg = std::make_shared<CG<SU2>>();
+    mps->info->load_mutable();
+    mps->info->bond_dim = std::max(mps->info->bond_dim, mps->info->get_max_bond_dimension());
+    while (mps->center != want)
+        dir > 0 ? mps->move_left(cg) : mps->move_right(cg);
+    mps->save_data();
+    mps->info->save_mutable();
+    mps->info->deallocate_mutable();
+    for (int i = 0; i < mps->n_sites; i++)
+        if (mps->tensors[i] != nullptr && mps->tensors[i]->total_memory != 0)
+            mps->unload_tensor(i);
+    if (mps->center != want || mps->canonical_form[want] != (dir > 0 ? 'K' : 'S')) {
+        fprintf(out_stream, "ERROR: DMRG RDM center move ended at center %d form '%c'\n",
+                mps->center, mps->canonical_form[want]);
+        exit(EXIT_FAILURE);
+    }
+}
+
+// Sweep direction of every RDM read-out: NOPT_RDM_SWEEP = auto | forward | backward. auto keeps
+// the end the solve left, forward sweeps from site 0, backward from the last site.
+int nopt_block2::rdm_sweep_dir() {
+    const char *v = std::getenv("NOPT_RDM_SWEEP");
+    if (v == nullptr)
+        return 0;
+    return std::strcmp(v, "forward") == 0 ? 1 : (std::strcmp(v, "backward") == 0 ? -1 : 0);
+}
+
 // One root pair's spin-summed N-body density in block2's lattice order, from one general-NPDM
 // Expect sweep on transient single-root extracts. The result is unscaled (block2's convention);
 // callers apply sqrt(2)^N and their own gathers. tag names the environment and the scratch.
 std::shared_ptr<GTensor<double>> nopt_block2::npdm_lattice(dmrgci_engine &e, int N, int ket_state,
-                                                           int bra_state,
+                                                           int bra_state, int dir,
                                                            const char *tag) {
     require_solved(e, tag);
     const int n = e.n_act;
@@ -174,6 +229,9 @@ std::shared_ptr<GTensor<double>> nopt_block2::npdm_lattice(dmrgci_engine &e, int
             std::shared_ptr<MPS<SU2, double>> bra = ket;
             if (bra_state != ket_state)
                 bra = extract_root_single(e, bra_state, btag, bstag);
+            move_to_end(ket, dir);
+            if (bra != ket)
+                move_to_end(bra, dir);
 
             auto me = std::make_shared<MovingEnvironment<SU2, double, double>>(pmpo, bra, ket, tag);
             me->cached_contraction = false; // conflicts with the fused zero-dot contraction
@@ -218,6 +276,7 @@ std::shared_ptr<GTensor<double>> nopt_block2::npdm_lattice(dmrgci_engine &e, int
         assert_stack_clean(tag); // the Expect sweep must leave the LIFO stacks as it found them
     }
 
+    dump_lattice(*acc, N, ket_state, bra_state);
     return acc;
 }
 
@@ -289,7 +348,7 @@ void block2_casci_wrap::G3_calc_diag(double *G3, int state) {
     const size_t blk6 = (size_t)n * n * n * n * n * n;
 
     std::shared_ptr<GTensor<double>> raw =
-        npdm_lattice(e, 3, state, state, "NPDM3");
+        npdm_lattice(e, 3, state, state, rdm_sweep_dir(), "NPDM3");
     npdm3_gather(raw->data->data(), n, lattice_iperm(e), 2.0 * std::sqrt(2.0), G3);
     raw = nullptr; // drop the raw n_act^6 tensor before the back-transform allocates
     if (e.localize_on) { // rotate back to the delocalized basis
