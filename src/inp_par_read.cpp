@@ -1570,6 +1570,8 @@ cdas_par::cdas_par(){
     fit_e=0;
     rotate_orbs=1;//default - perform rotation
     pt1_d=1;
+    m_cdas=0;
+    m_cdas_set=false;
 
 }
 
@@ -1666,6 +1668,22 @@ int cdas_par::read_group(char * inp, cas_par * ext_cas){
         }
     }
 
+    if(m_cdas_set&&m_cdas<=0){
+        fprintf(out_stream,"ERROR: $CDAS m_cdas=<PT-stage bond dimension> must be > 0\n");
+        exit(1);
+    }
+
+    if(m_cdas_set&&gno.on()){
+        fprintf(out_stream,"ERROR: $CDAS m_cdas applies to cdas_mode=native only;\n");
+        fprintf(out_stream,"       the GNO reference follows $DMRG m, and in delta_gno the branches follow m_delta\n");
+        exit(1);
+    }
+
+    if(m_cdas_set&&ext_cas->ci_solver!=CISOLVER_DMRG){
+        fprintf(out_stream,"ERROR: $CDAS m_cdas is a DMRG bond dimension; use cisolver=dmrg\n");
+        exit(1);
+    }
+
     return 0;
 }
 
@@ -1741,6 +1759,11 @@ int cdas_par::read_line(char * inp){
     if(key_word_comp(inp, pt1_dipole_kw))
         pt1_d = kw_to_i(inp, pt1_dipole_kw,1);
 
+    if(key_word_comp(inp, cdas_m_cdas_kw)){
+        m_cdas = kw_to_i(inp, cdas_m_cdas_kw,0);
+        m_cdas_set = true;
+    }
+
     if(key_word_comp(inp, cdas_mode_kw)){
         if     (cdas_kw_value_is(inp, cdas_mode_kw, "native"   )) gno.mode = CDAS_MODE_NATIVE;
         else if(cdas_kw_value_is(inp, cdas_mode_kw, "trunc_gno")) gno.mode = CDAS_MODE_TRUNC_GNO;
@@ -1812,6 +1835,8 @@ int cdas_par::write_info(int n_a, int n_b, int n_o, int mult){
         // exit(0);
     // }
     fprintf(out_stream,"\nPT first order term: %s\n",pt1_d?"yes":"no");
+    if(m_cdas_set)
+        fprintf(out_stream,"PT-stage bond dimension (m_cdas)  %d\n",m_cdas);
     
     if(gno.on()) gno.write_info();
 

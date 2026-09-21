@@ -307,6 +307,8 @@ class cdas_par
         int n_orb;
         int rotate_orbs;
         int pt1_d;
+        int m_cdas;        // set by $CDAS m_cdas=; PT-stage bond dimension in cdas_mode=native
+        bool m_cdas_set;   // user gave m_cdas; otherwise the PT stage runs at $DMRG m
 
         gno_par gno;
 
