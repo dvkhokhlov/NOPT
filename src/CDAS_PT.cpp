@@ -307,6 +307,8 @@ int CDAS_PT2(molecule * M, cdas_par * cdas, char * job_name){
         //the PT stage solves in the orbitals rotated above, so the solver keeps that frame
         dmrg_par pt_dmrg = cdas->cas->dmrg;
         pt_dmrg.localize = DMRG_LOC_OFF;
+        //the PT stage may be given a bond dimension of its own
+        if(cdas->m_cdas_set) pt_dmrg.m = cdas->m_cdas;
         if(ACT_MO_save!=nullptr)
             fprintf(out_stream,"NOTE: the PT stage runs in the localized orbitals -- solver-internal localization is off\n\n");
         DMRG = std::make_unique<block2_casci_wrap>(n_act, M->CI[0].na, M->CI[0].nb, M->CI[0].mult, n_s, M->CI[0].print_number, pt_dmrg);
