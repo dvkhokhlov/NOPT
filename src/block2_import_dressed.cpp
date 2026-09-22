@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "common_vars.h"          // out_stream
+#include "cdas_fold.h"            // assemble_g3 (the three-body recombination)
 #include "ipea_matrices.h"        // ipea_matrices (the IP/EA metric and Hamiltonian matrices)
 #include "tensor_rotate.h"        // rotate1/rotate2/rotate3 (active-space basis transforms)
 #include "matr.h"
@@ -283,38 +284,8 @@ void block2_casci_wrap::PT2_import_data(double * ext_T3,
         g2[((a*n_act_+c)*n_act_+b)*n_act_+d]+=ext_T2_AB[((a*n_act_+b)*n_act_+c)*n_act_+d];
     }
     
-    // #pragma omp parallel for collapse(2) schedule(static)
     g3.resize(n_act_*n_act_*n_act_*n_act_*n_act_*n_act_);
-    for(int t=0;t<n_act_;t++) 
-    for(int u=0;u<n_act_;u++)
-    for(int v=0;v<n_act_;v++) 
-    for(int w=0;w<n_act_;w++)
-    for(int x=0;x<n_act_;x++) 
-    for(int y=0;y<n_act_;y++){
-       g3[((((t*n_act_+u)*n_act_+v)*n_act_+w)*n_act_+x)*n_act_+y] = 
-              ( 2.0*ext_T3_AB[((((t*n_act_+v)*n_act_+u)*n_act_+w)*n_act_+x)*n_act_+y] 
-              + 2.0*ext_T3_AB[((((t*n_act_+x)*n_act_+u)*n_act_+y)*n_act_+v)*n_act_+w]
-              + 2.0*ext_T3_AB[((((v*n_act_+t)*n_act_+w)*n_act_+u)*n_act_+x)*n_act_+y] 
-              + 2.0*ext_T3_AB[((((v*n_act_+x)*n_act_+w)*n_act_+y)*n_act_+t)*n_act_+u]
-              + 2.0*ext_T3_AB[((((x*n_act_+t)*n_act_+y)*n_act_+u)*n_act_+v)*n_act_+w] 
-              + 2.0*ext_T3_AB[((((x*n_act_+v)*n_act_+y)*n_act_+w)*n_act_+t)*n_act_+u]
-              -     ext_T3_AB[((((t*n_act_+v)*n_act_+u)*n_act_+w)*n_act_+x)*n_act_+y] 
-              +     ext_T3_AB[((((v*n_act_+t)*n_act_+u)*n_act_+w)*n_act_+x)*n_act_+y]
-              +     ext_T3_AB[((((x*n_act_+v)*n_act_+u)*n_act_+w)*n_act_+t)*n_act_+y] 
-              +     ext_T3_AB[((((t*n_act_+x)*n_act_+u)*n_act_+w)*n_act_+v)*n_act_+y]
-              -     ext_T3_AB[((((v*n_act_+x)*n_act_+u)*n_act_+w)*n_act_+t)*n_act_+y] 
-              -     ext_T3_AB[((((x*n_act_+t)*n_act_+u)*n_act_+w)*n_act_+v)*n_act_+y] ) / 12.0;
-    }
-    int n=n_act_;
-    auto ix = [n](int t,int u,int v,int w,int x,int y)->size_t {
-    return (((((size_t)t*n+u)*n+v)*n+w)*n+x)*n+y; };
-    #pragma omp parallel for collapse(2) schedule(static)
-        for(int t=0;t<n;t++) for(int u=0;u<n_act_;u++)
-        for(int v=0;v<n_act_;v++) for(int w=0;w<n_act_;w++)
-        for(int x=0;x<n_act_;x++) for(int y=0;y<n_act_;y++){
-            const size_t i = ix(t,u,v,w,x,y), id = ix(u,t,w,v,y,x);
-            if(i < id){ double s = 0.5*(g3[i]+g3[id]); g3[i] = g3[id] = s; }
-        }
+    assemble_g3(n_act_, ext_T3_AB, g3.data());
     
     
     
