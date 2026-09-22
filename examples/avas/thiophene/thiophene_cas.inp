@@ -1,0 +1,24 @@
+$PAR NUM_THREADS=16 N_MOL=1 RHF=0 MP2=0 CAS=1 D5=1 RI=1 NAME=thiophene $PAREND
+$MOL
+_CHARGE=0;
+_BASIS=cc-pvdz;
+_RI_BASIS=def2-universal-jkfit,; 
+_UNITS= ang;
+_xyz
+9
+Thiophene; Bak et al., J. Mol. Spectrosc. 1961, 7, 58 
+  S      0.000000     0.000000     0.000000
+  C      1.235025     0.000000     1.188491
+  C      0.712958     0.000000     2.455119
+  C     -0.712958     0.000000     2.455119
+  C     -1.235025     0.000000     1.188491
+  H      2.270221     0.000000     0.887738
+  H      1.322130     0.000000     3.348131
+  H     -1.322130     0.000000     3.348131
+  H     -2.270221     0.000000     0.887738
+$END
+$act_space n_alp=3 n_bet=3 n_val=5 mult=1 $end
+_MO INP=thiophene_RHF.orb
+$CAS n_s=2 w_state=all_1; cisolver=aldet maxit=50 dE=1e-12 grad=1e-6 $END
+  $AVAS atoms=1 2 3 4 5; shells=1:3p 2:2p 3:2p 4:2p 5:2p; $END
+$DAV dr=1E-12 de=1e-10 $end
