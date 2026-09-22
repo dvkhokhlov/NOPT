@@ -130,6 +130,7 @@ class avas_par
         std::vector<int> atoms;    // 1-based indices of the atoms carrying the target shells
         std::vector<int> shell_n;  // principal number of each target nl shell
         std::vector<int> shell_l;  // angular momentum of each target nl shell
+        std::vector<int> shell_atom; // 1-based atom each target label is bound to, 0 = every atom in atoms=
         std::string ref_basis;     // reference minimal basis the target shells are taken from
 
         avas_par();

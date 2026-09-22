@@ -1157,6 +1157,26 @@ static int avas_nl_from_label(const char * lab, int * n, int * l){
     return 0;
 }
 
+// "2:5p" -> the "5p" label bound to atom 2; a bare label is bound to atom 0.
+static int avas_target_from_label(const char * lab, int * n, int * l, int * atom){
+
+    if(lab==nullptr)                       return 1;
+
+    const char * c = strchr(lab,':');
+    if(c==nullptr){
+        *atom=0;
+        return avas_nl_from_label(lab,n,l);
+    }
+
+    for(const char * p=lab;p<c;p++)
+        if((p[0]<'0')||(p[0]>'9'))         return 1;
+
+    *atom = atoi(lab);
+    if(*atom<1)                            return 1;
+
+    return avas_nl_from_label(c+1,n,l);
+}
+
 avas_par::avas_par(){
 
     y=0;
@@ -1202,9 +1222,11 @@ int avas_par::read_line(char * inp){
         kw_to_s_v(&lab, inp, avas_shells_kw, n);
         shell_n.resize(n);
         shell_l.resize(n);
+        shell_atom.resize(n);
         for(int i=0;i<n;i++){
-            if(avas_nl_from_label(lab[i],&shell_n[i],&shell_l[i])){
-                fprintf(out_stream,"ERROR: $AVAS shells= got \"%s\"; expected nl labels like 4s or 3d\n",lab[i]);
+            if(avas_target_from_label(lab[i],&shell_n[i],&shell_l[i],&shell_atom[i])){
+                fprintf(out_stream,"ERROR: $AVAS shells= got \"%s\"; expected nl labels like 4s or 3d,"
+                                   " or atom-qualified ones like 2:5p\n",lab[i]);
                 exit(1);
             }
             delete[] lab[i];
@@ -1250,10 +1272,33 @@ int avas_par::validate(){
     }
     for(int i=0;i<int(shell_n.size());i++)
     for(int j=i+1;j<int(shell_n.size());j++)
-        if((shell_n[i]==shell_n[j])&&(shell_l[i]==shell_l[j])){
+        if((shell_n[i]==shell_n[j])&&(shell_l[i]==shell_l[j]))
+        if((shell_atom[i]==shell_atom[j])||(shell_atom[i]==0)||(shell_atom[j]==0)){
             fprintf(out_stream,"ERROR: $AVAS shell %d%c is listed twice\n",shell_n[i],avas_l_labels[shell_l[i]]);
             ok=0;
         }
+    for(int i=0;i<int(shell_atom.size());i++){
+        if(shell_atom[i]==0)continue;
+        int listed=0;
+        for(int j=0;j<int(atoms.size());j++)
+            if(atoms[j]==shell_atom[i])listed=1;
+        if(listed==0){
+            fprintf(out_stream,"ERROR: $AVAS shell %d:%d%c names atom %d, which is not in atoms=\n",
+                                shell_atom[i],shell_n[i],avas_l_labels[shell_l[i]],shell_atom[i]);
+            ok=0;
+        }
+    }
+    // a bare label applies to every listed atom, a qualified one to its own atom only
+    if(shell_atom.size())
+    for(int i=0;i<int(atoms.size());i++){
+        int covered=0;
+        for(int k=0;k<int(shell_atom.size());k++)
+            if((shell_atom[k]==0)||(shell_atom[k]==atoms[i]))covered=1;
+        if(covered==0){
+            fprintf(out_stream,"ERROR: $AVAS atom %d has no target shell\n",atoms[i]);
+            ok=0;
+        }
+    }
 
     if(!ok)exit(1);
 
@@ -1269,8 +1314,10 @@ int avas_par::write_info() const {
         fprintf(out_stream," %d",atoms[i]);
     fprintf(out_stream,"\n");
     fprintf(out_stream,"Target shells:                   ");
-    for(int i=0;i<int(shell_n.size());i++)
-        fprintf(out_stream," %d%c",shell_n[i],avas_l_labels[shell_l[i]]);
+    for(int i=0;i<int(shell_n.size());i++){
+        if(shell_atom[i])fprintf(out_stream," %d:%d%c",shell_atom[i],shell_n[i],avas_l_labels[shell_l[i]]);
+        else             fprintf(out_stream," %d%c",shell_n[i],avas_l_labels[shell_l[i]]);
+    }
     fprintf(out_stream,"\n\n");
 
     return 0;

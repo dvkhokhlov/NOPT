@@ -16,8 +16,9 @@
 
 static const char * avas_l_labels = "spdfghik";
 
-// Reference shells of the requested atoms carrying a requested nl label. Within one atom the
-// k-th reference shell of angular momentum l is the principal number n = k+l+1.
+// Reference shells of the requested atoms carrying a requested nl label; a label bound to an
+// atom applies to that atom only. Within one atom the k-th reference shell of angular momentum
+// l is the principal number n = k+l+1.
 static std::vector<Shell> avas_ref_shells(molecule * M, const avas_par & A,
                                           const std::vector<Shell> & all,
                                           const std::vector<int> & center)
@@ -30,7 +31,11 @@ static std::vector<Shell> avas_ref_shells(molecule * M, const avas_par & A,
         int i_a = A.atoms[i_sel]-1;
 
         std::vector<int> found(n_kw,0);
+        std::vector<int> apply(n_kw);
         int n_l[8]={0,0,0,0,0,0,0,0};
+
+        for(int k=0;k<n_kw;k++)
+            apply[k]=((A.shell_atom[k]==0)||(A.shell_atom[k]==i_a+1));
 
         for(int i=0;i<int(all.size());i++){
             if(center[i]!=i_a)continue;
@@ -38,6 +43,7 @@ static std::vector<Shell> avas_ref_shells(molecule * M, const avas_par & A,
             if(l>7)continue;
             n_l[l]++;
             for(int k=0;k<n_kw;k++)
+                if(apply[k])
                 if((A.shell_l[k]==l)&&(A.shell_n[k]==n_l[l]+l)){
                     out.push_back(all[i]);
                     found[k]=1;
@@ -45,6 +51,7 @@ static std::vector<Shell> avas_ref_shells(molecule * M, const avas_par & A,
         }
 
         for(int k=0;k<n_kw;k++)
+            if(apply[k])
             if(found[k]==0){
                 fprintf(out_stream,"ERROR: $AVAS reference shell %d%c is absent for atom %d (%s)\n",
                                     A.shell_n[k],avas_l_labels[A.shell_l[k]],i_a+1,M->atom_names[i_a]);

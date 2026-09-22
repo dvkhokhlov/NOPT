@@ -40,10 +40,13 @@ The rotated orbitals are always written as `<NAME>_AVAS.orb`, `<NAME>_AVAS.orb_G
 
 - **atoms=** *(required, no default)* — 1-based indices of the atoms carrying the target
   shells, `;`-terminated: `atoms=1 2;`.
-- **shells=** *(required, no default)* — nl labels applied to every selected atom,
-  `;`-terminated: `shells=4s 3d;`. Within an atom the k-th reference shell of angular
-  momentum l is the principal number n = k+l+1, so for a 3d metal `4s` and `3d` are the
-  valence labels. A label that the reference basis does not carry for an element is an error.
+- **shells=** *(required, no default)* — nl labels, `;`-terminated: `shells=4s 3d;`. A bare
+  label applies to every atom of `atoms=`; the atom-qualified form `k:nl` applies to atom `k`
+  alone, which must be listed in `atoms=`, so a heteroatomic target reads
+  `atoms=1 2; shells=1:3d 1:4s 2:5p;`. The two forms mix in one list, and every listed atom
+  needs at least one label that applies to it. Within an atom the k-th reference shell of
+  angular momentum l is the principal number n = k+l+1, so for a 3d metal `4s` and `3d` are
+  the valence labels. A label that the reference basis does not carry for an element is an error.
 - **ref_basis=** *(cc-pvtz-minao)* — the minimal basis the reference shells are taken from
   (H–Kr in the shipped library; it is also the SAD-guess basis).
 
