@@ -28,11 +28,6 @@ static std::vector<Shell> avas_ref_shells(molecule * M, const avas_par & A,
     for(int i_sel=0; i_sel<int(A.atoms.size()); i_sel++){
 
         int i_a = A.atoms[i_sel]-1;
-        if(i_a>=M->n_atoms){
-            fprintf(out_stream,"ERROR: $AVAS atom %d is out of range (the molecule has %d atoms)\n",
-                                A.atoms[i_sel],M->n_atoms);
-            exit(EXIT_FAILURE);
-        }
 
         std::vector<int> found(n_kw,0);
         int n_l[8]={0,0,0,0,0,0,0,0};
@@ -148,9 +143,21 @@ int avas_steer(molecule * M, const avas_par & A, char * job_name)
         exit(EXIT_FAILURE);
     }
 
+    // the reference basis is read for the selected atoms only, so an element it does not
+    // carry is an error only when that atom is a target
+    std::vector<int> atom_sel(M->n_atoms,0);
+    for(int i_sel=0; i_sel<int(A.atoms.size()); i_sel++){
+        if(A.atoms[i_sel]>M->n_atoms){
+            fprintf(out_stream,"ERROR: $AVAS atom %d is out of range (the molecule has %d atoms)\n",
+                                A.atoms[i_sel],M->n_atoms);
+            exit(EXIT_FAILURE);
+        }
+        atom_sel[A.atoms[i_sel]-1]=1;
+    }
+
     std::vector<int>   ref_center;
     std::vector<Shell> ref_all = basis_lib_read_gbs(M,A.ref_basis.c_str(),1,0,
-                                                    nullptr,&ref_center,true,nullptr,nullptr);
+                                                    nullptr,&ref_center,true,nullptr,nullptr,&atom_sel);
     std::vector<Shell> ref_s   = avas_ref_shells(M,A,ref_all,ref_center);
 
     int n_ref=0;

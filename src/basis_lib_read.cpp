@@ -59,7 +59,8 @@ std::vector<Shell> basis_lib_read_gbs(molecule * M,  const char * lib_name,
                                       std::vector<std::vector<double>> * lib_coef, 
                                       std::vector<int> * shell_center, bool pure,
                                       std::vector<double> * energy,
-                                      std::vector<int> * is_core){
+                                      std::vector<int> * is_core,
+                                      const std::vector<int> * atom_sel){
     
     std::vector<Shell> basis;
     
@@ -109,6 +110,8 @@ std::vector<Shell> basis_lib_read_gbs(molecule * M,  const char * lib_name,
         exit(0);
     }
     for(int i_a=0;i_a<M->n_atoms;i_a++){
+        
+        if(atom_sel!=nullptr)if(atom_sel[0][i_a]==0)continue;
         
         if(is_core!=nullptr)skipping=M->n_ecp_electrons[i_a];//for Huckel_guess only
         
