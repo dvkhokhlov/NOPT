@@ -68,7 +68,8 @@ static void reap_orphan_scratch(const std::string &root) {
 struct Block2Runtime {
     std::string scratch;
 
-    Block2Runtime(const std::string &save_dir_root, double memory_gb, int n_threads) {
+    Block2Runtime(const std::string &save_dir_root, double memory_gb, double main_stack_gb,
+                  int n_threads) {
         // Per-run scratch under the configured root (default /dev/shm), so concurrent runs never
         // share block2's renormalized-operator files. Identity is <pid>_<unique>: the pid for
         // reap_orphan_scratch, the mkdtemp suffix so a recycled pid cannot inherit a dead run's dir.
@@ -84,10 +85,14 @@ struct Block2Runtime {
         scratch = tbuf.data();
 
         Random::rand_seed(0);
-        // isize/dsize are BYTE sizes of the integer/double stacks. The double stack holds the
-        // renormalized operators and is sized by $DMRG memory (GB); the integer stack is bookkeeping.
-        frame_<double>() = std::make_shared<DataFrame<double>>(
-            (size_t)1 << 24, (size_t)(memory_gb * (double)((size_t)1 << 30)), scratch);
+        // The integer stacks are a fixed 256 MB of bookkeeping; the double stacks hold the
+        // renormalized operators and are sized by $DMRG memory (GB). Each pool splits into a main
+        // and a secondary stack by its ratio; $DMRG main_stack sizes the main double stack.
+        const size_t isize = (size_t)1 << 28;
+        const size_t dsize = (size_t)(memory_gb * (double)((size_t)1 << 30));
+        const double dmain_ratio =
+            main_stack_gb > 0 ? main_stack_gb / memory_gb : DMRG_DMAIN_RATIO_DEFAULT;
+        frame_<double>() = std::make_shared<DataFrame<double>>(isize, dsize, scratch, dmain_ratio);
         frame_<double>()->use_main_stack = false;
         frame_<double>()->minimal_disk_usage = true;
         frame_<double>()->minimal_memory_usage = false;
@@ -118,8 +123,9 @@ struct Block2Runtime {
 };
 
 // Build the runtime once, on first use; its destructor runs at program exit (see above).
-void ensure_block2_runtime(const std::string &save_dir_root, double memory_gb, int n_threads) {
-    static Block2Runtime runtime(save_dir_root, memory_gb, n_threads);
+void ensure_block2_runtime(const std::string &save_dir_root, double memory_gb,
+                           double main_stack_gb, int n_threads) {
+    static Block2Runtime runtime(save_dir_root, memory_gb, main_stack_gb, n_threads);
     (void)runtime;
 }
 

@@ -140,7 +140,8 @@ struct host_threads_guard {
     host_threads_guard &operator=(const host_threads_guard &) = delete;
 };
 
-void ensure_block2_runtime(const std::string &save_dir_root, double memory_gb, int n_threads);
+void ensure_block2_runtime(const std::string &save_dir_root, double memory_gb,
+                           double main_stack_gb, int n_threads);
 void remove_tag_files(const std::string &tag);
 void assert_stack_clean(const char *where);
 

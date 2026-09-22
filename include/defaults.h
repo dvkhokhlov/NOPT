@@ -37,6 +37,9 @@
 #define DMRG_SWEEP_TOL_DEFAULT 1e-8
 #define DMRG_SAVE_DIR_DEFAULT "/dev/shm"   // block2 scratch root (RAM-backed by default)
 #define DMRG_MEMORY_DEFAULT 1.0            // block2 double-stack size, GB
+#define DMRG_RDM_PASSES_DEFAULT 1          // RDM sweeps the operator set is split over
+#define DMRG_MAIN_STACK_DEFAULT 0.0        // main double stack, GB; 0 = the ratio below
+#define DMRG_DMAIN_RATIO_DEFAULT 0.2       // main share of the double stacks
 #define DMRG_FP_CODEC_CUTOFF 1e-16         // partition-file compression precision (pyblock2 driver values)
 #define DMRG_FP_CODEC_CHUNK 1024           // partition-file compression chunk length, in elements
 #define DMRG_WARM_START_DEFAULT 1          // MPS warm-start across macro-iterations: on by default

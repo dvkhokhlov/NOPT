@@ -813,6 +813,8 @@ dmrg_par::dmrg_par(){
     schedule  = DMRG_SCHED_DEFAULT;
     save_dir  = DMRG_SAVE_DIR_DEFAULT;
     memory    = DMRG_MEMORY_DEFAULT;
+    main_stack = DMRG_MAIN_STACK_DEFAULT;
+    rdm_passes = DMRG_RDM_PASSES_DEFAULT;
     localize  = DMRG_LOC_OFF;
     dump_loc_orbs = 0;
     loc_order = DMRG_LOCORDER_FIEDLER;
@@ -887,6 +889,14 @@ int dmrg_par::read_line(char * inp){
 
     if(key_word_comp(inp, dmrg_memory_kw)){
         memory = kw_to_f(inp, dmrg_memory_kw, DMRG_MEMORY_DEFAULT);
+    }
+
+    if(key_word_comp(inp, dmrg_main_stack_kw)){
+        main_stack = kw_to_f(inp, dmrg_main_stack_kw, DMRG_MAIN_STACK_DEFAULT);
+    }
+
+    if(key_word_comp(inp, dmrg_rdm_passes_kw)){
+        rdm_passes = kw_to_i(inp, dmrg_rdm_passes_kw, DMRG_RDM_PASSES_DEFAULT);
     }
 
     if(key_word_comp(inp, dmrg_localize_kw)){
@@ -1019,6 +1029,15 @@ int dmrg_par::validate(){
         fprintf(out_stream,"ERROR: $DMRG memory=%g must be > 0 (block2 double-stack size in GB)\n",memory);
         ok=0;
     }
+    if(rdm_passes<1){
+        fprintf(out_stream,"ERROR: $DMRG rdm_passes=%d must be >= 1\n",rdm_passes);
+        ok=0;
+    }
+    if(main_stack!=0 && (main_stack<=0 || main_stack>=memory)){
+        fprintf(out_stream,"ERROR: $DMRG main_stack=%g must be > 0 and < memory=%g GB\n",
+                main_stack,memory);
+        ok=0;
+    }
     if(warm_start==DMRG_WARM_UNKNOWN){
         fprintf(out_stream,"ERROR: $DMRG unknown warm_start value; accepted: off, on\n");
         ok=0;
@@ -1100,6 +1119,9 @@ int dmrg_par::write_info(){
         fprintf(out_stream,"DMRG orbital ordering:            none (input order)\n");
     fprintf(out_stream,"Scratch directory (save_dir):     %s\n",save_dir.c_str());
     fprintf(out_stream,"Memory (block2 double stack):     %g GB\n",memory);
+    if(main_stack>0)
+        fprintf(out_stream,"Main double stack:                %g GB\n",main_stack);
+    fprintf(out_stream,"RDM sweep passes:                 %d\n",rdm_passes);
     fprintf(out_stream,"Partition files:                  fp_codec cutoff %g, chunk %d\n",
             (double)DMRG_FP_CODEC_CUTOFF,(int)DMRG_FP_CODEC_CHUNK);
     if(low_m_opt==DMRG_LOW_M_AUTO)

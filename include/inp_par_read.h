@@ -97,6 +97,8 @@ class dmrg_par // settings for the DMRG (block2) CI backend; see $DMRG group
         int    loc_order;      // DMRG orbital ordering (dmrg_locorder_kind): fiedler | gaopt | none
         std::string save_dir;  // block2 scratch root (renormalized ops / MPS)
         double memory;         // block2 double-stack size, GB (> 0)
+        double main_stack;     // main double stack, GB (0 = the default share of memory)
+        int    rdm_passes;     // RDM sweeps the operator set is split over (>= 1)
         int    warm_start;       // MPS warm-start across macro-iterations (dmrg_warm_kind): off | on
         int    warm_sweeps;      // clean-sweep budget of the warm re-solve; 0 = auto (sweeps/2); +2 noisy sweeps when warm_noise_scale > 0
         double warm_noise_scale; // warm-schedule noise as a multiple of the last solve's discarded weight
