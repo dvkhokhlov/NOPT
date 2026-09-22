@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "common_vars.h"          // out_stream
+#include "ipea_matrices.h"        // ipea_matrices (the IP/EA metric and Hamiltonian matrices)
 #include "tensor_rotate.h"        // rotate1/rotate2/rotate3 (active-space basis transforms)
 #include "matr.h"
 #include "timer.h"
@@ -335,75 +336,23 @@ int block2_casci_wrap::calc_IPEA_single(double * U_IP, double * H_IP,
 
     int n_s = n_states();
     
-    //U_IP
     double * gamma = new double[n_s*n_act_*n_act_];
     set_zero_matr(gamma,n_act_*n_act_*n_s);
     calc_DM_diag(gamma,a);
-    for(int i=0;i<n_s*n_act_*n_act_;i++)gamma[i]=gamma[i]*0.5;
-    // memcpy(U_IP,gamma,sizeof(double)*n_act_*n_act_);
-    average_DM_aldet_diag(U_IP,gamma, avecoe,n_act_*n_act_,n_s);
-    
-    
-    //U_EA
-    for(int i=0;i<n_act_*n_act_;i++)U_EA[i]=-U_IP[i];
-    for(int i=0;i<n_act_;i++)U_EA[i*(n_act_+1)]=1.0+U_EA[i*(n_act_+1)];
+    //average_DM_aldet_diag scales the leading block of its input in place
+    double * gamma_av = new double[n_act_*n_act_];
+    average_DM_aldet_diag(gamma_av,gamma, avecoe,n_act_*n_act_,n_s);
     
     
     double * GAMMA = new double[n_s*n_act_*n_act_*n_act_*n_act_];
     set_zero_matr(GAMMA,n_s*n_act_*n_act_*n_act_*n_act_);
     G_calc(GAMMA);
     
-    //H_IP
-    set_zero_matr(H_IP,n_act_*n_act_);
-
-    for(int t=0;t<n_act_;t++)
-    for(int u=0;u<n_act_;u++)
-    for(int w=0;w<n_act_;w++)
-        H_IP[t*n_act_+u]+= U_IP[t*n_act_+w]*g1[u*n_act_+w];//restricted variant
-    
-    
-    for(int t=0;t<n_act_;t++)
-    for(int u=0;u<n_act_;u++)
-    for(int v=0;v<n_act_;v++)
-    for(int x=0;x<n_act_;x++)
-    for(int y=0;y<n_act_;y++)
-        H_IP[t*n_act_+u]+=GAMMA[((t*n_act_+y)*n_act_+v)*n_act_+x]*0.5*
-                      (g2[((u*n_act_+y)*n_act_+v)*n_act_+x]);//restricted variant
-    
-    
-    // fprintf(out_stream,"H:\n");
-    // PrintMatr(H_IP,n_act_,n_act_,0);
-    
-    //H_EA
-    set_zero_matr(H_EA,n_act_*n_act_);
-
-    for(int t=0;t<n_act_;t++)
-    for(int u=0;u<n_act_;u++)
-    for(int v=0;v<n_act_;v++)
-        H_EA[t*n_act_+u]+= U_EA[t*n_act_+v]*g1[u*n_act_+v];//restricted variant
-    
-    for(int t=0;t<n_act_;t++)
-    for(int u=0;u<n_act_;u++)
-    for(int v=0;v<n_act_;v++)
-    for(int x=0;x<n_act_;x++){
-        H_EA[t*n_act_+u]+=U_IP[x*n_act_+v]*(2*g2[((t*n_act_+u)*n_act_+v)*n_act_+x]-g2[((t*n_act_+x)*n_act_+v)*n_act_+u]);
-    }
-    
-    for(int t=0;t<n_act_;t++)
-    for(int u=0;u<n_act_;u++)
-    for(int v=0;v<n_act_;v++)
-    for(int w=0;w<n_act_;w++)
-    for(int x=0;x<n_act_;x++)
-        H_EA[t*n_act_+u]-=GAMMA[((v*n_act_+t)*n_act_+x)*n_act_+w]*0.5*
-                      (      g2[((v*n_act_+u)*n_act_+w)*n_act_+x]);//restricted variant
-    
-   
-    // fprintf(out_stream,"H_EA:\n");
-    // PrintMatr(H_EA,n_act_,n_act_,0);
-    // exit(0);
+    ipea_matrices(n_act_, g1.data(), g2.data(), gamma_av, GAMMA, U_IP, H_IP, U_EA, H_EA);
     
     printf_timer("calculation of IPEA matrices");
     delete[] GAMMA;
+    delete[] gamma_av;
     delete[] gamma;
     return 0;
 }
