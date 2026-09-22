@@ -318,12 +318,12 @@ std::shared_ptr<MPS<SU2, double>> nopt_block2::extract_root_single(dmrgci_engine
     return imps;
 }
 
-// Spatial 2-RDMs, once per solve, one root at a time: one Expect sweep per extracted root yields
-// that root's 2-RDM, which gives its energy and its 1-RDM (a partial trace), is folded into the
-// running state average, and is dropped. Only the average survives, so the peak is two n_act^4
-// tensors and the un-permutation and back-transform run once. A PDM sweep straight on the MultiMPS
-// would truncate the shared basis when it moves the center; a single-root MPS moves losslessly.
-static void ensure_2rdm(dmrgci_engine &e) {
+// Spatial 2-RDMs, once per solve, one root at a time: one general-NPDM Expect sweep per extracted
+// root yields that root's 2-RDM, which gives its energy and its 1-RDM (a partial trace) and is
+// folded into the running state average. The per-state tensors are kept in the solver's lattice
+// order for the DSRG read-out; the un-permutation and back-transform run once, on the average.
+// A PDM sweep straight on the MultiMPS would truncate the shared basis when it moves the center.
+void nopt_block2::ensure_2rdm(dmrgci_engine &e) {
     if (e.d2_valid)
         return;
     dmrg_log_guard log(false);
@@ -332,6 +332,7 @@ static void ensure_2rdm(dmrgci_engine &e) {
     const size_t blk = (size_t)n * n * n * n;
     const size_t blk1 = (size_t)n * n;
     e.d2_av.assign(blk, 0.0);
+    e.d2_states.assign(blk * e.n_s, 0.0);
     e.d1_states.assign(blk1 * e.n_s, 0.0);
 
     // Weights the host optimizes under; absent a weight vector the roots are equally weighted.
@@ -342,35 +343,18 @@ static void ensure_2rdm(dmrgci_engine &e) {
     for (int st = 0; st < e.n_s; st++)
         wsum += w[st];
 
-    // State-independent (a function of e.hamil alone): built once, the environment rebound per root.
-    std::shared_ptr<MPO<SU2, double>> p2mpo = std::make_shared<PDM2MPOQC<SU2, double>>(e.hamil);
-    p2mpo = std::make_shared<SimplifiedMPO<SU2, double>>(
-        p2mpo, std::make_shared<RuleQC<SU2, double>>(), true, true,
-        OpNamesSet({OpNames::R, OpNames::RD}));
-
     const double inv = (e.n_elec >= 2) ? 1.0 / (e.n_elec - 1) : 0.0;
 
     for (int st = 0; st < e.n_s; st++) {
-        const std::string xtag = e.mps_info->tag + "-" + std::to_string(st);
-        const std::string stag = xtag + "-s";
-        std::shared_ptr<MPS<SU2, double>> imps = extract_root_single(e, st, xtag, stag);
+        std::shared_ptr<GTensor<double>> raw = npdm_lattice(e, 2, st, st, "2PDM");
 
-        auto p2me = std::make_shared<MovingEnvironment<SU2, double, double>>(p2mpo, imps, imps,
-                                                                             "2PDM");
-        // Zero-dot expectation with fused contraction-rotation: the enlarged-block operator set is
-        // never materialised whole, one operator per thread instead. Caching conflicts with fusion.
-        p2me->cached_contraction = false;
-        p2me->fused_contraction_rotation = true;
-        p2me->init_environments(DMRG_LOG_IPRINT >= 2);
-        auto ex2 = std::make_shared<Expect<SU2, double, double>>(p2me, (ubond_t)e.cfg.m,
-                                                                 (ubond_t)e.cfg.m);
-        ex2->iprint = DMRG_LOG_IPRINT;
-        ex2->zero_dot_algo = true; // extract_root_single leaves the one-dot end-center form
-        ex2->solve(true, imps->center == 0);
-        std::shared_ptr<GTensor<double>> d2 = ex2->get_2pdm_spatial(); // shape {n,n,n,n}
-
-        // Contiguous row-major [p,q,r,s] = the block2 D2 layout. This root's own buffer, read in place.
-        const double *d2p = d2->data->data();
+        // Contiguous row-major [p,q,r,s] = the block2 D2 layout, sqrt(2)^2 for the SU2 convention.
+        double *d2p = e.d2_states.data() + (size_t)st * blk;
+        const double *rd = raw->data->data();
+#pragma omp parallel for schedule(static)
+        for (size_t k = 0; k < blk; k++)
+            d2p[k] = 2.0 * rd[k];
+        raw = nullptr;
 
         // This root's true energy, not the solver's pre-truncation sweep value. Taken while the
         // 2-RDM is still in the solver's basis and lattice order, the one e.fcidump is in.
@@ -392,12 +376,7 @@ static void ensure_2rdm(dmrgci_engine &e) {
 #pragma omp parallel for schedule(static)
         for (size_t k = 0; k < blk; k++)
             e.d2_av[k] += ws * d2p[k];
-
-        p2me->remove_partition_files();
-        remove_tag_files(xtag); // the per-root extract and its single-MPS copy are transient
-        remove_tag_files(stag);
     }
-    p2mpo->deallocate();
 
 #pragma omp parallel for schedule(static)
     for (size_t k = 0; k < blk; k++)
@@ -451,7 +430,7 @@ static void ensure_2rdm(dmrgci_engine &e) {
 }
 
 // Full n_s x n_s spin-summed 1-RDM for the property read-out, once per solve, in the delocalized
-// basis: one direct 1-PDM Expect sweep per block, never a 2-RDM partial trace. Diagonal i==j is a
+// basis: one direct NPDM Expect sweep per block, never a 2-RDM partial trace. Diagonal i==j is a
 // per-state 1-RDM (bra==ket); i<j is the bra!=ket transition 1-RDM, with (j,i) its transpose (exact
 // against the symmetric property integrals).
 static void ensure_dm_full(dmrgci_engine &e) {
@@ -473,41 +452,17 @@ static void ensure_dm_full(dmrgci_engine &e) {
         for (int i = 0; i < n; i++) iperm[e.reorder_perm[i]] = i;
     }
 
-    // State-pair-independent: built once, the environment rebound per pair. NoTransposeRule because
-    // the transpose-symmetry simplification is invalid when bra != ket.
-    std::shared_ptr<MPO<SU2, double>> p1mpo = std::make_shared<PDM1MPOQC<SU2, double>>(e.hamil);
-    p1mpo = std::make_shared<SimplifiedMPO<SU2, double>>(
-        p1mpo,
-        std::make_shared<NoTransposeRule<SU2, double>>(std::make_shared<RuleQC<SU2, double>>()),
-        true, true, OpNamesSet({OpNames::R, OpNames::RD}));
 
     for (int i = 0; i < e.n_s; i++)
         for (int j = i; j < e.n_s; j++) {
-            // Fresh extract of both roots so bra/ket share a canonical center. The single-MPS form is
-            // all-or-nothing: the effective Hamiltonian asserts bra and ket agree.
-            const std::string itag = e.mps_info->tag + "-t" + std::to_string(i);
-            const std::string istag = itag + "-s";
-            std::shared_ptr<MPS<SU2, double>> imps = extract_root_single(e, i, itag, istag);
-            std::string jtag, jstag;
-            std::shared_ptr<MPS<SU2, double>> jmps = imps;
-            if (j != i) {
-                jtag = e.mps_info->tag + "-t" + std::to_string(j);
-                jstag = jtag + "-s";
-                jmps = extract_root_single(e, j, jtag, jstag);
-            }
-
-            auto p1me = std::make_shared<MovingEnvironment<SU2, double, double>>(p1mpo, imps, jmps,
-                                                                                 "1PDM");
-            p1me->init_environments(DMRG_LOG_IPRINT >= 2);
-            auto ex1 = std::make_shared<Expect<SU2, double, double>>(p1me, (ubond_t)e.cfg.m,
-                                                                     (ubond_t)e.cfg.m);
-            ex1->iprint = DMRG_LOG_IPRINT;
-            ex1->solve(true, jmps->center == 0);
-            GMatrix<double> d1 = ex1->get_1pdm_spatial(); // n x n row-major, on the block2 double stack
-
+            // sqrt(2)^1 for the SU2 convention; bra = i, ket = j, so the raw tensor is already the
+            // (i,j) block's orientation.
+            std::shared_ptr<GTensor<double>> raw = npdm_lattice(e, 1, j, i, "1PDM");
             double *bij = e.dmfull_cache.data() + (size_t)(i * e.n_s + j) * blk;
-            std::copy(d1.data, d1.data + blk, bij);
-            d1.deallocate(); // LIFO free of the stack matrix
+            const double *rd = raw->data->data();
+            for (size_t k = 0; k < blk; k++)
+                bij[k] = std::sqrt(2.0) * rd[k];
+            raw = nullptr;
 
             if (!e.reorder_perm.empty()) { // map out of block2's Fiedler lattice order
                 for (int p = 0; p < n; p++)
@@ -532,16 +487,7 @@ static void ensure_dm_full(dmrgci_engine &e) {
                     for (int q = 0; q < n; q++)
                         bji[(size_t)p * n + q] = bij[(size_t)q * n + p];
             }
-
-            p1me->remove_partition_files();
-            remove_tag_files(itag); // the per-root extracts and their single-MPS copies are transient
-            remove_tag_files(istag);
-            if (j != i) {
-                remove_tag_files(jtag);
-                remove_tag_files(jstag);
-            }
         }
-    p1mpo->deallocate();
     e.dmfull_valid = true;
     assert_stack_clean("full 1-RDM read");
 }
@@ -839,7 +785,6 @@ int block2_casci_wrap::solve(int, int, bool use_prev_guess) {
     assert_stack_clean("solve entry"); // block2 LIFO stacks must be empty between macro-iterations
     e.d2_valid = false; // new wavefunction -> any cached 2-RDM is stale
     e.dmfull_valid = false; // ... and the cached property 1-RDM
-    e.g2full_valid = false; // ... and the cached transition 2-RDM
 
     // Warm-start: rotate the retained MPS into the current basis and re-solve from it. Requires a
     // usable retained MPS and a rotation from the host; the rotation itself may decline (return
@@ -1032,8 +977,7 @@ void block2_casci_wrap::G_calc(double *GAMMA) {
     dmrgci_engine &e = *impl_;
     const int n = e.n_act;
     ensure_2rdm(e);
-    // The orbital gradient consumes the state-averaged 2-RDM, and that is the only one this backend
-    // forms (the per-state tensors never coexist), so GAMMA is a single n_act^4 block:
+    // The orbital gradient consumes the state-averaged 2-RDM, so GAMMA is a single n_act^4 block:
     // NOPT layout GAMMA[p,q,r,s] = block2 D2[p,r,s,q].
     const double *d2 = e.d2_av.data();
     for (int p = 0; p < n; p++)
@@ -1052,7 +996,7 @@ void block2_casci_wrap::calc_DMA(double *gamma, int a, int b) {
     }
     dmrgci_engine &e = *impl_;
     ensure_dm_full(e);
-    // SU2 get_1pdm_spatial is already spin-summed, so calc_DMA carries the full spin-summed 1-RDM
+    // SU2 NPDM is already spin-summed, so calc_DMA carries the full spin-summed 1-RDM
     // and calc_DMB is a no-op add (the host sums DMA+DMB). Add, matching aldet's accumulate.
     const size_t nel = e.dmfull_cache.size();
     for (size_t k = 0; k < nel; k++)
