@@ -24,6 +24,8 @@
 #define CAS_RESET_TRUNC_FRAC 0.05
 #define CAS_PRINT_NUMBER_DEFAULT 10
 #define CAS_METHOD_DEFAULT 1
+// Energy exit also needs max_grad_el below this multiple of grad; 1 = never before the gradient exit.
+#define CAS_E_EXIT_GRAD_FACTOR 1.0
 
 #define DAV_MAX_IT_DEFAULT 250
 #define DAV_EN_CON_DEFAULT 1e-10
