@@ -1,6 +1,6 @@
 
 NonOrtogonal quantum chemistry and Perturbation Theory
-                  NOPT version 3.3.1 -- testing DMRG-CDAS
+                  NOPT version 3.4.2
 
 
 sQM - standart QM module.
@@ -8,11 +8,12 @@ sQM - standart QM module.
 Compilation options:
 1) linear algebra package - OpenBLAS
 2) non-parallel BLAS matrix multiplication in the OMP parallel cycles
+3) build git commit 99c881c124eb
 
 selected command  line options:
 -i           cdas_ee_dmrg.inp	 input file
 
-Calculation started at: 00:18 (MSK), 27 July 2026 (Monday).
+Calculation started at: 13:28 (EEST), 23 September 2026 (Wednesday).
 
 _______________________________________________________________________
 
@@ -41,7 +42,7 @@ Input file:
   20: _MO INP=c4h6_CAS.orb
   21: $END
   22: $RHF maxit=50 dE=1e-9 grad=1e-12 huckel $END
-  23: $CAS n_s=3 w_state=1 1 1; cisolver=dmrg maxit=50 dE=1e-9 grad=1e-12 p_cutoff =0.03 $END
+  23: $CAS n_s=3 w_state=1 1 1; cisolver=dmrg maxit=50 dE=1e-9 grad=1e-6 p_cutoff =0.03 $END
   24: $DMRG m=200 extract_cutoff=1E-10 sweep_tol=1E-10 $END
   25: $CDAS HOMO $END
   26: $PROP $END
@@ -62,6 +63,7 @@ Complete Active Space SCF                        -     yes
 eXtended MultiConfiguration QuasiDegenerate PT   -     no 
 Complete Degenerate Active Space PT              -     yes
 Second order Moller-Plesset PT                   -     no 
+State-specific DSRG-PT2                          -     no 
 Settings:
 D5                                               -     yes
 Resolution of Identity                           -     yes
@@ -689,8 +691,8 @@ X,Y,Z - cartesian coordinates (Bohr)
 
 
 Calculation of 1-el matrices:
-Time to step -    0.73951
-Full time    -    0.73951
+Time to step -    0.67022
+Full time    -    0.67022
 
 
 
@@ -713,7 +715,7 @@ Weights:	 1.00e+00  1.00e+00  1.00e+00
 
 SCF settings:
 Energy convergence:               1.000000e-09
-Orbital gradient convergence:     1.000000e-12
+Orbital gradient convergence:     1.000000e-06
 Rotation matrix convergence :     1.000000e-07
 Maximum number of iterations:     50
 Maximum SOSCF step          :     1.000000e-01
@@ -729,8 +731,12 @@ Active-space localization:        off
 DMRG orbital ordering:            Fiedler
 Scratch directory (save_dir):     /dev/shm
 Memory (block2 double stack):     1 GB
+RDM sweep passes:                 1
+Partition files:                  fp_codec cutoff 1e-16, chunk 1024
+Low-m MPO optimization:           auto
 MPS warm-start:                   on (after 0 cold iter)
 Warm re-solve sweeps:             20
+Warm noise scale (x discarded w): 0
 Rotate reused MPS:                yes
 MPS-rotation bond dim (rot_m):    200
 MPS-rotation TE steps (rot_steps):1
@@ -744,9 +750,13 @@ _______________________________________________________________________
 
 
 RI integrals calculation:
-Time to step -    0.29313
-Full time    -    1.03264
+Time to step -    1.27996
+Full time    -    1.95018
 WARNING: orbital canonicalization (rotate) disabled - the CI backend does not support CI-vector rotation
+NOTE: DMRG low_m_opt=on (auto: K=4 m=200)
+Primary CI and calculation canonical orbitals:
+Time to step -    0.73872
+Full time    -    2.68890
 
 
 CAS_SCF density averaging:
@@ -762,56 +772,55 @@ Start CAS_SCF iterations
 _________________________________________________________________________________
   N | E                 | dE         | LAG.ASYM. | ROT.STEP  | N_dav | sweep_dE  |
 ____|___________________|____________|___________|___________|_______|___________|
-  0 |   -154.8388031139 | -1.548e+02 | 1.033e-06 | 1.000e+00 |  20   | 0.000e+00 |
-  1 |   -154.8388031139 |  4.462e-12 | 4.897e-07 | 2.511e-06 |   4   | 0.000e+00 |
+  0 |   -154.8388031139 | -1.548e+02 | 8.333e-07 | 1.000e+00 |  20   | 0.000e+00 |
 ____|___________________|____________|___________|___________|_______|___________|
 
-Energy converged after 1 iterations
+Lagrangian converged after 0 iterations
 
 CAS_SCF iterations:
-Time to step -    0.89051
-Full time    -    1.92315
+Time to step -    0.24387
+Full time    -    2.93277
 Preparation of canonical orbitals:
-Time to step -    0.11642
-Full time    -    2.03958
+Time to step -    0.19775
+Full time    -    3.13052
 CAS_SCF WaveFunctions:
 
 DMRG determinant read-out orbital map (lattice k -> canonical orbital p, sign):
   canonical orbital: 3 2 1 0
   sign     : + + + +
-State 0  E  =    -155.0231054785 S^2 = 0.00:
--9.5276104215e-01  | 1100 | 1100
- 1.8111651276e-01  | 1010 | 1010
--1.0390302755e-01  | 0110 | 1001
--1.0390302755e-01  | 1001 | 0110
- 7.8366920957e-02  | 0101 | 0101
--7.5901887308e-02  | 1010 | 0101
--7.5901887308e-02  | 0101 | 1010
- 7.5215311227e-02  | 0110 | 0110
- 6.6123321038e-02  | 1001 | 1001
--4.3062804342e-02  | 1001 | 1100
-State 1  E  =    -154.7759356887 S^2 = 0.00:
--5.6850631694e-01  | 1010 | 1010
--3.7022938196e-01  | 0110 | 1100
--3.7022938196e-01  | 1100 | 0110
--3.0815641871e-01  | 1001 | 1100
--3.0815641871e-01  | 1100 | 1001
- 2.7690126963e-01  | 0110 | 0110
- 2.2086956832e-01  | 1001 | 1001
--1.3036566664e-01  | 0101 | 0101
--1.2555786081e-01  | 1100 | 0011
--1.2555786081e-01  | 0011 | 1100
-State 2  E  =    -154.7173681743 S^2 = 0.00:
- 6.8397038447e-01  | 1100 | 1010
- 6.8397038447e-01  | 1010 | 1100
- 1.3853186763e-01  | 1010 | 0110
- 1.3853186763e-01  | 0110 | 1010
- 9.1983376070e-02  | 1010 | 1001
- 9.1983376070e-02  | 1001 | 1010
--4.8747098553e-02  | 0011 | 0101
--4.8747098553e-02  | 0101 | 0011
- 3.4312907070e-02  | 0011 | 1010
- 3.4312907070e-02  | 1010 | 0011
+State 0  E  =    -155.0231054959 S^2 = 0.00:
+-9.5276099555e-01  | 1100 | 1100
+ 1.8111647596e-01  | 1010 | 1010
+-1.0390303949e-01  | 0110 | 1001
+-1.0390303949e-01  | 1001 | 0110
+ 7.8366995008e-02  | 0101 | 0101
+-7.5901907762e-02  | 1010 | 0101
+-7.5901907762e-02  | 0101 | 1010
+ 7.5215236313e-02  | 0110 | 0110
+ 6.6123950872e-02  | 1001 | 1001
+-4.3063194040e-02  | 1001 | 1100
+State 1  E  =    -154.7759356591 S^2 = 0.00:
+ 5.6850666364e-01  | 1010 | 1010
+ 3.7022912244e-01  | 1100 | 0110
+ 3.7022912244e-01  | 0110 | 1100
+ 3.0815613010e-01  | 1001 | 1100
+ 3.0815613010e-01  | 1100 | 1001
+-2.7690132995e-01  | 0110 | 0110
+-2.2087025065e-01  | 1001 | 1001
+ 1.3036595437e-01  | 0101 | 0101
+ 1.2555764348e-01  | 1100 | 0011
+ 1.2555764348e-01  | 0011 | 1100
+State 2  E  =    -154.7173681866 S^2 = 0.00:
+ 6.8397042213e-01  | 1100 | 1010
+ 6.8397042213e-01  | 1010 | 1100
+ 1.3853172449e-01  | 0110 | 1010
+ 1.3853172449e-01  | 1010 | 0110
+ 9.1982206726e-02  | 1010 | 1001
+ 9.1982206726e-02  | 1001 | 1010
+-4.8747960130e-02  | 0011 | 0101
+-4.8747960130e-02  | 0101 | 0011
+ 3.4313612374e-02  | 0011 | 1010
+ 3.4313612374e-02  | 1010 | 0011
 
 DMRG determinant extraction weights:
 ____________________________
@@ -827,31 +836,31 @@ CAS_SCF density averaging:
 __________________________________________
  State| E                 | S^2  | weight |
 ______|___________________|______|________|
-    0 |   -155.0231054785 | 0.00 | 1.00   |
-    1 |   -154.7759356887 | 0.00 | 1.00   |
-    2 |   -154.7173681743 | 0.00 | 1.00   |
+    0 |   -155.0231054959 | 0.00 | 1.00   |
+    1 |   -154.7759356591 | 0.00 | 1.00   |
+    2 |   -154.7173681866 | 0.00 | 1.00   |
 ______|___________________|______|________|
 
 
 CAS_SCF Energy summary:
-E[  0] = -155.0231054785
-E[  1] = -154.7759356887 | 6.7258 eV
-E[  2] = -154.7173681743 | 8.3195 eV
+E[  0] = -155.0231054959
+E[  1] = -154.7759356591 | 6.7258 eV
+E[  2] = -154.7173681866 | 8.3195 eV
 
 
 CAS_SCF Dipole moment:
 
-d[  0,  0] = { 5.167884e-07,-9.101397e-07,-4.026417e-14} |d| = 1.046625e-06
-d[  0,  1] = {-2.847814e-07, 1.581324e-07, 3.090883e-15} |d| = 3.257396e-07
-d[  0,  2] = {-2.200221e+00, 3.937253e-01, 6.101224e-15} |d| = 2.235171e+00
+d[  0,  0] = {-2.809939e-07, 5.722431e-07,-1.422496e-14} |d| = 6.375106e-07
+d[  0,  1] = { 4.558272e-07,-9.513932e-08,-2.490172e-15} |d| = 4.656500e-07
+d[  0,  2] = {-2.200223e+00, 3.937276e-01,-9.559002e-16} |d| = 2.235174e+00
 
-d[  1,  0] = {-2.847814e-07, 1.581324e-07, 3.090883e-15} |d| = 3.257396e-07
-d[  1,  1] = { 1.864261e-06, 1.073080e-06,-4.051587e-14} |d| = 2.151039e-06
-d[  1,  2] = { 3.957669e-01, 3.241418e-01, 6.656656e-15} |d| = 5.115656e-01
+d[  1,  0] = { 4.558272e-07,-9.513932e-08,-2.490172e-15} |d| = 4.656500e-07
+d[  1,  1] = {-5.059821e-07,-4.236065e-07,-1.208973e-14} |d| = 6.598942e-07
+d[  1,  2] = {-3.957591e-01,-3.241403e-01,-3.371148e-15} |d| = 5.115586e-01
 
-d[  2,  0] = {-2.200221e+00, 3.937253e-01, 6.101224e-15} |d| = 2.235171e+00
-d[  2,  1] = { 3.957669e-01, 3.241418e-01, 6.656656e-15} |d| = 5.115656e-01
-d[  2,  2] = { 1.799435e-06,-8.759160e-07,-4.231046e-14} |d| = 2.001298e-06
+d[  2,  0] = {-2.200223e+00, 3.937276e-01,-9.559002e-16} |d| = 2.235174e+00
+d[  2,  1] = {-3.957591e-01,-3.241403e-01,-3.371148e-15} |d| = 5.115586e-01
+d[  2,  2] = { 3.047080e-06, 1.125786e-06,-1.361141e-14} |d| = 3.248399e-06
 
 
 
@@ -868,8 +877,8 @@ _______________________________________________________________________
 
 
 CAS_SCF:
-Time to step -    0.17180
-Full time    -    2.21138
+Time to step -    0.61468
+Full time    -    3.74520
 
 
 
@@ -903,8 +912,8 @@ vacant   :  1.5915e-01   1.6351e-01   1.7220e-01   2.1440e-01   2.2600e-01   2.4
 
 
 Fock matrix calculation:
-Time to step -    0.00060
-Full time    -    2.21198
+Time to step -    0.00504
+Full time    -    3.75023
 _______________________________________________________________________
 
 
@@ -912,50 +921,90 @@ Start calculation of PT2 correction
 
 
 RI orbital transformation:
-Time to step -    0.50410
-Full time    -    2.71608
+Time to step -    0.40648
+Full time    -    4.15672
 
+NOTE: DMRG low_m_opt=on (auto: K=4 m=200)
 CCVV res table:
-Time to step -    0.17290
-Full time    -    2.88898
+Time to step -    0.15182
+Full time    -    4.30853
 
 CAVV res table:
-Time to step -    0.08463
-Full time    -    2.97361
+Time to step -    0.05994
+Full time    -    4.36847
 
 AAVV res table:
-Time to step -    0.02940
-Full time    -    3.00301
+Time to step -    0.02671
+Full time    -    4.39518
 
 CCAV res table:
-Time to step -    0.00754
-Full time    -    3.01055
+Time to step -    0.01227
+Full time    -    4.40745
 
 CCAA res table:
-Time to step -    0.00027
-Full time    -    3.01082
+Time to step -    0.00044
+Full time    -    4.40789
 
 CV   res table:
-Time to step -    0.00730
-Full time    -    3.01811
+Time to step -    0.01319
+Full time    -    4.42108
 
 AV   res table:
-Time to step -    0.00309
-Full time    -    3.02121
+Time to step -    0.00660
+Full time    -    4.42767
 
 CA   res table:
-Time to step -    0.00033
-Full time    -    3.02154
+Time to step -    0.00064
+Full time    -    4.42832
 
 PT tensors calculation:
-Time to step -    0.00002
-Full time    -    3.02157
+Time to step -    0.00004
+Full time    -    4.42836
 _______________________________________________________________________
 
 
 
 
 CDAS-PT2 Energy summary:
-E[  0] = -155.7452029572
-E[  1] = -155.5131793824 | 6.3137 eV
-E[  2] = -155.4801343347 | 7.2129 eV
+E[  0] = -155.7452029825
+E[  1] = -155.5131794190 | 6.3137 eV
+E[  2] = -155.4801343109 | 7.2129 eV
+
+
+CDAS-PT2 extended results:
+__________________________________________________________________________________________
+ State| E                 | S^2  | weight |      d_x      |      d_y      |      d_z      |
+______|___________________|______|________|_______________|_______________|_______________|
+    0 |   -155.7452029825 | 0.00 | 1.00   |  6.569485e-08 | -1.760806e-07 | -1.495903e-14 |
+    1 |   -155.5131794190 | 0.00 | 1.00   | -1.790826e-05 |  1.618339e-06 | -1.423484e-14 |
+    2 |   -155.4801343109 | 0.00 | 1.00   |  1.108923e-06 | -8.261291e-08 | -1.188596e-14 |
+______|___________________|______|________________________________________________________|
+
+
+
+CDAS-PT(0) Dipole moment:
+
+d[  0,  0] = { 6.569485e-08,-1.760806e-07,-1.495903e-14} |d| = 1.879367e-07
+d[  0,  1] = { 2.565658e+00,-3.804512e-01, 1.202122e-15} |d| = 2.593712e+00
+d[  0,  2] = {-2.042149e-07,-2.403872e-08,-2.667568e-15} |d| = 2.056249e-07
+
+d[  1,  0] = { 2.565658e+00,-3.804512e-01, 1.202122e-15} |d| = 2.593712e+00
+d[  1,  1] = {-1.790826e-05, 1.618339e-06,-1.423484e-14} |d| = 1.798123e-05
+d[  1,  2] = { 1.236806e+00, 4.129176e-01, 4.394942e-15} |d| = 1.303914e+00
+
+d[  2,  0] = {-2.042149e-07,-2.403872e-08,-2.667568e-15} |d| = 2.056249e-07
+d[  2,  1] = { 1.236806e+00, 4.129176e-01, 4.394942e-15} |d| = 1.303914e+00
+d[  2,  2] = { 1.108923e-06,-8.261291e-08,-1.188596e-14} |d| = 1.111996e-06
+
+
+first-order properties are not available with cisolver=dmrg -- skipped
+
+_______________________________________________________________________
+
+
+CDAS-PT2:
+Time to step -    0.62960
+Full time    -    5.05796
+
+
+Calculation finished at: 13:28 (EEST), 23 September 2026 (Wednesday).
