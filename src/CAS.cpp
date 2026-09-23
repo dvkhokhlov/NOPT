@@ -1367,6 +1367,7 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
     bool any_maxed=false;   // a macro-iter whose CI solve hit its max sweeps while under-converged
     bool any_cold=false;    // a macro-iter whose CI solve fell back to a cold start
     bool any_reset=false;   // a macro-iter whose energy rise restarted the orbital converger
+    bool e_gated=false;     // a macro-iter that met e_conv while the gradient blocked the energy exit
     
     if(IS_SYM){
         int n_ao  = M->n_ao;
@@ -1501,7 +1502,8 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
         fflush(out_stream);
 //         getchar();
 //         exit(0);
-        if(fabs(E-E_old)<cas->e_conv){converged=1; break;}
+        if(fabs(E-E_old)<cas->e_conv && max_grad_el<CAS_E_EXIT_GRAD_FACTOR*cas->g_conv){converged=1; break;}
+        if(fabs(E-E_old)<cas->e_conv) e_gated=true;
         if(max_grad_el  <cas->g_conv){converged=2; break;}
         
         if      (cas->converger==CONVERGER_SOSCF){
@@ -1561,6 +1563,8 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
         fprintf(out_stream," r energy rose by more than the applied rotation and the CI resolution account\n"
                            "   for, consistent with that CI solve landing on a different solution: the\n"
                            "   converger history was restarted.\n\n");
+    if(e_gated)
+        fprintf(out_stream," NOTE: the energy criterion was met with the orbital gradient above grad; the run went on\n\n");
     printf_timer("CAS_SCF iterations");
     
     
