@@ -1,6 +1,6 @@
 
 NonOrtogonal quantum chemistry and Perturbation Theory
-                  NOPT version 3.2
+                  NOPT version 3.4.2
 
 
 sQM - standart QM module.
@@ -8,11 +8,12 @@ sQM - standart QM module.
 Compilation options:
 1) linear algebra package - OpenBLAS
 2) non-parallel BLAS matrix multiplication in the OMP parallel cycles
+3) build git commit 99c881c124eb
 
 selected command  line options:
 -i           cas.inp	 input file
 
-Calculation started at: 19:21 (MSK), 21 May 2026 (Thursday).
+Calculation started at: 13:27 (EEST), 23 September 2026 (Wednesday).
 
 _______________________________________________________________________
 
@@ -36,7 +37,7 @@ Input file:
   15: $END
   16: $act_space n_alp=1 n_bet=1 n_val=2 mult=1 p_n=10 $end
   17: $RHF maxit=50 dE=1e-9 grad=1e-12 $END
-  18: $CAS n_s=1 w_state=1 1; track maxit=150 dE=1e-9 grad=1e-12 p_cutoff =0.03 $END
+  18: $CAS n_s=1 w_state=1 1; track maxit=150 dE=1e-9 grad=1e-5 p_cutoff =0.03 $END
   19: $CDAS IPEA $END
   20: $SYMM group=D2h $END
 _______________________________________________________________________
@@ -59,6 +60,8 @@ Restricted Hartree-Fock                          -     yes
 Complete Active Space SCF                        -     yes
 eXtended MultiConfiguration QuasiDegenerate PT   -     no 
 Complete Degenerate Active Space PT              -     no 
+Second order Moller-Plesset PT                   -     no 
+State-specific DSRG-PT2                          -     no 
 Settings:
 D5                                               -     yes
 Resolution of Identity                           -     yes
@@ -357,8 +360,8 @@ X,Y,Z - cartesian coordinates (Bohr)
 
 
 Calculation of 1-el matrices:
-Time to step -    0.62339
-Full time    -    0.62339
+Time to step -    0.48028
+Full time    -    0.48028
 
 
 
@@ -376,8 +379,8 @@ _______________________________________________________________________
 
 
 RI integrals calculation:
-Time to step -    0.01806
-Full time    -    0.64145
+Time to step -    0.05138
+Full time    -    0.53166
 
 
 _______________________________________________________________________________
@@ -389,10 +392,10 @@ ITER 1	E=-78.0118813042	dE=-1.332843e+00	orb_grad = 3.056609e-01
 ITER 2	E=-78.0367601256	dE=-2.487882e-02	orb_grad = 1.060596e-01
 ITER 3	E=-78.0410895329	dE=-4.329407e-03	orb_grad = 1.399617e-02
 ITER 4	E=-78.0411922336	dE=-1.027007e-04	orb_grad = 5.064248e-03
-ITER 5	E=-78.0411980300	dE=-5.796432e-06	orb_grad = 5.201080e-04
-ITER 6	E=-78.0411981162	dE=-8.620202e-08	orb_grad = 8.856875e-05
-ITER 7	E=-78.0411981212	dE=-4.920167e-09	orb_grad = 9.286955e-06
-ITER 8	E=-78.0411981212	dE=-6.133405e-11	orb_grad = 2.561908e-06
+ITER 5	E=-78.0411980300	dE=-5.796431e-06	orb_grad = 5.201080e-04
+ITER 6	E=-78.0411981162	dE=-8.620211e-08	orb_grad = 8.856875e-05
+ITER 7	E=-78.0411981212	dE=-4.920651e-09	orb_grad = 9.286955e-06
+ITER 8	E=-78.0411981212	dE=-6.076561e-11	orb_grad = 2.561908e-06
 
 Energy converged after 8 iterations
 
@@ -401,8 +404,8 @@ visualization file: c2h4_RHF.out
 data file         : c2h4_RHF.orb
 
 RHF converged at:
-Time to step -    0.02738
-Full time    -    0.66882
+Time to step -    0.03687
+Full time    -    0.56853
 
 
 
@@ -425,11 +428,12 @@ Weights:	 1.00e+00  1.00e+00
 
 SCF settings:
 Energy convergence:               1.000000e-09
-Orbital gradient convergence:     1.000000e-12
+Orbital gradient convergence:     1.000000e-05
 Rotation matrix convergence :     1.000000e-07
 Maximum number of iterations:     150
 Maximum SOSCF step          :     1.000000e-01
 
+CI solver:                        determinant CI (aldet)
 Davidson diagonalization settings:
 Number of correlation vectors:    10
 Number of basis functions:        300
@@ -452,8 +456,8 @@ Step 0
 _________________________________________________
   n | E                 | dE         | norm(r)   |
 ____|___________________|____________|___________|
-  0 |    -78.0595141689 | -7.806e+01 | 2.214e-28 |
-  1 |    -77.6877369591 | -7.769e+01 | 2.281e-27 |
+  0 |    -78.0595141689 | -7.806e+01 | 6.459e-29 |
+  1 |    -77.6877369591 | -7.769e+01 | 1.769e-29 |
 ____|___________________|____________|___________|
 number of corr vectors=3
 2 roots converged at step 0
@@ -464,19 +468,22 @@ CAS_CI WaveFunctions:
 State 0  E  =     -78.0595141689 S^2 = 0.00:
 -9.8395690022e-01  | 01 | 01
  1.7840632979e-01  | 10 | 10
- 6.2823324503e-14  | 10 | 01
- 6.2823324503e-14  | 01 | 10
+-1.5810540045e-13  | 10 | 01
+-1.5810540045e-13  | 01 | 10
 State 1  E  =     -77.6877369591 S^2 = 0.00:
--7.0710678119e-01  | 10 | 01
--7.0710678119e-01  | 01 | 10
- 4.9826809345e-13  | 10 | 10
- 0.0000000000e+00  | 01 | 01
+ 7.0710678119e-01  | 10 | 01
+ 7.0710678119e-01  | 01 | 10
+ 6.5236704927e-13  | 10 | 10
+-1.0896877057e-13  | 01 | 01
 
 
 Davidson diagonalization:
-Time to step -    0.00292
-Full time    -    0.67175
+Time to step -    0.00373
+Full time    -    0.57227
 _______________________________________________________________________
+Primary CI and calculation canonical orbitals:
+Time to step -    0.00341
+Full time    -    0.57568
 
 
 CAS_SCF density averaging:
@@ -488,62 +495,61 @@ ______|___________________|______|________|
 ______|___________________|______|________|
 
 Start CAS_SCF iterations
-_____________________________________________________________________
-  N | E                 | dE         | LAG.ASYM. | ROT.STEP  | N_dav |
-____|___________________|____________|___________|___________|_______|
-  0 |    -77.8736255640 | -7.787e+01 | 7.104e-02 | 1.000e+00 |   0   |
-  1 |    -77.8753540446 | -1.728e-03 | 2.142e-02 | 1.504e-02 |   0   |
-  2 |    -77.8755210110 | -1.670e-04 | 2.442e-03 | 5.628e-03 |   0   |
-  3 |    -77.8755255180 | -4.507e-06 | 7.697e-04 | 1.099e-03 |   0   |
-  4 |    -77.8755259037 | -3.858e-07 | 9.966e-05 | 5.682e-04 |   0   |
-  5 |    -77.8755259193 | -1.556e-08 | 3.161e-05 | 1.351e-04 |   0   |
-  6 |    -77.8755259203 | -1.040e-09 | 5.046e-06 | 3.606e-05 |   0   |
-  7 |    -77.8755259204 | -3.014e-11 | 1.354e-06 | 4.637e-06 |   0   |
-____|___________________|____________|___________|___________|_______|
+_________________________________________________________________________________
+  N | E                 | dE         | LAG.ASYM. | ROT.STEP  | N_dav | sweep_dE  |
+____|___________________|____________|___________|___________|_______|___________|
+  0 |    -77.8736255640 | -7.787e+01 | 7.104e-02 | 1.000e+00 |   0   | 0.000e+00 |
+  1 |    -77.8753540446 | -1.728e-03 | 2.142e-02 | 1.504e-02 |   0   | 0.000e+00 |
+  2 |    -77.8755210110 | -1.670e-04 | 2.442e-03 | 5.628e-03 |   0   | 0.000e+00 |
+  3 |    -77.8755255180 | -4.507e-06 | 7.697e-04 | 1.099e-03 |   0   | 0.000e+00 |
+  4 |    -77.8755259037 | -3.858e-07 | 9.966e-05 | 5.682e-04 |   0   | 0.000e+00 |
+  5 |    -77.8755259193 | -1.555e-08 | 3.161e-05 | 1.351e-04 |   0   | 0.000e+00 |
+  6 |    -77.8755259203 | -1.042e-09 | 5.046e-06 | 3.606e-05 |   0   | 0.000e+00 |
+____|___________________|____________|___________|___________|_______|___________|
 
-Energy converged after 7 iterations
+Lagrangian converged after 6 iterations
 
 CAS_SCF iterations:
-Time to step -    0.04467
-Full time    -    0.71642
+Time to step -    0.03745
+Full time    -    0.61313
 Preparation of canonical orbitals:
-Time to step -    0.00414
-Full time    -    0.72056
+Time to step -    0.00462
+Full time    -    0.61774
 CAS_SCF WaveFunctions:
 
-State 0  E  =     -78.0575929018 S^2 = 0.00:
- 9.8347167231e-01  | 01 | 01
--1.8106206055e-01  | 10 | 10
- 4.3837406906e-14  | 10 | 01
- 4.3837406906e-14  | 01 | 10
-State 1  E  =     -77.6934589389 S^2 = 0.00:
+State 0  E  =     -78.0575925136 S^2 = 0.00:
+ 9.8347188907e-01  | 01 | 01
+-1.8106088317e-01  | 10 | 10
+ 1.4884368424e-13  | 10 | 01
+ 1.4884368424e-13  | 01 | 10
+State 1  E  =     -77.6934593271 S^2 = 0.00:
 -7.0710678119e-01  | 10 | 01
 -7.0710678119e-01  | 01 | 10
--5.7575014648e-14  | 10 | 10
- 5.2254371420e-14  | 01 | 01
+-5.9645893840e-13  | 10 | 10
+ 1.0406124246e-13  | 01 | 01
 
 
 CAS_SCF density averaging:
 __________________________________________
  State| E                 | S^2  | weight |
 ______|___________________|______|________|
-    0 |    -78.0575929018 | 0.00 | 1.00   |
-    1 |    -77.6934589389 | 0.00 | 1.00   |
+    0 |    -78.0575925136 | 0.00 | 1.00   |
+    1 |    -77.6934593271 | 0.00 | 1.00   |
 ______|___________________|______|________|
 
 
 CAS_SCF Energy summary:
-E[  0] = -78.0575929018
-E[  1] = -77.6934589389 | 9.9086 eV
+E[  0] = -78.0575925136
+E[  1] = -77.6934593271 | 9.9086 eV
 
 
 CAS_SCF Dipole moment:
 
-d[  0,  0] = {-8.822621e-16,-1.459162e-15, 1.934370e-13} |d| = 1.934445e-13
-d[  0,  1] = { 0.000000e+00,-4.175291e-18,-1.555347e+00} |d| = 1.555347e+00
+d[  0,  0] = {-1.115956e-16,-1.912232e-15, 6.586937e-13} |d| = 6.586965e-13
+d[  0,  1] = {-8.391951e-19,-3.861081e-18,-1.555350e+00} |d| = 1.555350e+00
 
-d[  1,  0] = { 0.000000e+00,-1.958170e-18,-1.555347e+00} |d| = 1.555347e+00
-d[  1,  1] = {-8.822621e-16,-1.459108e-15, 2.093631e-14} |d| = 2.100563e-14
+d[  1,  0] = {-8.391951e-19,-2.106132e-18,-1.555350e+00} |d| = 1.555350e+00
+d[  1,  1] = {-1.120429e-16,-1.912918e-15, 1.912777e-12} |d| = 1.912778e-12
 
 
 
@@ -560,8 +566,8 @@ _______________________________________________________________________
 
 
 CAS_SCF:
-Time to step -    0.00415
-Full time    -    0.72471
+Time to step -    0.00893
+Full time    -    0.62667
 
 
-Calculation finished at: 19:21 (MSK), 21 May 2026 (Thursday).
+Calculation finished at: 13:27 (EEST), 23 September 2026 (Wednesday).
