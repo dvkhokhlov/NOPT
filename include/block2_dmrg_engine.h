@@ -63,6 +63,9 @@ struct dmrgci_engine {
     std::vector<double> R_active;     // n_act x n_act, [a*n_act+p]
     bool have_rotation = false;
 
+    // MPO simplification rule resolved once from cfg.low_m_opt: -1 unresolved, 0 off, 1 on.
+    int low_m_opt_res = -1;
+
     // block2 objects for the current macro-iteration (rebuilt each import_integrals)
     std::shared_ptr<FCIDUMP<double>> fcidump;
     std::shared_ptr<HamiltonianQC<SU2, double>> hamil;
@@ -92,6 +95,8 @@ struct dmrgci_engine {
     double last_sweep_dE = 0.0;                 // |dE| between the final two sweeps (achieved convergence)
     bool last_hit_max = false;                  // last solve used its full sweep budget with dE > sweep_tol
     std::vector<uint16_t> reorder_perm;         // DMRG lattice order (Fiedler); empty => input order
+    double last_dw = 0.0;                       // max discarded weight over the last solve's two-site sweeps at the
+                                                // schedule's final bond dim, noise-free sweeps preferred
 
     dmrgci_engine(int n_act_, int n_elec_, int twos_, int twosz_, int mult_, int n_s_,
                   int print_number_, const dmrg_par &c)

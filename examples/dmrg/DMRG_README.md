@@ -100,13 +100,19 @@ Default shown in parentheses.
   RAM-backed by default.
 - **memory** *(1.0)* — size of block2's double stack, in GB. This is what a large active space
   or bond dimension exhausts; raise it if block2 aborts on a stack overflow.
+- **low_m_opt** *(absent = auto)* — MPO simplification rule. `on` = faster MPO simplification for
+  small-`m` / moderate-`K` runs: AD and the full B are stored explicitly (conj-free middle
+  transform) at roughly +40% operator-stack memory. `off` = the memory-lean stock rule, deriving
+  them by transpose. Absent = auto, by a threshold on `K^2*m^2` (`K` = active orbitals).
 
 ### Localization & ordering
 
 - **localize** *(off)* — localize the active orbitals before the solve. `off | pm`
   (Pipek-Mezey). `boys` parses but is not implemented.
 - **loc_order** *(fiedler)* — orbital (site) ordering for the MPS lattice.
-  `fiedler | none`. `gaopt` parses but is not implemented.
+  `fiedler | gaopt | none`. `gaopt` is block2's genetic refinement of the Fiedler ordering
+  (pyblock2 parameters, 64 deterministically seeded runs); it costs seconds to minutes to
+  set up, growing with the active space, and can lower the mid-lattice bond dimension.
 - **dump_loc_orbs** *(off)* — flag: presence writes the localized orbitals (GAMESS format)
   at iteration 0, then continues. The `=on`/`=off` value is ignored — the keyword's
   presence alone enables it.
@@ -115,7 +121,10 @@ Default shown in parentheses.
 
 - **warm_start** *(on)* — reuse the previous macro-iteration's MPS as the next guess.
   `on | off`.
-- **warm_sweeps** *(0 = auto)* — max sweeps for a warm re-solve. `0` = auto = `sweeps/2`.
+- **warm_sweeps** *(0 = auto)* — clean-sweep budget of a warm re-solve. `0` = auto = `sweeps/2`.
+  Two noisy sweeps are prepended when `warm_noise_scale` is on.
+- **warm_noise_scale** *(0 = off)* — noise of those two sweeps as a multiple of the last solve's
+  discarded weight; below `1e-10` the re-solve stays noise-free.
 - **warm_start_after** *(0)* — CI solves run cold before the localized frame is frozen
   and warm start begins.
 - **warm_rotate** *(on)* — rotate the reused MPS into the new orbital basis.

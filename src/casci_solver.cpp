@@ -17,6 +17,14 @@ int casci_solver::calc_IPEA_single(double *, double *, double *, double *, int, 
     exit(EXIT_FAILURE);
 }
 
+// Default: root following compares CI vectors across an active-basis change; a backend without
+// index-comparable vectors would leave S_track holding the caller's stale buffer.
+void casci_solver::calc_S(double*, int, int) {
+    fprintf(out_stream, "ERROR: this CI backend does not implement calc_S"
+                        " (state tracking needs CI-vector overlaps)\n");
+    exit(EXIT_FAILURE);
+}
+
 // Default: both shipped backends snapshot their state set for the dressed re-solve overlap, so
 // reaching here is a driver mis-dispatch (our own contract) -- abort loudly.
 void casci_solver::snapshot_states(int) {

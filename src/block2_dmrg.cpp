@@ -24,6 +24,9 @@
 #include "tensor_rotate.h"    // rotate1/rotate2 (active-space basis transforms)
 #include "blas_link.h"        // cblas_dgemm (warm-start rotation regularization)
 #include "mps_rotation.h"     // evolve_sa_multimps (multi-root SA MPS rotation)
+#include "dmrg_log.h"         // per-solve block2 sweep log (cout/cerr redirect)
+#include "dmrg_gaopt.h"       // genetic (GAopt) lattice ordering
+#include "defaults.h"         // DMRG_LOW_M_OPT_KK_MM_MAX, DMRG_WARM_NOISE_MIN
 
 using namespace block2;
 
@@ -153,13 +156,17 @@ void assert_stack_clean(const char *where) {
 
 // Build + simplify the conventional quantum-chemistry MPO 
 std::shared_ptr<MPO<SU2, double>>
-build_qc_mpo(const std::shared_ptr<HamiltonianQC<SU2, double>> &hamil) {
+build_qc_mpo(const std::shared_ptr<HamiltonianQC<SU2, double>> &hamil, bool low_m_opt) {
     std::shared_ptr<MPO<SU2, double>> mpo = std::make_shared<MPOQC<SU2, double>>(
         hamil, QCTypes::Conventional, "HQC", hamil->n_sites / 2 / 2 * 2, 1);
     mpo->basis = hamil->basis;
+    // low_m_opt (a=b=false): store AD and full B instead of deriving them by transpose;
+    // transposed iadd degenerates to per-column BLAS in the NC/CN transform.
+    std::shared_ptr<Rule<SU2, double>> rule =
+        low_m_opt ? std::make_shared<RuleQC<SU2, double>>(true, true, false, true, false, true)
+                  : std::make_shared<RuleQC<SU2, double>>();
     mpo = std::make_shared<SimplifiedMPO<SU2, double>>(
-        mpo, std::make_shared<RuleQC<SU2, double>>(), true, true,
-        OpNamesSet({OpNames::R, OpNames::RD}));
+        mpo, rule, true, true, OpNamesSet({OpNames::R, OpNames::RD}));
     return mpo;
 }
 
@@ -230,18 +237,25 @@ dmrg_schedule build_default_schedule(int max_m, int user_sweeps, double sweep_to
     return s;
 }
 
-// Warm re-solve schedule: no cold ramp (the rotated MPS is already at full M) -- a short noise-free
-// run at the target bond dim. The exact rotation gives a near-perfect guess, so no perturbative noise
-// is needed to re-expand the bond space. All-zero noise also satisfies block2's convergence rule
-// (it declares convergence only once the sweep noise equals the final noise; sweep_algorithm.hpp).
-dmrg_schedule build_warm_schedule(int max_m, int warm_sweeps, double sweep_tol) {
+// Warm re-solve schedule: no cold ramp (the rotated MPS is already at full M) -- a short run at the
+// target bond dim. `noise` > 0 prepends a forward and a backward noisy sweep (block2 alternates
+// direction each sweep), re-ranking the density matrix so the truncation can see directions the
+// reused MPS does not occupy. The schedule must end at noise 0: block2 declares convergence only
+// once the sweep noise equals the final noise (sweep_algorithm.hpp).
+dmrg_schedule build_warm_schedule(int max_m, int warm_sweeps, double sweep_tol, double noise) {
     int nsw = warm_sweeps > 0 ? warm_sweeps : 4;
     const double dav_final = (sweep_tol <= 0 ? 1e-9 : sweep_tol / 10.0);
+    const double dav_noisy = 5e-6; // a deliberately perturbed state does not need a tight Davidson
+    const int n_noisy = noise > 0.0 ? 2 : 0;
     dmrg_schedule s;
-    s.n_sweeps = nsw;
-    s.bond_dims.assign(nsw, (ubond_t)max_m);
-    s.noises.assign(nsw, 0.0);
-    s.dav_thrds.assign(nsw, dav_final);
+    s.n_sweeps = nsw + n_noisy;
+    s.bond_dims.assign(s.n_sweeps, (ubond_t)max_m);
+    s.noises.assign(s.n_sweeps, 0.0);
+    s.dav_thrds.assign(s.n_sweeps, dav_final);
+    for (int sw = 0; sw < n_noisy; sw++) {
+        s.noises[sw] = noise;
+        s.dav_thrds[sw] = dav_noisy;
+    }
     return s;
 }
 
@@ -308,6 +322,7 @@ std::shared_ptr<MPS<SU2, double>> nopt_block2::extract_root_single(dmrgci_engine
 static void ensure_2rdm(dmrgci_engine &e) {
     if (e.d2_valid)
         return;
+    dmrg_log_guard log(false);
     host_threads_guard htg;
     const int n = e.n_act;
     const size_t blk = (size_t)n * n * n * n;
@@ -341,7 +356,7 @@ static void ensure_2rdm(dmrgci_engine &e) {
         p2me->init_environments(false);
         auto ex2 = std::make_shared<Expect<SU2, double, double>>(p2me, (ubond_t)e.cfg.m,
                                                                  (ubond_t)e.cfg.m);
-        ex2->iprint = 0; // silence the per-site Expect sweep log
+        ex2->iprint = DMRG_LOG_IPRINT;
         ex2->solve(true, imps->center == 0);
         std::shared_ptr<GTensor<double>> d2 = ex2->get_2pdm_spatial(); // shape {n,n,n,n}
 
@@ -433,6 +448,7 @@ static void ensure_2rdm(dmrgci_engine &e) {
 static void ensure_dm_full(dmrgci_engine &e) {
     if (e.dmfull_valid)
         return;
+    dmrg_log_guard log(false);
     host_threads_guard htg;
     const int n = e.n_act;
     const size_t blk = (size_t)n * n;
@@ -476,7 +492,7 @@ static void ensure_dm_full(dmrgci_engine &e) {
             p1me->init_environments(false);
             auto ex1 = std::make_shared<Expect<SU2, double, double>>(p1me, (ubond_t)e.cfg.m,
                                                                      (ubond_t)e.cfg.m);
-            ex1->iprint = 0; // silence the per-site Expect sweep log
+            ex1->iprint = DMRG_LOG_IPRINT;
             ex1->solve(true, jmps->center == 0);
             GMatrix<double> d1 = ex1->get_1pdm_spatial(); // n x n row-major, on the block2 double stack
 
@@ -610,6 +626,23 @@ static bool rotate_retained_mps(dmrgci_engine &e) {
     return true; // rotated MPS in place; benign success is silent (keeps the CASSCF table clean)
 }
 
+// Resolve $DMRG low_m_opt once per engine (the MPO must not change rule between rebuilds) and
+// report the choice. AUTO takes the explicit AD/full-B store while K^2*m^2 stays under the cap.
+static bool resolve_low_m_opt(dmrgci_engine &e) {
+    if (e.low_m_opt_res >= 0)
+        return e.low_m_opt_res != 0;
+    const double kk_mm = (double)e.n_act * e.n_act * (double)e.cfg.m * e.cfg.m;
+    const bool by_auto = (e.cfg.low_m_opt == DMRG_LOW_M_AUTO);
+    const bool on = by_auto ? (kk_mm < DMRG_LOW_M_OPT_KK_MM_MAX) : (e.cfg.low_m_opt == DMRG_LOW_M_ON);
+    e.low_m_opt_res = on ? 1 : 0;
+    if (by_auto)
+        fprintf(out_stream, "NOTE: DMRG low_m_opt=%s (auto: K=%d m=%d)\n", on ? "on" : "off",
+                e.n_act, e.cfg.m);
+    else
+        fprintf(out_stream, "NOTE: DMRG low_m_opt=%s (input)\n", on ? "on" : "off");
+    return on;
+}
+
 // Enforce exactly the symmetries qc_hamiltonian/RuleQC assume -- Hermiticity (p,q,r,s)->(q,p,s,r)
 // and particle exchange (p,q,r,s)->(r,s,p,q). block2 prunes complementary operators on
 // |integral| < TINY reading one partner per slot, so partners must agree bit for bit. The ERI-only
@@ -682,15 +715,15 @@ void block2_casci_wrap::import_integrals(double *aaaa, double *f_act, double e_c
     e.fcidump->set_orb_sym<int>(std::vector<int>(n, 0)); // C1
 
     // DMRG lattice order: block2 strings orbitals on the lattice in raw FCIDUMP order, so localized
-    // orbitals come out scrambled and are ordered by Fiedler on the exchange matrix K_ij = |(ij|ji)|.
+    // orbitals come out scrambled and are ordered by loc_order on the exchange matrix K_ij = |(ij|ji)|.
     // RDMs come back in this order and are un-permuted in ensure_2rdm. A warm solve reuses the
-    // retained MPS's order -- Fiedler order is a function of the localized orbitals, so it is pinned
+    // retained MPS's order -- that order is a function of the localized orbitals, so it is pinned
     // together with the frozen localization. A cold solve recomputes it.
     if (e.have_rotation && !e.reorder_perm.empty()) {
         e.fcidump->reorder(e.reorder_perm); // frozen order (warm restart)
     } else {
         e.reorder_perm.clear();
-        if (e.cfg.loc_order == DMRG_LOCORDER_FIEDLER) {
+        if (e.cfg.loc_order == DMRG_LOCORDER_FIEDLER || e.cfg.loc_order == DMRG_LOCORDER_GAOPT) {
             // block2's metric (pyblock2 parser.py): the exchange graph, with the one-electron
             // coupling as a tie-break so a disconnected or tied graph still orders reproducibly.
             std::vector<double> kmat((size_t)n * n, 0.0);
@@ -700,7 +733,10 @@ void block2_casci_wrap::import_integrals(double *aaaa, double *f_act, double e_c
                         kmat[(size_t)i * n + j] =
                             std::fabs(h2[(((size_t)i * n + j) * n + j) * n + i]) +
                             1e-7 * std::fabs(h1[(size_t)i * n + j]);
-            e.reorder_perm = OrbitalOrdering::fiedler((uint16_t)n, kmat);
+            if (e.cfg.loc_order == DMRG_LOCORDER_FIEDLER)
+                e.reorder_perm = OrbitalOrdering::fiedler((uint16_t)n, kmat);
+            else if (e.cfg.loc_order == DMRG_LOCORDER_GAOPT)
+                e.reorder_perm = dmrg_gaopt_order(n, kmat);
             e.fcidump->reorder(e.reorder_perm);
         }
     }
@@ -708,7 +744,7 @@ void block2_casci_wrap::import_integrals(double *aaaa, double *f_act, double e_c
     SU2 vacuum(0);
     e.hamil = std::make_shared<HamiltonianQC<SU2, double>>(vacuum, n, e.orbsym, e.fcidump);
     e.hamil->opf->seq->mode = SeqTypes::Tasked;
-    e.mpo = build_qc_mpo(e.hamil);
+    e.mpo = build_qc_mpo(e.hamil, resolve_low_m_opt(e));
     e.dressed_mpo = false; // any previous dressing leaves with the rebuilt bare MPO
 }
 
@@ -747,11 +783,12 @@ static void adjust_mps_two_dot(dmrgci_engine &e) {
 }
 
 // Re-order the lattice for a cold fallback: import_integrals commits the order before solve() may
-// decline the warm rotation, leaving the FCIDUMP on the previous orbitals' Fiedler order. The
-// already-permuted FCIDUMP is re-ordered in place -- Fiedler on a relabelled exchange graph is the
-// same ordering up to that relabelling, so the fresh permutation composes with the frozen one.
+// decline the warm rotation, leaving the FCIDUMP on the previous orbitals' order. The already-
+// permuted FCIDUMP is re-ordered in place; the fresh permutation composes with the frozen one.
 static void recompute_cold_order(dmrgci_engine &e) {
-    if (e.cfg.loc_order != DMRG_LOCORDER_FIEDLER || e.reorder_perm.empty())
+    const bool ordered = (e.cfg.loc_order == DMRG_LOCORDER_FIEDLER ||
+                          e.cfg.loc_order == DMRG_LOCORDER_GAOPT);
+    if (!ordered || e.reorder_perm.empty())
         return;
     const int n = e.n_act;
     std::vector<double> kmat((size_t)n * n, 0.0);
@@ -760,7 +797,11 @@ static void recompute_cold_order(dmrgci_engine &e) {
             if (i != j)
                 kmat[(size_t)i * n + j] = std::fabs(e.fcidump->v(i, j, j, i)) +
                                           1e-7 * std::fabs(e.fcidump->t(i, j));
-    std::vector<uint16_t> p2 = OrbitalOrdering::fiedler((uint16_t)n, kmat);
+    std::vector<uint16_t> p2;
+    if (e.cfg.loc_order == DMRG_LOCORDER_FIEDLER)
+        p2 = OrbitalOrdering::fiedler((uint16_t)n, kmat);
+    else if (e.cfg.loc_order == DMRG_LOCORDER_GAOPT)
+        p2 = dmrg_gaopt_order(n, kmat);
     // Fiedler's sign gauge maps an already-ordered lattice to its reversal, which is the same
     // chain read backwards and carries the same ordering cost.
     bool unchanged = true, reversed = true;
@@ -779,11 +820,12 @@ static void recompute_cold_order(dmrgci_engine &e) {
     SU2 vacuum(0);
     e.hamil = std::make_shared<HamiltonianQC<SU2, double>>(vacuum, n, e.orbsym, e.fcidump);
     e.hamil->opf->seq->mode = SeqTypes::Tasked;
-    e.mpo = build_qc_mpo(e.hamil);
+    e.mpo = build_qc_mpo(e.hamil, resolve_low_m_opt(e));
 }
 
 int block2_casci_wrap::solve(int, int, bool use_prev_guess) {
     dmrgci_engine &e = *impl_;
+    dmrg_log_guard log(true); // block2's sweep output for this solve only
     host_threads_guard htg;
     assert_stack_clean("solve entry"); // block2 LIFO stacks must be empty between macro-iterations
     e.d2_valid = false; // new wavefunction -> any cached 2-RDM is stale
@@ -821,7 +863,11 @@ int block2_casci_wrap::solve(int, int, bool use_prev_guess) {
     // --- sweep schedule: short warm re-solve vs full cold ramp ---
     dmrg_schedule sch;
     if (warm) {
-        sch = build_warm_schedule(e.cfg.m, e.cfg.warm_sweeps, e.cfg.sweep_tol);
+        // Noise sized by what the last solve's truncation actually discarded: nothing discarded (m
+        // saturating the lattice) leaves the re-solve noise-free, exactly as before.
+        const double wnoise = e.cfg.warm_noise_scale * e.last_dw;
+        sch = build_warm_schedule(e.cfg.m, e.cfg.warm_sweeps, e.cfg.sweep_tol,
+                                  wnoise >= DMRG_WARM_NOISE_MIN ? wnoise : 0.0);
     } else if (e.cfg.schedule == DMRG_SCHED_DEFAULT) {
         sch = build_default_schedule(e.cfg.m, e.cfg.sweeps, e.cfg.sweep_tol);
     } else {
@@ -873,8 +919,25 @@ int block2_casci_wrap::solve(int, int, bool use_prev_guess) {
     dmrg->trunc_type = dmrg->trunc_type | TruncationTypes::RealDensityMatrix;
     dmrg->decomp_type = DecompositionTypes::DensityMatrix;
     dmrg->davidson_soft_max_iter = 200;
-    dmrg->iprint = 0;
+    dmrg->iprint = DMRG_LOG_IPRINT;
     dmrg->solve(sch.n_sweeps, e.mps->center == 0, e.cfg.sweep_tol);
+
+    // Truncation carried by this solve, sizing the next warm re-solve's noise: sweeps at the final
+    // bond dim and noise-free, so the measure cannot feed back on the noise it sets. Read before the
+    // one-site tail appends to the same history -- the tail cannot expand the bond space, so its
+    // discarded weight collapses to ~1e-15.
+    e.last_dw = 0.0;
+    bool dw_clean = false;
+    const size_t n_dw = std::min(dmrg->discarded_weights.size(), sch.bond_dims.size());
+    for (size_t i = 0; i < n_dw; i++)
+        if (sch.bond_dims[i] == sch.bond_dims.back() && sch.noises[i] == 0.0) {
+            e.last_dw = std::max(e.last_dw, (double)dmrg->discarded_weights[i]);
+            dw_clean = true;
+        }
+    if (!dw_clean) // budget exhausted inside the cold ramp: no noise-free sweep at the final m ran
+        for (size_t i = 0; i < n_dw; i++)
+            if (sch.bond_dims[i] == sch.bond_dims.back())
+                e.last_dw = std::max(e.last_dw, (double)dmrg->discarded_weights[i]);
 
     // Convergence of the variational (two-site) phase, taken before the tail appends to the same
     // history. Residual = max over roots of the last two sweeps' |dE|; a mean would cancel
@@ -999,6 +1062,7 @@ void block2_casci_wrap::calc_DMB(double *, int, int) {
 std::shared_ptr<MPS<SU2, double>>
 nopt_block2::compress_single_mps(dmrgci_engine &e, const std::shared_ptr<MPS<SU2, double>> &ket,
                     int target_m, const std::string &ctag) {
+    dmrg_log_guard log(false); // the fit sweeps go to the solve's log
     std::shared_ptr<MPO<SU2, double>> impo = std::make_shared<IdentityMPO<SU2, double>>(e.hamil);
     impo = std::make_shared<SimplifiedMPO<SU2, double>>(impo, std::make_shared<Rule<SU2, double>>());
 
@@ -1021,7 +1085,7 @@ nopt_block2::compress_single_mps(dmrgci_engine &e, const std::shared_ptr<MPS<SU2
     std::vector<ubond_t> bdim{(ubond_t)target_m}, kdim{ket->info->get_max_bond_dimension()};
     std::vector<double> noises{1e-9, 0.0}; // one noisy sweep to seed the fit, then clean
     auto cps = std::make_shared<Linear<SU2, double, double>>(cme, bdim, kdim, noises);
-    cps->iprint = 0;
+    cps->iprint = DMRG_LOG_IPRINT;
     cps->solve(8, ket->center == 0);
 
     cme->remove_partition_files();

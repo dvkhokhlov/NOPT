@@ -203,6 +203,7 @@ vector<const char *>dmrg_warm_start_kw{{"warm_start"}};
 vector<const char *>dmrg_warm_on_kw{{"on"}};
 vector<const char *>dmrg_warm_off_kw{{"off"}};
 vector<const char *>dmrg_warm_sweeps_kw{{"warm_sweeps"}};
+vector<const char *>dmrg_warm_noise_scale_kw{{"warm_noise_scale"}};
 vector<const char *>dmrg_rot_m_kw{{"rot_m"}};
 vector<const char *>dmrg_rot_steps_kw{{"rot_steps"}};
 vector<const char *>dmrg_warm_start_after_kw{{"warm_start_after"}};
@@ -213,6 +214,7 @@ vector<const char *>dmrg_det_rot_steps_kw{{"det_rot_steps"}};
 vector<const char *>dmrg_extract_m_kw{{"extract_m"}};
 vector<const char *>dmrg_extract_cutoff_kw{{"extract_cutoff"}};
 vector<const char *>dmrg_h2caa_m_kw{{"h2caa_m"}};
+vector<const char *>dmrg_low_m_opt_kw{{"low_m_opt"}};
 
 vector<const char *>MO_group_start{{"$vec1"},
                                    {"$vec"},

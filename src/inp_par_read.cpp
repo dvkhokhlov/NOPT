@@ -806,6 +806,7 @@ dmrg_par::dmrg_par(){
     loc_order = DMRG_LOCORDER_FIEDLER;
     warm_start       = DMRG_WARM_START_DEFAULT;
     warm_sweeps      = DMRG_WARM_SWEEPS_DEFAULT;
+    warm_noise_scale = DMRG_WARM_NOISE_SCALE_DEFAULT;
     rot_m            = DMRG_ROT_M_DEFAULT;
     rot_steps        = DMRG_ROT_STEPS_DEFAULT;
     warm_start_after = DMRG_WARM_START_AFTER_DEFAULT;
@@ -816,6 +817,7 @@ dmrg_par::dmrg_par(){
     extract_m        = DMRG_EXTRACT_M_DEFAULT;
     extract_cutoff   = DMRG_EXTRACT_CUTOFF_DEFAULT;
     h2caa_m          = DMRG_H2CAA_M_DEFAULT;
+    low_m_opt        = DMRG_LOW_M_OPT_DEFAULT;
 
 }
 
@@ -903,6 +905,10 @@ int dmrg_par::read_line(char * inp){
         warm_sweeps = kw_to_i(inp, dmrg_warm_sweeps_kw, DMRG_WARM_SWEEPS_DEFAULT);
     }
 
+    if(key_word_comp(inp, dmrg_warm_noise_scale_kw)){
+        warm_noise_scale = kw_to_f(inp, dmrg_warm_noise_scale_kw, DMRG_WARM_NOISE_SCALE_DEFAULT);
+    }
+
     if(key_word_comp(inp, dmrg_rot_m_kw)){
         rot_m = kw_to_i(inp, dmrg_rot_m_kw, DMRG_ROT_M_DEFAULT);
     }
@@ -947,6 +953,12 @@ int dmrg_par::read_line(char * inp){
         h2caa_m = kw_to_i(inp, dmrg_h2caa_m_kw, DMRG_H2CAA_M_DEFAULT);
     }
 
+    if(key_word_comp(inp, dmrg_low_m_opt_kw)){
+        if     (kw_to_kw(inp, dmrg_low_m_opt_kw, dmrg_warm_off_kw)) low_m_opt = DMRG_LOW_M_OFF;
+        else if(kw_to_kw(inp, dmrg_low_m_opt_kw, dmrg_warm_on_kw))  low_m_opt = DMRG_LOW_M_ON;
+        else                                                        low_m_opt = DMRG_LOW_M_UNKNOWN;
+    }
+
     return 0;
 }
 
@@ -984,11 +996,7 @@ int dmrg_par::validate(){
         ok=0;
     }
     if(loc_order==DMRG_LOCORDER_UNKNOWN){
-        fprintf(out_stream,"ERROR: $DMRG unknown loc_order value; accepted: fiedler, none\n");
-        ok=0;
-    }
-    if(loc_order==DMRG_LOCORDER_GAOPT){
-        fprintf(out_stream,"ERROR: $DMRG loc_order=gaopt not implemented yet; accepted: fiedler, none\n");
+        fprintf(out_stream,"ERROR: $DMRG unknown loc_order value; accepted: fiedler, gaopt, none\n");
         ok=0;
     }
     if(save_dir.empty()){
@@ -1028,7 +1036,15 @@ int dmrg_par::validate(){
         fprintf(out_stream,"ERROR: $DMRG h2caa_m=%d must be >= 0 (0 = auto: 2m)\n",h2caa_m);
         ok=0;
     }
+    if(low_m_opt==DMRG_LOW_M_UNKNOWN){
+        fprintf(out_stream,"ERROR: $DMRG unknown low_m_opt value; accepted: off, on\n");
+        ok=0;
+    }
     if(warm_start==DMRG_WARM_ON){
+        if(warm_noise_scale<0){
+            fprintf(out_stream,"ERROR: $DMRG warm_noise_scale=%g must be >= 0 (0 = noise-free warm re-solve)\n",warm_noise_scale);
+            ok=0;
+        }
         if(rot_m<0){
             fprintf(out_stream,"ERROR: $DMRG rot_m=%d must be >= 0 (0 = use m)\n",rot_m);
             ok=0;
@@ -1066,13 +1082,22 @@ int dmrg_par::write_info(){
         fprintf(out_stream,"Dump localized orbitals:          yes\n");
     if(loc_order==DMRG_LOCORDER_FIEDLER)
         fprintf(out_stream,"DMRG orbital ordering:            Fiedler\n");
+    if(loc_order==DMRG_LOCORDER_GAOPT)
+        fprintf(out_stream,"DMRG orbital ordering:            GAopt (genetic, seeded)\n");
     if(loc_order==DMRG_LOCORDER_NONE)
         fprintf(out_stream,"DMRG orbital ordering:            none (input order)\n");
     fprintf(out_stream,"Scratch directory (save_dir):     %s\n",save_dir.c_str());
     fprintf(out_stream,"Memory (block2 double stack):     %g GB\n",memory);
+    if(low_m_opt==DMRG_LOW_M_AUTO)
+        fprintf(out_stream,"Low-m MPO optimization:           auto\n");
+    if(low_m_opt==DMRG_LOW_M_ON)
+        fprintf(out_stream,"Low-m MPO optimization:           on\n");
+    if(low_m_opt==DMRG_LOW_M_OFF)
+        fprintf(out_stream,"Low-m MPO optimization:           off\n");
     if(warm_start==DMRG_WARM_ON){
         fprintf(out_stream,"MPS warm-start:                   on (after %d cold iter)\n",warm_start_after);
         fprintf(out_stream,"Warm re-solve sweeps:             %d\n",warm_sweeps);
+        fprintf(out_stream,"Warm noise scale (x discarded w): %g\n",warm_noise_scale);
         fprintf(out_stream,"Rotate reused MPS:                %s\n",warm_rotate==DMRG_WARM_ON?"yes":"no (reuse-only)");
         fprintf(out_stream,"MPS-rotation bond dim (rot_m):    %d\n",rot_m==0?m:rot_m);
         if(warm_rotate==DMRG_WARM_ON)

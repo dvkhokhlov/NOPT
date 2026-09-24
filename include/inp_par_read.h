@@ -73,6 +73,7 @@ enum dmrg_schedule_kind { DMRG_SCHED_UNKNOWN  = -1, DMRG_SCHED_DEFAULT   = 0 };
 enum dmrg_localize_kind { DMRG_LOC_UNKNOWN = -1, DMRG_LOC_OFF = 0, DMRG_LOC_PM = 1, DMRG_LOC_BOYS = 2 };
 enum dmrg_locorder_kind { DMRG_LOCORDER_UNKNOWN = -1, DMRG_LOCORDER_FIEDLER = 0, DMRG_LOCORDER_GAOPT = 1, DMRG_LOCORDER_NONE = 2 };
 enum dmrg_warm_kind     { DMRG_WARM_UNKNOWN = -1, DMRG_WARM_OFF = 0, DMRG_WARM_ON = 1 };
+enum dmrg_lowm_kind     { DMRG_LOW_M_UNKNOWN = -1, DMRG_LOW_M_OFF = 0, DMRG_LOW_M_ON = 1, DMRG_LOW_M_AUTO = 2 };
 
 // $DSRG group — CCVV source dressing (dsrg_par::read_line).
 enum dsrg_ccvv_src_kind { DSRG_CCVV_SRC_UNKNOWN = -1, DSRG_CCVV_SRC_NORMAL = 0, DSRG_CCVV_SRC_ZERO = 1 };
@@ -93,7 +94,8 @@ class dmrg_par // settings for the DMRG (block2) CI backend; see $DMRG group
         std::string save_dir;  // block2 scratch root (renormalized ops / MPS)
         double memory;         // block2 double-stack size, GB (> 0)
         int    warm_start;       // MPS warm-start across macro-iterations (dmrg_warm_kind): off | on
-        int    warm_sweeps;      // max sweeps for the warm re-solve; 0 = auto (sweeps/2)
+        int    warm_sweeps;      // clean-sweep budget of the warm re-solve; 0 = auto (sweeps/2); +2 noisy sweeps when warm_noise_scale > 0
+        double warm_noise_scale; // warm-schedule noise as a multiple of the last solve's discarded weight
         int    rot_m;            // MPS-rotation time-evolution bond dim (0 = use m)
         int    rot_steps;        // MPS-rotation TE steps (dt = 1/rot_steps; total time 1)
         int    warm_start_after; // cold macro-iterations before freezing the localized frame
@@ -104,6 +106,8 @@ class dmrg_par // settings for the DMRG (block2) CI backend; see $DMRG group
         int    extract_m;        // bond dim the canonical MPS is compressed to before extraction (0 = none)
         double extract_cutoff;   // determinant magnitude cutoff for the extraction search
         int    h2caa_m;          // compressed-intermediate bond dim for the DSRG h2caa overlap (0 = auto: 2m)
+        int    low_m_opt;        // MPO simplification rule (dmrg_lowm_kind): on = store AD/full B explicitly
+                                 //   (faster solve, ~+40% operator stack) | off = transpose-lean | auto by K^2*m^2
 
         dmrg_par();
         int read_group(char * inp);
