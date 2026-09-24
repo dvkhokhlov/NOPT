@@ -196,6 +196,10 @@ vector<const char *>dmrg_save_dir_kw{{"save_dir"}};
 
 vector<const char *>dmrg_memory_kw{{"memory"}};
 
+vector<const char *>dmrg_rdm_passes_kw{{"rdm_passes"}};
+
+vector<const char *>dmrg_main_stack_kw{{"main_stack"}};
+
 vector<const char *>dmrg_localize_kw{{"localize"}};
 vector<const char *>dmrg_localize_off_kw{{"off"}};
 vector<const char *>dmrg_localize_pm_kw{{"pm"}};

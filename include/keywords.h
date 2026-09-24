@@ -68,6 +68,8 @@ extern vector<const char *>dmrg_schedule_kw      ;
 extern vector<const char *>dmrg_schedule_default_kw ;
 extern vector<const char *>dmrg_save_dir_kw       ;
 extern vector<const char *>dmrg_memory_kw         ;
+extern vector<const char *>dmrg_rdm_passes_kw     ;
+extern vector<const char *>dmrg_main_stack_kw     ;
 extern vector<const char *>dmrg_localize_kw       ;
 extern vector<const char *>dmrg_localize_off_kw   ;
 extern vector<const char *>dmrg_localize_pm_kw    ;

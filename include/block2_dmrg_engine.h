@@ -73,13 +73,12 @@ struct dmrgci_engine {
     std::shared_ptr<MultiMPSInfo<SU2>> mps_info;  // persists solve -> RDM read-out
     std::shared_ptr<MultiMPS<SU2, double>> mps;   // the converged (state-averaged) wavefunction
     std::vector<double> d2_av;                    // state-averaged block2 2-RDM: one n_act^4 block
+    std::vector<double> d2_states;                // per-state block2 2-RDM: n_s blocks of n_act^4, lattice order
     std::vector<double> d1_states;                // per-state 1-RDM: n_s blocks of n_act^2
     std::vector<double> w_state;                  // host SA weights (n_s); empty => equal weights
-    bool d2_valid = false;                        // are d2_av/d1_states current for this solve?
+    bool d2_valid = false;                        // are d2_av/d2_states/d1_states current for this solve?
     std::vector<double> dmfull_cache;             // full n_s x n_s spin-summed 1-RDM (properties), delocalized
     bool dmfull_valid = false;                     // is dmfull_cache current for this solve?
-    std::vector<double> dg2full;                  // full n_s x n_s transition 2-RDM (GAMMA convention), delocalized
-    bool g2full_valid = false;                     // is dg2full current for this solve?
 
     // Bare-state snapshot for the dressed re-solve overlap: one persistent single-root MPS per
     // root plus its scratch tag. snap_set is the storage slot calc_S answers for (-1 = none);
@@ -141,7 +140,8 @@ struct host_threads_guard {
     host_threads_guard &operator=(const host_threads_guard &) = delete;
 };
 
-void ensure_block2_runtime(const std::string &save_dir_root, double memory_gb, int n_threads);
+void ensure_block2_runtime(const std::string &save_dir_root, double memory_gb,
+                           double main_stack_gb, int n_threads);
 void remove_tag_files(const std::string &tag);
 void assert_stack_clean(const char *where);
 
@@ -149,6 +149,16 @@ void assert_stack_clean(const char *where);
 // Defined in block2_dmrg.cpp; shared with the transition-RDM / overlap read-outs.
 std::shared_ptr<MPS<SU2, double>>
 extract_root_single(dmrgci_engine &e, int st, const std::string &xtag, const std::string &stag);
+
+// One root pair's spin-summed N-body density in block2's lattice order, from one general-NPDM
+// Expect sweep on transient single-root extracts. The result is unscaled (block2's convention);
+// callers apply sqrt(2)^N and their own gathers.
+std::shared_ptr<GTensor<double>> npdm_lattice(dmrgci_engine &e, int N, int ket_state,
+                                              int bra_state, const char *tag);
+
+
+// State-averaged 2-RDM, the per-state 2-RDMs, 1-RDMs and energies, once per solve.
+void ensure_2rdm(dmrgci_engine &e);
 
 // Fit a lower-bond-dim copy of an MPS (identity-MPO Linear) — a cheaper TRIE for the read-out.
 // Defined engine-side; called from the read-out TU.
