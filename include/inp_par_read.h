@@ -25,6 +25,7 @@ class rhf_par
     public:
         int y;
         //guess
+        int guess;     // guess_kind: HUCKEL (default) | SAD
 //         int huckel_guess;
 //         int h_core_guess;
 //         int read_guess;
@@ -63,6 +64,9 @@ class dav_par
     
 };
 
+
+// Starting orbitals when the input carries no $VEC group.
+enum guess_kind { GUESS_HUCKEL = 0, GUESS_SAD = 1 };
 
 // CI backend driving the CAS-SCF active-space solve.
 enum cisolver_kind { CISOLVER_ALDET = 0, CISOLVER_DMRG = 1 };
@@ -115,6 +119,26 @@ class dmrg_par // settings for the DMRG (block2) CI backend; see $DMRG group
         int validate();        // enforces the value checks; exits loudly on a bad value
         int write_info();
         ~dmrg_par();
+
+};
+
+// $AVAS group -- atoms= and shells= are mandatory (avas_par::validate).
+class avas_par
+{
+    public:
+        int y;
+        std::vector<int> atoms;    // 1-based indices of the atoms carrying the target shells
+        std::vector<int> shell_n;  // principal number of each target nl shell
+        std::vector<int> shell_l;  // angular momentum of each target nl shell
+        std::vector<int> shell_atom; // 1-based atom each target label is bound to, 0 = every atom in atoms=
+        std::string ref_basis;     // reference minimal basis the target shells are taken from
+
+        avas_par();
+        int read_group(char * inp);
+        int read_line(char * inp);
+        int validate();            // enforces the mandatory keywords; exits loudly
+        int write_info() const;
+        ~avas_par();
 
 };
 
@@ -310,6 +334,7 @@ class inp_par
         char* point_group;
         
         rhf_par rhf;
+        avas_par avas;
         cas_par cas;
         cis_par cis;
         mp2_par mp2;

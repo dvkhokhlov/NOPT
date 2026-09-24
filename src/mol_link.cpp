@@ -672,6 +672,7 @@ int mol_cpy(molecule *  O, molecule * IN , int gen_states){
    O->reorder=IN->reorder;
    O-> a_num=IN-> a_num;
    O->cv_num=IN->cv_num;
+   O->guess_occ=IN->guess_occ;
    O->MO_VEC  = new double[O->n_ao*O->n_ao];
    O->MO_VEC_R= new double[O->n_ao*O->n_ao];
    O->NO_VEC  = new double[O->n_ao*O->n_ao];
