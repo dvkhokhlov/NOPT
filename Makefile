@@ -93,6 +93,18 @@ all:$(progs)
 # auto-generated header dependencies (from -MMD -MP); empty on a fresh tree
 -include $(wildcard src/*.d src/progs/*.d)
 
+# commit the build is made from, -dirty when tracked files differ from it. The header is rewritten
+# only when the stamp changes, so a new commit recompiles the programs' entry points and relinks.
+GIT_STAMP:=$(shell h=$$(git rev-parse --short=12 HEAD 2>/dev/null) && { git diff --quiet HEAD 2>/dev/null || h=$$h-dirty; echo $$h; } || echo unknown)
+GIT_STAMP_DEF:=\#define NOPT_GIT_COMMIT "$(GIT_STAMP)"
+
+include/git_stamp.h:FORCE
+	@echo '$(GIT_STAMP_DEF)' | cmp -s - $@ || echo '$(GIT_STAMP_DEF)' > $@
+
+FORCE:
+
+$(patsubst %.cpp,src/progs/%.o,$(progs_cpp)):include/git_stamp.h
+
 print:
 	@echo $(progs_cpp)
 	@echo $(progs)
@@ -128,6 +140,6 @@ src/block2_npdm.o:src/block2_npdm.cpp
 	$(CC) -o $@ -c $< $(OPT_LEVEL) -fopenmp -MMD -MP $(DEFINITIONS) $(INCLUDE_DIRS) -fmax-errors=5
 
 clean:
-	rm -f $(progs) src/*.o src/progs/*.o src/*.d src/progs/*.d
+	rm -f $(progs) src/*.o src/progs/*.o src/*.d src/progs/*.d include/git_stamp.h
 clean_gcov:
 	rm src/*.gcda src/progs/*.gcda src/*.gcno src/progs/*.gcno

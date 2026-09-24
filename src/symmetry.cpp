@@ -158,6 +158,7 @@ int Sn(double ** Op, int n){
                         
 symmetry::symmetry(){
     
+    n_rep    = 0;
     group    = nullptr;
     Op_Space = nullptr;
     Op_Orb   = nullptr;

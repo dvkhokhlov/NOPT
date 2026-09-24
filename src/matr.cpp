@@ -1839,7 +1839,7 @@ int HSC_CE(double * H, double * S, double * C, double * B, double * ev, int n){
                         Sm05,n,0.0,
                         C,n);
     
-    
+    delete[] Sm05;
     return 1;
     
 }
@@ -1974,7 +1974,7 @@ int HSC_CE_p(double * H, double * S, double * C, double * B, double * ev, int n,
                         Sm05,n,0.0,
                         C,n);
     
-    
+    delete[] Sm05;
     return 1;
     
 }
