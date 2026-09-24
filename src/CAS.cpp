@@ -14,6 +14,7 @@
 # include "tensor_rotate.h"    // rotate1/rotate2 (active-basis transforms)
 # include "dmrg_log.h"         // per-solve block2 sweep log
 # include "aldet_casci_wrap.h"
+# include "superci_pt.h"
 #ifdef NOPT_HAS_BLOCK2
 # include "block2_casci_wrap.h"
 #endif
@@ -1397,6 +1398,12 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
     
     jacobi_mcscf_sd_engine j_sd;
     j_sd.init(CAS->G,CAS->B,CAS->n_core, CAS->n_act,CAS->n_vac,CAS->n_ao,CAS->n_s_opt,cas->x_max);
+
+    //super-CI-PT engine
+    superci_pt_engine SXPT;
+    if(cas->converger==CONVERGER_SXPT)
+        SXPT.init(CAS->n_core, CAS->n_act, CAS->n_vac, CAS->n_ao, M->rep_num, M->S.n_rep, cas->x_max,
+                  cas->lbfgs);
     
     dmrg_log_set_tag(dmrg_log_tag::primary);
     n_dav_conv = CAS->CI_calc(1,0,0);
@@ -1444,8 +1451,15 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
         if(cas->method==1)E = CAS->SA_grad_hess_calc();
         if(cas->method==2)E = CAS->SM_grad_hess_calc();
         
-        if(cas->method==1)max_grad_el = SOSCF.calc(CAS->G,CAS->B);
-        if(cas->method==2)max_grad_el = j_sd.find_max_el();
+        if      (cas->converger==CONVERGER_SOSCF){
+            if(cas->method==1)max_grad_el = SOSCF.calc(CAS->G,CAS->B);
+            if(cas->method==2)max_grad_el = j_sd.find_max_el();
+        }
+        else if (cas->converger==CONVERGER_SXPT ) max_grad_el = SXPT.calc(CAS->G);
+        else{
+            fprintf(out_stream,"ERROR: unknown CASSCF converger (%d); accepted: soscf, sxpt\n",cas->converger);
+            exit(EXIT_FAILURE);
+        }
         
         
         // An energy rise nothing accounts for: an honest step moves the energy by |g||kappa| to first
@@ -1455,6 +1469,7 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
         bool cold_fb = CAS->CI->last_solve_cold();
         if(cold_fb) any_cold=true;
         double step_ref = rot_step;                                    // SOSCF returns the step it applied
+        if(cas->converger==CONVERGER_SXPT) step_ref = SXPT.applied();  // SXPT returns the raw amplitude
         const double ci_floor  = CAS_RESET_TRUNC_FRAC*CAS->CI->last_solve_trunc_de();
         const double ci_res    = CAS->CI->energy_resolution();
         double rise_ref = grad_old*step_ref;
@@ -1462,7 +1477,8 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
         if(ci_res  >rise_ref) rise_ref = ci_res;
         const bool diis_reset = (n_iter>0 && !cold_fb && E-E_old>0 && E-E_old > rise_ref); // a cold solve's rise is expected, its reset done
         if(diis_reset){
-            SOSCF.reset_history();
+            if     (cas->converger==CONVERGER_SOSCF) SOSCF.reset_history();
+            else if(cas->converger==CONVERGER_SXPT ) SXPT .reset_history();
             any_reset=true;
         }
         bool hit_max = CAS->CI->last_solve_hit_max();
@@ -1488,8 +1504,19 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
         if(fabs(E-E_old)<cas->e_conv){converged=1; break;}
         if(max_grad_el  <cas->g_conv){converged=2; break;}
         
-        if(cas->method==1)rot_step=SOSCF.step(CAS->MO_VEC,CAS->MO_BUF);
-        if(cas->method==2)rot_step=j_sd.step(CAS->MO_VEC,CAS->MO_BUF);
+        if      (cas->converger==CONVERGER_SOSCF){
+            if(cas->method==1)rot_step=SOSCF.step(CAS->MO_VEC,CAS->MO_BUF);
+            if(cas->method==2)rot_step=j_sd.step(CAS->MO_VEC,CAS->MO_BUF);
+        }
+        else if (cas->converger==CONVERGER_SXPT ){
+            rot_step   =SXPT.step(CAS, cas->s_conv);
+            // below s_conv step() applied nothing: the CI already belongs to these orbitals
+            if(rot_step<cas->s_conv){converged=3; break;}
+        }
+        else{
+            fprintf(out_stream,"ERROR: unknown CASSCF converger (%d); accepted: soscf, sxpt\n",cas->converger);
+            exit(EXIT_FAILURE);
+        }
 //         printf_timer("CAS_step");
 //         converged=0; break;
         dmrg_log_set_tag(dmrg_log_tag::scf);
@@ -1498,7 +1525,8 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
         // history was accumulated on is gone, so extrapolating across it fits a defunct surface.
         const bool cold_now = CAS->CI->last_solve_cold();
         if(cold_now){
-            SOSCF.reset_history();
+            if     (cas->converger==CONVERGER_SOSCF) SOSCF.reset_history();
+            else if(cas->converger==CONVERGER_SXPT ) SXPT .reset_history();
             any_cold=true;  // this solve may never reach a row of its own
         }
         // rot_step was measured against a surface that no longer exists; judge it one iteration

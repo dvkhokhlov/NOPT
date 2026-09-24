@@ -79,6 +79,14 @@ vector<const char *>cisolver_aldet_kw{{"aldet"}};
 
 vector<const char *>cisolver_dmrg_kw{{"dmrg"}};
 
+vector<const char *>converger_kw{{"converger"}};
+
+vector<const char *>converger_soscf_kw{{"soscf"}};
+
+vector<const char *>converger_sxpt_kw{{"sxpt"}};
+
+vector<const char *>cas_lbfgs_kw{{"lbfgs"}};
+
 vector<const char *>num_state_kw{{"n_s"},
                                  {"numstate"},
                                  {"num_state"}};
@@ -750,6 +758,24 @@ int kw_to_kw(char * inp, vector<const char *> keywords, vector<const char *> key
         if(strstr(f,"=")==NULL)failed_find_symbol(inp,keywords,'=');
         s=strstr(f,"=");while(is_splitter(s[0]))s++;
         if(key_word_eq(s,keywords_2))return 1;
+    }
+    return 0;
+}
+
+// kw_to_kw, but the value must end right after the matched keyword (splitter or end)
+int kw_to_kw_exact(char * inp, vector<const char *> keywords, vector<const char *> keywords_2){
+    
+    char* f;
+    char* s;
+    f = key_word_find(inp,keywords);
+    if(f!=NULL){
+        if(strstr(f,"=")==NULL)failed_find_symbol(inp,keywords,'=');
+        s=strstr(f,"=");while(is_splitter(s[0]))s++;
+        for(const auto&k:keywords_2){
+            if(ci_strstr(s,k)!=s) continue;
+            char r = s[strlen(k)];
+            if(r=='\0'||is_splitter(r)) return 1;
+        }
     }
     return 0;
 }
