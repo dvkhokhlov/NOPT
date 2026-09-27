@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <cstring>
+#include <cctype>
 
 #include "inp_par_read.h"
 #include "keywords.h"
@@ -89,6 +90,7 @@ int backup_code_print(int a){
 rhf_par::rhf_par(){
     
     y=0;
+    guess = GUESS_HUCKEL;
 //     huckel_guess=0;
 //     h_core_guess=0;
 //     read_guess  =0;
@@ -140,7 +142,8 @@ int rhf_par::read_group(char * inp){
 
 int rhf_par::read_line(char * inp){
     
-    if(key_word_comp(inp, rhf_huckel)){
+    // GUESS=HUCKEL carries the retired bare keyword as its value
+    if(key_word_comp(inp, rhf_huckel)&&(key_word_comp(inp, guess_kw)==0)){
         fprintf(out_stream,"ERROR: while parsing $RHF group keyword HUCKEL is deprecated\n");
         exit(0);
     }
@@ -150,6 +153,15 @@ int rhf_par::read_line(char * inp){
         exit(0);
     }
     
+    if(key_word_comp(inp, guess_kw)){
+        if      (kw_to_kw(inp, guess_kw, guess_huckel_kw)) guess = GUESS_HUCKEL;
+        else if (kw_to_kw(inp, guess_kw, guess_sad_kw   )) guess = GUESS_SAD;
+        else{
+            fprintf(out_stream,"ERROR: unknown GUESS value; accepted: huckel, sad\n");
+            exit(1);
+        }
+    }
+
 //     if(key_word_comp(inp, rhf_read))
 //         read_guess=1;
     
@@ -801,11 +813,14 @@ dmrg_par::dmrg_par(){
     schedule  = DMRG_SCHED_DEFAULT;
     save_dir  = DMRG_SAVE_DIR_DEFAULT;
     memory    = DMRG_MEMORY_DEFAULT;
+    main_stack = DMRG_MAIN_STACK_DEFAULT;
+    rdm_passes = DMRG_RDM_PASSES_DEFAULT;
     localize  = DMRG_LOC_OFF;
     dump_loc_orbs = 0;
     loc_order = DMRG_LOCORDER_FIEDLER;
     warm_start       = DMRG_WARM_START_DEFAULT;
     warm_sweeps      = DMRG_WARM_SWEEPS_DEFAULT;
+    warm_noise_scale = DMRG_WARM_NOISE_SCALE_DEFAULT;
     rot_m            = DMRG_ROT_M_DEFAULT;
     rot_steps        = DMRG_ROT_STEPS_DEFAULT;
     warm_start_after = DMRG_WARM_START_AFTER_DEFAULT;
@@ -816,6 +831,7 @@ dmrg_par::dmrg_par(){
     extract_m        = DMRG_EXTRACT_M_DEFAULT;
     extract_cutoff   = DMRG_EXTRACT_CUTOFF_DEFAULT;
     h2caa_m          = DMRG_H2CAA_M_DEFAULT;
+    low_m_opt        = DMRG_LOW_M_OPT_DEFAULT;
 
 }
 
@@ -875,6 +891,14 @@ int dmrg_par::read_line(char * inp){
         memory = kw_to_f(inp, dmrg_memory_kw, DMRG_MEMORY_DEFAULT);
     }
 
+    if(key_word_comp(inp, dmrg_main_stack_kw)){
+        main_stack = kw_to_f(inp, dmrg_main_stack_kw, DMRG_MAIN_STACK_DEFAULT);
+    }
+
+    if(key_word_comp(inp, dmrg_rdm_passes_kw)){
+        rdm_passes = kw_to_i(inp, dmrg_rdm_passes_kw, DMRG_RDM_PASSES_DEFAULT);
+    }
+
     if(key_word_comp(inp, dmrg_localize_kw)){
         if     (kw_to_kw(inp, dmrg_localize_kw, dmrg_localize_off_kw))  localize = DMRG_LOC_OFF;
         else if(kw_to_kw(inp, dmrg_localize_kw, dmrg_localize_pm_kw))   localize = DMRG_LOC_PM;
@@ -901,6 +925,10 @@ int dmrg_par::read_line(char * inp){
 
     if(key_word_comp(inp, dmrg_warm_sweeps_kw)){
         warm_sweeps = kw_to_i(inp, dmrg_warm_sweeps_kw, DMRG_WARM_SWEEPS_DEFAULT);
+    }
+
+    if(key_word_comp(inp, dmrg_warm_noise_scale_kw)){
+        warm_noise_scale = kw_to_f(inp, dmrg_warm_noise_scale_kw, DMRG_WARM_NOISE_SCALE_DEFAULT);
     }
 
     if(key_word_comp(inp, dmrg_rot_m_kw)){
@@ -947,6 +975,12 @@ int dmrg_par::read_line(char * inp){
         h2caa_m = kw_to_i(inp, dmrg_h2caa_m_kw, DMRG_H2CAA_M_DEFAULT);
     }
 
+    if(key_word_comp(inp, dmrg_low_m_opt_kw)){
+        if     (kw_to_kw(inp, dmrg_low_m_opt_kw, dmrg_warm_off_kw)) low_m_opt = DMRG_LOW_M_OFF;
+        else if(kw_to_kw(inp, dmrg_low_m_opt_kw, dmrg_warm_on_kw))  low_m_opt = DMRG_LOW_M_ON;
+        else                                                        low_m_opt = DMRG_LOW_M_UNKNOWN;
+    }
+
     return 0;
 }
 
@@ -984,11 +1018,7 @@ int dmrg_par::validate(){
         ok=0;
     }
     if(loc_order==DMRG_LOCORDER_UNKNOWN){
-        fprintf(out_stream,"ERROR: $DMRG unknown loc_order value; accepted: fiedler, none\n");
-        ok=0;
-    }
-    if(loc_order==DMRG_LOCORDER_GAOPT){
-        fprintf(out_stream,"ERROR: $DMRG loc_order=gaopt not implemented yet; accepted: fiedler, none\n");
+        fprintf(out_stream,"ERROR: $DMRG unknown loc_order value; accepted: fiedler, gaopt, none\n");
         ok=0;
     }
     if(save_dir.empty()){
@@ -997,6 +1027,15 @@ int dmrg_par::validate(){
     }
     if(memory<=0){
         fprintf(out_stream,"ERROR: $DMRG memory=%g must be > 0 (block2 double-stack size in GB)\n",memory);
+        ok=0;
+    }
+    if(rdm_passes<1){
+        fprintf(out_stream,"ERROR: $DMRG rdm_passes=%d must be >= 1\n",rdm_passes);
+        ok=0;
+    }
+    if(main_stack!=0 && (main_stack<=0 || main_stack>=memory)){
+        fprintf(out_stream,"ERROR: $DMRG main_stack=%g must be > 0 and < memory=%g GB\n",
+                main_stack,memory);
         ok=0;
     }
     if(warm_start==DMRG_WARM_UNKNOWN){
@@ -1028,7 +1067,15 @@ int dmrg_par::validate(){
         fprintf(out_stream,"ERROR: $DMRG h2caa_m=%d must be >= 0 (0 = auto: 2m)\n",h2caa_m);
         ok=0;
     }
+    if(low_m_opt==DMRG_LOW_M_UNKNOWN){
+        fprintf(out_stream,"ERROR: $DMRG unknown low_m_opt value; accepted: off, on\n");
+        ok=0;
+    }
     if(warm_start==DMRG_WARM_ON){
+        if(warm_noise_scale<0){
+            fprintf(out_stream,"ERROR: $DMRG warm_noise_scale=%g must be >= 0 (0 = noise-free warm re-solve)\n",warm_noise_scale);
+            ok=0;
+        }
         if(rot_m<0){
             fprintf(out_stream,"ERROR: $DMRG rot_m=%d must be >= 0 (0 = use m)\n",rot_m);
             ok=0;
@@ -1066,13 +1113,27 @@ int dmrg_par::write_info(){
         fprintf(out_stream,"Dump localized orbitals:          yes\n");
     if(loc_order==DMRG_LOCORDER_FIEDLER)
         fprintf(out_stream,"DMRG orbital ordering:            Fiedler\n");
+    if(loc_order==DMRG_LOCORDER_GAOPT)
+        fprintf(out_stream,"DMRG orbital ordering:            GAopt (genetic, seeded)\n");
     if(loc_order==DMRG_LOCORDER_NONE)
         fprintf(out_stream,"DMRG orbital ordering:            none (input order)\n");
     fprintf(out_stream,"Scratch directory (save_dir):     %s\n",save_dir.c_str());
     fprintf(out_stream,"Memory (block2 double stack):     %g GB\n",memory);
+    if(main_stack>0)
+        fprintf(out_stream,"Main double stack:                %g GB\n",main_stack);
+    fprintf(out_stream,"RDM sweep passes:                 %d\n",rdm_passes);
+    fprintf(out_stream,"Partition files:                  fp_codec cutoff %g, chunk %d\n",
+            (double)DMRG_FP_CODEC_CUTOFF,(int)DMRG_FP_CODEC_CHUNK);
+    if(low_m_opt==DMRG_LOW_M_AUTO)
+        fprintf(out_stream,"Low-m MPO optimization:           auto\n");
+    if(low_m_opt==DMRG_LOW_M_ON)
+        fprintf(out_stream,"Low-m MPO optimization:           on\n");
+    if(low_m_opt==DMRG_LOW_M_OFF)
+        fprintf(out_stream,"Low-m MPO optimization:           off\n");
     if(warm_start==DMRG_WARM_ON){
         fprintf(out_stream,"MPS warm-start:                   on (after %d cold iter)\n",warm_start_after);
         fprintf(out_stream,"Warm re-solve sweeps:             %d\n",warm_sweeps);
+        fprintf(out_stream,"Warm noise scale (x discarded w): %g\n",warm_noise_scale);
         fprintf(out_stream,"Rotate reused MPS:                %s\n",warm_rotate==DMRG_WARM_ON?"yes":"no (reuse-only)");
         fprintf(out_stream,"MPS-rotation bond dim (rot_m):    %d\n",rot_m==0?m:rot_m);
         if(warm_rotate==DMRG_WARM_ON)
@@ -1096,6 +1157,197 @@ int dmrg_par::write_info(){
 }
 
 dmrg_par::~dmrg_par(){
+
+}
+
+//-----------------------------------------------------------------------------------------------------
+
+static const char * avas_l_labels = "spdfghik";
+
+// "4s" -> n=4,l=0. Non-zero return = not an nl label.
+static int avas_nl_from_label(const char * lab, int * n, int * l){
+
+    if(lab==nullptr)                       return 1;
+    if(strlen(lab)!=2)                     return 1;
+    if((lab[0]<'1')||(lab[0]>'9'))         return 1;
+
+    const char * p = strchr(avas_l_labels,tolower((unsigned char)lab[1]));
+    if(p==nullptr)                         return 1;
+
+    *n = lab[0]-'0';
+    *l = int(p-avas_l_labels);
+    if(*n <= *l)                           return 1;
+
+    return 0;
+}
+
+// "2:5p" -> the "5p" label bound to atom 2; a bare label is bound to atom 0.
+static int avas_target_from_label(const char * lab, int * n, int * l, int * atom){
+
+    if(lab==nullptr)                       return 1;
+
+    const char * c = strchr(lab,':');
+    if(c==nullptr){
+        *atom=0;
+        return avas_nl_from_label(lab,n,l);
+    }
+
+    for(const char * p=lab;p<c;p++)
+        if((p[0]<'0')||(p[0]>'9'))         return 1;
+
+    *atom = atoi(lab);
+    if(*atom<1)                            return 1;
+
+    return avas_nl_from_label(c+1,n,l);
+}
+
+avas_par::avas_par(){
+
+    y=0;
+    ref_basis = AVAS_REF_BASIS_DEFAULT;
+
+}
+
+int avas_par::read_group(char * inp){
+
+    recursive_file P;
+    char line[BUF_LINE_LENGTH];
+
+    P.r_open(inp);
+
+    P.r_gets(line,BUF_LINE_LENGTH);;
+    while((key_word_comp(line, avas_group_start)==0)&&(!P.r_eof()))P.r_gets(line,BUF_LINE_LENGTH);;
+    if(key_word_comp(line, avas_group_start)==0){
+        return 0;
+    }
+    y=1;
+
+    while(!P.r_eof()){
+        read_line(line);
+        if(key_word_comp(line, avas_group_end))break;
+        P.r_gets(line,BUF_LINE_LENGTH);;
+    }
+
+    return 0;
+}
+
+int avas_par::read_line(char * inp){
+
+    if(key_word_comp(inp, avas_atoms_kw)){
+        int n = kw_count(inp, avas_atoms_kw, ';');
+        atoms.resize(n);
+        kw_to_i_v(&atoms, inp, avas_atoms_kw, n);
+    }
+
+    if(key_word_comp(inp, avas_shells_kw)){
+        int n = kw_count(inp, avas_shells_kw, ';');
+        std::vector<char*> lab;
+        lab.resize(n);
+        kw_to_s_v(&lab, inp, avas_shells_kw, n);
+        shell_n.resize(n);
+        shell_l.resize(n);
+        shell_atom.resize(n);
+        for(int i=0;i<n;i++){
+            if(avas_target_from_label(lab[i],&shell_n[i],&shell_l[i],&shell_atom[i])){
+                fprintf(out_stream,"ERROR: $AVAS shells= got \"%s\"; expected nl labels like 4s or 3d,"
+                                   " or atom-qualified ones like 2:5p\n",lab[i]);
+                exit(1);
+            }
+            delete[] lab[i];
+        }
+    }
+
+    if(key_word_comp(inp, avas_ref_basis_kw)){
+        char* tmp=nullptr;
+        kw_to_s(&tmp, inp, avas_ref_basis_kw);
+        if(tmp){ ref_basis=tmp; delete[] tmp; }
+    }
+
+    return 0;
+}
+
+int avas_par::validate(){
+
+    int ok=1;
+
+    if(atoms.size()==0){
+        fprintf(out_stream,"ERROR: $AVAS needs atoms=<1-based atom list>; (no default)\n");
+        ok=0;
+    }
+    if(shell_n.size()==0){
+        fprintf(out_stream,"ERROR: $AVAS needs shells=<nl label list>; e.g. shells=4s 3d; (no default)\n");
+        ok=0;
+    }
+    if(ref_basis.empty()){
+        fprintf(out_stream,"ERROR: $AVAS ref_basis must not be empty\n");
+        ok=0;
+    }
+    // duplicates would repeat reference functions and make the reference overlap singular
+    for(int i=0;i<int(atoms.size());i++){
+        if(atoms[i]<1){
+            fprintf(out_stream,"ERROR: $AVAS atom index %d must be >= 1\n",atoms[i]);
+            ok=0;
+        }
+        for(int j=i+1;j<int(atoms.size());j++)
+            if(atoms[i]==atoms[j]){
+                fprintf(out_stream,"ERROR: $AVAS atom %d is listed twice\n",atoms[i]);
+                ok=0;
+            }
+    }
+    for(int i=0;i<int(shell_n.size());i++)
+    for(int j=i+1;j<int(shell_n.size());j++)
+        if((shell_n[i]==shell_n[j])&&(shell_l[i]==shell_l[j]))
+        if((shell_atom[i]==shell_atom[j])||(shell_atom[i]==0)||(shell_atom[j]==0)){
+            fprintf(out_stream,"ERROR: $AVAS shell %d%c is listed twice\n",shell_n[i],avas_l_labels[shell_l[i]]);
+            ok=0;
+        }
+    for(int i=0;i<int(shell_atom.size());i++){
+        if(shell_atom[i]==0)continue;
+        int listed=0;
+        for(int j=0;j<int(atoms.size());j++)
+            if(atoms[j]==shell_atom[i])listed=1;
+        if(listed==0){
+            fprintf(out_stream,"ERROR: $AVAS shell %d:%d%c names atom %d, which is not in atoms=\n",
+                                shell_atom[i],shell_n[i],avas_l_labels[shell_l[i]],shell_atom[i]);
+            ok=0;
+        }
+    }
+    // a bare label applies to every listed atom, a qualified one to its own atom only
+    if(shell_atom.size())
+    for(int i=0;i<int(atoms.size());i++){
+        int covered=0;
+        for(int k=0;k<int(shell_atom.size());k++)
+            if((shell_atom[k]==0)||(shell_atom[k]==atoms[i]))covered=1;
+        if(covered==0){
+            fprintf(out_stream,"ERROR: $AVAS atom %d has no target shell\n",atoms[i]);
+            ok=0;
+        }
+    }
+
+    if(!ok)exit(1);
+
+    return 0;
+}
+
+int avas_par::write_info() const {
+
+    fprintf(out_stream,"AVAS settings:\n");
+    fprintf(out_stream,"Reference basis:                  %s\n",ref_basis.c_str());
+    fprintf(out_stream,"Target atoms:                    ");
+    for(int i=0;i<int(atoms.size());i++)
+        fprintf(out_stream," %d",atoms[i]);
+    fprintf(out_stream,"\n");
+    fprintf(out_stream,"Target shells:                   ");
+    for(int i=0;i<int(shell_n.size());i++){
+        if(shell_atom[i])fprintf(out_stream," %d:%d%c",shell_atom[i],shell_n[i],avas_l_labels[shell_l[i]]);
+        else             fprintf(out_stream," %d%c",shell_n[i],avas_l_labels[shell_l[i]]);
+    }
+    fprintf(out_stream,"\n\n");
+
+    return 0;
+}
+
+avas_par::~avas_par(){
 
 }
 
@@ -1873,6 +2125,9 @@ int inp_par::read(char * ext_inp){
     if(cis.y)  cis.read_group(inp_name);
     if(mp2.y)  mp2.read_group(inp_name);
 
+    avas.read_group(inp_name);
+    if(avas.y) avas.validate();
+
     
     
     
@@ -1997,6 +2252,13 @@ std::vector<int> molecule_read_by_inp_par(molecule * M, inp_par * P){
         exit(EXIT_FAILURE);
     }
     
+    // Linking reorders the merged orbitals, which detaches them from the atomic
+    // occupations the SAD density is carried by.
+    if((s>1)&&(P->rhf.guess==GUESS_SAD)){
+        fprintf(out_stream,"ERROR: SAD guess does not support N_MOL>1 (got %d molecules); use GUESS=huckel\n",s);
+        exit(EXIT_FAILURE);
+    }
+
     // DMRG reads only the active-space dimensions off molecule::CI -- never the
     // determinant space, which is unbuildable at the sizes DMRG is used for.
     int ci_alloc = ALDET_ALLOC_FULL;
@@ -2094,7 +2356,7 @@ std::vector<int> molecule_read_by_inp_par(molecule * M, inp_par * P){
         
         }
         
-        Mf[i].MO_gen();
+        Mf[i].MO_gen(P->rhf.guess);
         
         if(mc)Mf[i].active_space_read(P->rhf.y,1-P->cas.y,ci_alloc);
         else

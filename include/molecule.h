@@ -63,6 +63,7 @@ class molecule
         double * MO_VEC_B;
         double * MO_BUF;
         double * MO_VEC_R;//vectors for reading with additional basis
+        std::vector<double> guess_occ;//occupations of the MO_VEC rows, empty unless the SAD guess ran
         double * orb_energy;
         double * orb_energy_B;
         int mol_charge;
@@ -187,7 +188,7 @@ class molecule
         int reorder_orbitals();
         int STATES_set_zero();
         int active_space_print(int f);
-        int MO_gen();
+        int MO_gen(int guess);
         int huckel_guess();
         int project_to_full_basis();
         int UHF_MO_read();

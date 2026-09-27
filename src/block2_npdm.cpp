@@ -1,6 +1,6 @@
-// block2_casci_wrap density read-outs over the external block2 DMRG library: the per-state
-// spin-summed 2-RDM (G2_calc_diag) and 3-body moment (G3_calc_diag). All port Forte's block2
-// primitives onto NOPT's own scaffolds; split from block2_dmrg.cpp, same author idiom.
+// block2_casci_wrap density read-outs over the external block2 DMRG library: the general-NPDM
+// sweep every reduced density matrix runs through (npdm_lattice), the per-state spin-summed 2-RDM
+// (G2_calc_diag) and the 3-body moment (G3_calc_diag). Split from block2_dmrg.cpp, same idiom.
 
 #include "block2_dmrg_engine.h"   // block2 headers + dmrgci_engine + shared helpers
 
@@ -8,6 +8,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <memory>
 #include <string>
@@ -15,6 +16,7 @@
 #include <vector>
 
 #include "common_vars.h"      // out_stream
+#include "dmrg_log.h"         // DMRG_LOG_IPRINT, dmrg_log_guard
 #include "tensor_rotate.h"    // rotate2/rotate3 (active-space basis back-transform)
 
 using namespace block2;
@@ -51,102 +53,6 @@ static void g2full_finish_block(const dmrgci_engine &e, const double *raw,
                         cur[(((size_t)p * n + r) * n + s) * n + q];
 }
 
-#if 0  // full transition 2-RDM: no consumer, the driver reads G2_calc_diag. Revive for first-order
-       // properties -- the 2-body Mbar needs bra != ket densities between the dressed roots.
-// Full n_s x n_s spin-summed 2-RDM, once per solve: one Expect sweep per root pair i<=j of the
-// single SA MultiMPS yields the block2 2-RDM <i| a+ a+ a a |j>; the (j,i) block follows by the
-// operator adjoint (full index reversal on the raw layout, before the un-permute/back-transform
-// chain that all four legs share and therefore commute with). Mirrors ensure_2rdm/ensure_dm_full.
-static void ensure_g2full(dmrgci_engine &e) {
-    if (e.g2full_valid)
-        return;
-    host_threads_guard htg;
-    const int n = e.n_act;
-    const size_t blk = (size_t)n * n * n * n;
-    e.dg2full.assign(blk * e.n_s * e.n_s, 0.0);
-
-    std::vector<int> iperm; // inverse of reorder_perm (Fiedler lattice -> input)
-    if (!e.reorder_perm.empty()) {
-        iperm.resize(n);
-        for (int i = 0; i < n; i++) iperm[e.reorder_perm[i]] = i;
-    }
-    std::vector<double> perm_scr, rot_scr; // un-permute / back-transform targets (no aliasing)
-    if (!iperm.empty()) perm_scr.resize(blk);
-    if (e.localize_on) rot_scr.resize(blk);
-
-    // State-pair-independent MPO. NoTransposeRule: the transpose-symmetry simplification is
-    // invalid when bra != ket (the off-diagonal transition blocks).
-    std::shared_ptr<MPO<SU2, double>> p2mpo = std::make_shared<PDM2MPOQC<SU2, double>>(e.hamil);
-    p2mpo = std::make_shared<SimplifiedMPO<SU2, double>>(
-        p2mpo,
-        std::make_shared<NoTransposeRule<SU2, double>>(std::make_shared<RuleQC<SU2, double>>()),
-        true, true, OpNamesSet({OpNames::R, OpNames::RD}));
-
-    std::vector<double> raw(blk), rev; // raw block2 tensor + adjoint scratch (i<j only)
-    if (e.n_s > 1) rev.resize(blk);
-
-    for (int i = 0; i < e.n_s; i++)
-        for (int j = i; j < e.n_s; j++) {
-            // Fresh extract of both roots so bra/ket share a canonical center (the single-MPS
-            // form is all-or-nothing: the effective Hamiltonian asserts bra and ket agree).
-            const std::string itag = e.mps_info->tag + "-g" + std::to_string(i);
-            const std::string istag = itag + "-s";
-            std::shared_ptr<MPS<SU2, double>> imps = extract_root_single(e, i, itag, istag);
-            std::string jtag, jstag;
-            std::shared_ptr<MPS<SU2, double>> jmps = imps;
-            if (j != i) {
-                jtag = e.mps_info->tag + "-g" + std::to_string(j);
-                jstag = jtag + "-s";
-                jmps = extract_root_single(e, j, jtag, jstag);
-            }
-
-            auto p2me = std::make_shared<MovingEnvironment<SU2, double, double>>(p2mpo, imps, jmps,
-                                                                                 "T2PDM");
-            p2me->init_environments(false);
-            auto ex2 = std::make_shared<Expect<SU2, double, double>>(p2me, (ubond_t)e.cfg.m,
-                                                                     (ubond_t)e.cfg.m);
-            ex2->iprint = 0; // silence the per-site Expect sweep log
-            ex2->solve(true, jmps->center == 0);
-            std::shared_ptr<GTensor<double>> d2 = ex2->get_2pdm_spatial(); // {n,n,n,n}
-            std::copy(d2->data->data(), d2->data->data() + blk, raw.data());
-
-            g2full_finish_block(e, raw.data(), iperm, perm_scr.data(), rot_scr.data(),
-                                e.dg2full.data() + (size_t)(i * e.n_s + j) * blk);
-            if (j != i) {
-                // (j,i) = adjoint of (i,j): d2_ji[p,q,r,s] = d2_ij[s,r,q,p] on the raw layout
-                for (int p = 0; p < n; p++)
-                    for (int q = 0; q < n; q++)
-                        for (int r = 0; r < n; r++)
-                            for (int s = 0; s < n; s++)
-                                rev[(((size_t)p * n + q) * n + r) * n + s] =
-                                    raw[(((size_t)s * n + r) * n + q) * n + p];
-                g2full_finish_block(e, rev.data(), iperm, perm_scr.data(), rot_scr.data(),
-                                    e.dg2full.data() + (size_t)(j * e.n_s + i) * blk);
-            }
-
-            p2me->remove_partition_files();
-            remove_tag_files(itag); // the per-root extracts and their single-MPS copies are transient
-            remove_tag_files(istag);
-            if (j != i) {
-                remove_tag_files(jtag);
-                remove_tag_files(jstag);
-            }
-        }
-    p2mpo->deallocate();
-    e.g2full_valid = true;
-    assert_stack_clean("transition 2-RDM read"); // the Expect sweeps must leave the stacks as they found them
-}
-
-void block2_casci_wrap::G_calc_full(double *G) {
-    dmrgci_engine &e = *impl_;
-    ensure_g2full(e);
-    // GAMMA convention, delocalized basis; caller zeroes, we accumulate (matches every RDM call).
-    const size_t nel = e.dg2full.size();
-    for (size_t k = 0; k < nel; k++)
-        G[k] += e.dg2full[k];
-}
-#endif
-
 // The lattice -> input orbital map of every read-out: inverse of reorder_perm, empty when the
 // solve ran in the input order.
 static std::vector<int> lattice_iperm(const dmrgci_engine &e) {
@@ -166,66 +72,41 @@ static void require_solved(const dmrgci_engine &e, const char *what) {
     }
 }
 
-// ---- per-state 2-RDM (diagonal blocks) -----------------------------------------------------
+// ---- the general NPDM read-out every density matrix runs through ---------------------------
 
-// The n_s diagonal blocks of the state matrix, one Expect sweep per root, GAMMA convention in
-// the delocalized basis. Overwrites the caller's n_s consecutive n_act^4 blocks (aldet's
-// G_calc convention).
-void block2_casci_wrap::G2_calc_diag(double *G) {
-    dmrgci_engine &e = *impl_;
-    const int n = e.n_act;
-    const size_t blk = (size_t)n * n * n * n;
-    if (e.g2full_valid) { // the full state matrix is already cached: read its diagonal
-        for (int s = 0; s < e.n_s; s++)
-            std::copy(e.dg2full.begin() + (size_t)(s * e.n_s + s) * blk,
-                      e.dg2full.begin() + (size_t)(s * e.n_s + s + 1) * blk, G + (size_t)s * blk);
-        return;
+// One process plays every rank in turn, so block2's cross-rank sum of a pass's NPDM fragment has
+// nothing to add: each pass keeps its own share and the caller sums the passes. Every other
+// collective keeps the base class's single-rank assertion.
+struct npdm_pass_comm : ParallelCommunicator<SU2> {
+    npdm_pass_comm(int size, int rank) : ParallelCommunicator<SU2>(size, rank, 0) {}
+    void allreduce_sum(double *, size_t) override {}
+};
+
+// block2's ParallelRule constructor repoints the distributed scratch prefix at the rank. The
+// serial prefix must be restored on every exit from the pass loop, exceptional ones included.
+struct prefix_guard {
+    std::string prefix;
+    bool can_write;
+    prefix_guard()
+        : prefix(frame_<double>()->prefix_distri),
+          can_write(frame_<double>()->prefix_can_write) {}
+    ~prefix_guard() {
+        frame_<double>()->prefix_distri = prefix;
+        frame_<double>()->prefix_can_write = can_write;
     }
-    require_solved(e, "G2_calc_diag");
-    host_threads_guard htg;
+    prefix_guard(const prefix_guard &) = delete;
+    prefix_guard &operator=(const prefix_guard &) = delete;
+};
 
-    const std::vector<int> iperm = lattice_iperm(e);
-    std::vector<double> perm_scr, rot_scr; // un-permute / back-transform targets (no aliasing)
-    if (!iperm.empty()) perm_scr.resize(blk);
-    if (e.localize_on) rot_scr.resize(blk);
-
-    // bra == ket throughout, so RuleQC's transpose-symmetry simplification is valid (the full
-    // state matrix has to fall back on NoTransposeRule for its off-diagonal blocks).
-    std::shared_ptr<MPO<SU2, double>> p2mpo = std::make_shared<PDM2MPOQC<SU2, double>>(e.hamil);
-    p2mpo = std::make_shared<SimplifiedMPO<SU2, double>>(
-        p2mpo, std::make_shared<RuleQC<SU2, double>>(), true, true,
-        OpNamesSet({OpNames::R, OpNames::RD}));
-
-    for (int s = 0; s < e.n_s; s++) {
-        const std::string xtag = e.mps_info->tag + "-d" + std::to_string(s);
-        const std::string stag = xtag + "-s";
-        std::shared_ptr<MPS<SU2, double>> smps = extract_root_single(e, s, xtag, stag);
-
-        auto p2me = std::make_shared<MovingEnvironment<SU2, double, double>>(p2mpo, smps, smps,
-                                                                            "D2PDM");
-        p2me->init_environments(false);
-        auto ex2 = std::make_shared<Expect<SU2, double, double>>(p2me, (ubond_t)e.cfg.m,
-                                                                 (ubond_t)e.cfg.m);
-        ex2->iprint = 0; // silence the per-site Expect sweep log
-        ex2->solve(true, smps->center == 0);
-        std::shared_ptr<GTensor<double>> d2 = ex2->get_2pdm_spatial(); // {n,n,n,n}
-        g2full_finish_block(e, d2->data->data(), iperm, perm_scr.data(), rot_scr.data(),
-                            G + (size_t)s * blk);
-
-        p2me->remove_partition_files();
-        remove_tag_files(xtag); // the per-root extract and its single-MPS copy are transient
-        remove_tag_files(stag);
-    }
-    p2mpo->deallocate();
-    assert_stack_clean("per-state 2-RDM read");
+// SU2 recoupling string of the spin-summed N-body density: "(C+D)0" wrapped N-1 times. block2
+// returns the singlet-coupled raw[x0..x_{N-1},y0..y_{N-1}] = sum_spins <a+_x0 .. a_y0> scaled by
+// 2^{-N/2}.
+static std::string npdm_expr(int N) {
+    std::string s = "(C+D)0";
+    for (int k = 1; k < N; k++)
+        s = "((C+" + s + ")1+D)0";
+    return s;
 }
-
-// ---- per-state 3-body moment (spin-summed 3-RDM) -------------------------------------------
-
-// SU2 recoupling string of the spin-summed 3-body density. block2 returns the singlet-coupled
-// raw[x0,x1,x2,y0,y1,y2] = sum_spins <a+_x0 a+_x1 a+_x2 a_y0 a_y1 a_y2> scaled by 2^{-n_cds/4},
-// n_cds = 6 operators.
-static const char *const npdm3_expr = "((C+((C+(C+D)0)1+D)0)1+D)0";
 
 // block2 streams the NPDM middle intermediates to <save_dir>/*.NPDM.FRAG.* and leaves them there;
 // the Compressed algorithm writes the .fpc spelling, the plain one .npy.
@@ -237,6 +118,134 @@ static void remove_npdm_fragments(const MovingEnvironment<SU2, double, double> &
         std::filesystem::remove(base + ".npy", ec);
     }
 }
+
+// One root pair's spin-summed N-body density in block2's lattice order, from one general-NPDM
+// Expect sweep on transient single-root extracts. The result is unscaled (block2's convention);
+// callers apply sqrt(2)^N and their own gathers. tag names the environment and the scratch.
+std::shared_ptr<GTensor<double>> nopt_block2::npdm_lattice(dmrgci_engine &e, int N, int ket_state,
+                                                           int bra_state,
+                                                           const char *tag) {
+    require_solved(e, tag);
+    const int n = e.n_act;
+    size_t nel = 1;
+    for (int k = 0; k < 2 * N; k++) nel *= (size_t)n;
+    const int passes = e.cfg.rdm_passes < 1 ? 1 : e.cfg.rdm_passes;
+
+    const std::string ktag = e.mps_info->tag + "-" + tag + std::to_string(ket_state);
+    const std::string kstag = ktag + "-s";
+    const std::string btag = e.mps_info->tag + "-" + tag + "b" + std::to_string(bra_state);
+    const std::string bstag = btag + "-s";
+
+    std::shared_ptr<GTensor<double>> acc; // {n}^{2N}, lattice order, summed over the passes
+    prefix_guard pfx;
+
+    for (int r = 0; r < passes; r++) {
+        // One pass carries one rank's share of the operator set. The rank splits the MPO's left
+        // families and its longest right strings; the passes sum to the full density.
+        std::shared_ptr<ParallelRuleSimple<SU2, double>> sp_rule;
+        if (passes > 1)
+            sp_rule = std::make_shared<ParallelRuleSimple<SU2, double>>(
+                ParallelSimpleTypes::None,
+                std::make_shared<npdm_pass_comm>(passes, r));
+
+        // The GeneralHamiltonian is built fresh for each MPO: its on-site operator tables are
+        // populated on first use, and reusing one instance corrupts every operator carrying
+        // coincident legs.
+        SU2 vacuum(0);
+        std::vector<typename SU2::pg_t> gorbsym(n, 0); // C1 site irreps
+        auto ghamil = std::make_shared<GeneralHamiltonian<SU2, double>>(vacuum, n, gorbsym);
+        const std::string expr = npdm_expr(N);
+        auto perm = std::make_shared<SpinPermScheme>(
+            SpinPermScheme::initialize_su2(2 * N, expr, /*is_npdm=*/true));
+        auto ppmpo = std::make_shared<GeneralNPDMMPO<SU2, double>>(
+            ghamil, std::make_shared<NPDMScheme>(perm), /*symbol_free=*/true, 0.0, 0,
+            "NPDM" + std::to_string(N));
+        ppmpo->delta_quantum = SU2(0, SpinPermRecoupling::get_target_twos(expr), 0);
+        ppmpo->iprint = DMRG_LOG_IPRINT >= 2 ? 1 : 0; // per-site operator counts into the sweep log
+        ppmpo->parallel_rule = sp_rule; // must be set before build(): it sizes the rank's blocks
+        ppmpo->build();
+        std::shared_ptr<MPO<SU2, double>> pmpo = std::make_shared<SimplifiedMPO<SU2, double>>(
+            ppmpo, std::make_shared<Rule<SU2, double>>(), false, false);
+        if (sp_rule != nullptr)
+            pmpo = std::make_shared<ParallelMPO<SU2, double>>(pmpo, sp_rule);
+
+        {
+            std::shared_ptr<MPS<SU2, double>> ket = extract_root_single(e, ket_state, ktag, kstag);
+            std::shared_ptr<MPS<SU2, double>> bra = ket;
+            if (bra_state != ket_state)
+                bra = extract_root_single(e, bra_state, btag, bstag);
+
+            auto me = std::make_shared<MovingEnvironment<SU2, double, double>>(pmpo, bra, ket, tag);
+            me->cached_contraction = false; // conflicts with the fused zero-dot contraction
+            me->fused_contraction_rotation = true;
+            me->init_environments(DMRG_LOG_IPRINT >= 2);
+            auto ex = std::make_shared<Expect<SU2, double, double>>(me, (ubond_t)e.cfg.m,
+                                                                    (ubond_t)e.cfg.m);
+            ex->algo_type =
+                ExpectationAlgorithmTypes::SymbolFree | ExpectationAlgorithmTypes::Compressed;
+            ex->zero_dot_algo = true; // extract_root_single leaves the one-dot end-center form
+            ex->iprint = DMRG_LOG_IPRINT;
+            ex->cutoff = 1e-24;
+            ex->solve(true, ket->center == 0);
+            std::vector<std::shared_ptr<GTensor<double>>> npdm = ex->get_npdm();
+            remove_npdm_fragments(*me);
+            me->remove_partition_files();
+
+            if (npdm.size() != 1 || npdm[0] == nullptr || npdm[0]->size() != nel) {
+                fprintf(out_stream, "ERROR: DMRG %d-body npdm shape mismatch (expected one"
+                                    " n_act^%d = %zu element tensor)\n", N, 2 * N, nel);
+                exit(EXIT_FAILURE);
+            }
+            if (acc == nullptr)
+                acc = npdm[0];
+            else {
+                double *a = acc->data->data();
+                const double *b = npdm[0]->data->data();
+#pragma omp parallel for schedule(static)
+                for (size_t i = 0; i < nel; i++)
+                    a[i] += b[i];
+            }
+        }
+        // No pmpo->deallocate(): the NPDM MPO's numeric legs are heap-owned site operators cached
+        // in ghamil and several MPO entries alias the same one, so a tensor-wise deallocate
+        // double-frees.
+        remove_tag_files(ktag); // the per-root extracts and their single-MPS copies are transient
+        remove_tag_files(kstag);
+        if (bra_state != ket_state) {
+            remove_tag_files(btag);
+            remove_tag_files(bstag);
+        }
+        assert_stack_clean(tag); // the Expect sweep must leave the LIFO stacks as it found them
+    }
+
+    return acc;
+}
+
+// ---- per-state 2-RDM (diagonal blocks) -----------------------------------------------------
+
+// The n_s diagonal blocks of the state matrix, GAMMA convention in the delocalized basis, read
+// off the per-state 2-RDMs the state-averaged read-out already formed. Overwrites the caller's
+// n_s consecutive n_act^4 blocks (aldet's G_calc convention).
+void block2_casci_wrap::G2_calc_diag(double *G) {
+    dmrgci_engine &e = *impl_;
+    require_solved(e, "G2_calc_diag");
+    dmrg_log_guard log(false);
+    host_threads_guard htg;
+    const int n = e.n_act;
+    const size_t blk = (size_t)n * n * n * n;
+    ensure_2rdm(e);
+
+    const std::vector<int> iperm = lattice_iperm(e);
+    std::vector<double> perm_scr, rot_scr; // un-permute / back-transform targets (no aliasing)
+    if (!iperm.empty()) perm_scr.resize(blk);
+    if (e.localize_on) rot_scr.resize(blk);
+
+    for (int s = 0; s < e.n_s; s++)
+        g2full_finish_block(e, e.d2_states.data() + (size_t)s * blk, iperm, perm_scr.data(),
+                            rot_scr.data(), G + (size_t)s * blk);
+}
+
+// ---- per-state 3-body moment (spin-summed 3-RDM) -------------------------------------------
 
 // Raw lattice-ordered 3-body moment -> NOPT layout G3[p,q,r,i,j,k] = <a+_p a+_q a+_r a_k a_j a_i>
 // = scale * raw[p,q,r,k,j,i]: the three annihilation axes reverse. Reversing axis positions and
@@ -274,62 +283,15 @@ void block2_casci_wrap::G3_calc_diag(double *G3, int state) {
                 e.n_s);
         exit(EXIT_FAILURE);
     }
+    dmrg_log_guard log(false);
     host_threads_guard htg;
     const int n = e.n_act;
     const size_t blk6 = (size_t)n * n * n * n * n * n;
 
-    // The GeneralHamiltonian is built fresh for each MPO: its on-site operator tables are populated
-    // on first use, and reusing one instance corrupts every operator carrying coincident legs.
-    SU2 vacuum(0);
-    std::vector<typename SU2::pg_t> gorbsym(n, 0); // C1 site irreps
-    auto ghamil = std::make_shared<GeneralHamiltonian<SU2, double>>(vacuum, n, gorbsym);
-
-    auto perm = std::make_shared<SpinPermScheme>(
-        SpinPermScheme::initialize_su2(6, npdm3_expr, /*is_npdm=*/true));
-    auto ppmpo = std::make_shared<GeneralNPDMMPO<SU2, double>>(
-        ghamil, std::make_shared<NPDMScheme>(perm), /*symbol_free=*/true, 0.0, 0);
-    ppmpo->delta_quantum = SU2(0, SpinPermRecoupling::get_target_twos(npdm3_expr), 0);
-    ppmpo->build();
-    std::shared_ptr<MPO<SU2, double>> pmpo = std::make_shared<SimplifiedMPO<SU2, double>>(
-        ppmpo, std::make_shared<Rule<SU2, double>>(), false, false);
-
-    const std::string xtag = e.mps_info->tag + "-p3" + std::to_string(state);
-    const std::string stag = xtag + "-s";
-
-    std::vector<std::shared_ptr<GTensor<double>>> npdm; // {n,n,n,n,n,n}, lattice order
-    {
-        std::shared_ptr<MPS<SU2, double>> psi = extract_root_single(e, state, xtag, stag);
-        auto pme = std::make_shared<MovingEnvironment<SU2, double, double>>(pmpo, psi, psi,
-                                                                           "NPDM3");
-        pme->cached_contraction = false; // conflicts with the fused zero-dot contraction
-        pme->fused_contraction_rotation = true;
-        pme->init_environments(false);
-        auto ex = std::make_shared<Expect<SU2, double, double>>(pme, (ubond_t)e.cfg.m,
-                                                                (ubond_t)e.cfg.m);
-        ex->algo_type =
-            ExpectationAlgorithmTypes::SymbolFree | ExpectationAlgorithmTypes::Compressed;
-        ex->zero_dot_algo = true; // extract_root_single leaves the one-dot end-center form
-        ex->iprint = 0;
-        ex->cutoff = 1e-24;
-        ex->solve(true, psi->center == 0);
-        npdm = ex->get_npdm();
-        remove_npdm_fragments(*pme);
-        pme->remove_partition_files();
-    }
-    // No pmpo->deallocate(): the NPDM MPO's numeric legs are heap-owned site operators cached in
-    // ghamil and several MPO entries alias the same one, so a tensor-wise deallocate double-frees.
-    // block2's own npdm driver drops the MPO the same way; assert_stack_clean is the leak check.
-    remove_tag_files(xtag); // the per-root extract and its single-MPS copy are transient
-    remove_tag_files(stag);
-    assert_stack_clean("3-body moment read");
-
-    if (npdm.size() != 1 || npdm[0] == nullptr || npdm[0]->size() != blk6) {
-        fprintf(out_stream, "ERROR: DMRG 3-body npdm shape mismatch (expected one n_act^6 = %zu"
-                            " element tensor)\n", blk6);
-        exit(EXIT_FAILURE);
-    }
-    npdm3_gather(npdm[0]->data->data(), n, lattice_iperm(e), 2.0 * std::sqrt(2.0), G3);
-    npdm[0] = nullptr; // drop the raw n_act^6 tensor before the back-transform allocates
+    std::shared_ptr<GTensor<double>> raw =
+        npdm_lattice(e, 3, state, state, "NPDM3");
+    npdm3_gather(raw->data->data(), n, lattice_iperm(e), 2.0 * std::sqrt(2.0), G3);
+    raw = nullptr; // drop the raw n_act^6 tensor before the back-transform allocates
     if (e.localize_on) { // rotate back to the delocalized basis
         std::vector<double> rot(blk6);
         rotate3(G3, e.U_loc.data(), n, rot.data(), /*forward=*/false);

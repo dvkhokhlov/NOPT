@@ -6,6 +6,7 @@
 # include "converger_2_1.h"
 # include "defaults.h"
 # include "RI.h"
+# include "sad_guess.h"
 # include "grabbers.h"
 
 using std::vector;
@@ -110,6 +111,11 @@ int RHF(molecule * M, rhf_par * rhf, char * job_name){
     if(RI){
         gen_RI_AA(M);
     }
+    int guess_diag=0;
+    if(M->guess_occ.size()){
+        sad_guess_fock(M,F_AO);
+        guess_diag=1;
+    }
     fprintf(out_stream,"\n\n");
     fprintf(out_stream,"_______________________________________________________________________________\n");
     fprintf(out_stream,"\n\n");
@@ -150,8 +156,9 @@ int RHF(molecule * M, rhf_par * rhf, char * job_name){
         }
         
         //case of large gradient - simple diagonalization
-        if((iter_n==0)/*||(max_grad_el>SOSCF.grad_max_soscf)*/){
-       
+        //a guess that comes from its own Fock does not need it repeated
+        if((iter_n==0)&&(guess_diag==0)/*||(max_grad_el>SOSCF.grad_max_soscf)*/){
+
             if(iter_n)fprintf(out_stream,"WARNING: gradient is too large\n");
             M->diag_X_AO_in_MO(F_AO);
             iter_n++;

@@ -19,6 +19,7 @@
 #include <cstdio>
 #include <memory>
 #include <string>
+#include <limits>
 #include <vector>
 #include <omp.h>
 
@@ -63,6 +64,9 @@ struct dmrgci_engine {
     std::vector<double> R_active;     // n_act x n_act, [a*n_act+p]
     bool have_rotation = false;
 
+    // MPO simplification rule resolved once from cfg.low_m_opt: -1 unresolved, 0 off, 1 on.
+    int low_m_opt_res = -1;
+
     // block2 objects for the current macro-iteration (rebuilt each import_integrals)
     std::shared_ptr<FCIDUMP<double>> fcidump;
     std::shared_ptr<HamiltonianQC<SU2, double>> hamil;
@@ -70,13 +74,12 @@ struct dmrgci_engine {
     std::shared_ptr<MultiMPSInfo<SU2>> mps_info;  // persists solve -> RDM read-out
     std::shared_ptr<MultiMPS<SU2, double>> mps;   // the converged (state-averaged) wavefunction
     std::vector<double> d2_av;                    // state-averaged block2 2-RDM: one n_act^4 block
+    std::vector<double> d2_states;                // per-state block2 2-RDM: n_s blocks of n_act^4, lattice order
     std::vector<double> d1_states;                // per-state 1-RDM: n_s blocks of n_act^2
     std::vector<double> w_state;                  // host SA weights (n_s); empty => equal weights
-    bool d2_valid = false;                        // are d2_av/d1_states current for this solve?
+    bool d2_valid = false;                        // are d2_av/d2_states/d1_states current for this solve?
     std::vector<double> dmfull_cache;             // full n_s x n_s spin-summed 1-RDM (properties), delocalized
     bool dmfull_valid = false;                     // is dmfull_cache current for this solve?
-    std::vector<double> dg2full;                  // full n_s x n_s transition 2-RDM (GAMMA convention), delocalized
-    bool g2full_valid = false;                     // is dg2full current for this solve?
 
     // Bare-state snapshot for the dressed re-solve overlap: one persistent single-root MPS per
     // root plus its scratch tag. snap_set is the storage slot calc_S answers for (-1 = none);
@@ -92,6 +95,16 @@ struct dmrgci_engine {
     double last_sweep_dE = 0.0;                 // |dE| between the final two sweeps (achieved convergence)
     bool last_hit_max = false;                  // last solve used its full sweep budget with dE > sweep_tol
     std::vector<uint16_t> reorder_perm;         // DMRG lattice order (Fiedler); empty => input order
+    double last_ord_drift = std::numeric_limits<double>::quiet_NaN(); // pinned order's cost over a
+                                                // freshly derived one's; NaN until an order is pinned
+    bool last_cold_fallback = false;            // a warm-armed solve that still ran cold
+    double last_dw = 0.0;                       // max discarded weight over the last solve's two-site sweeps at the
+                                                // schedule's final bond dim, noise-free sweeps preferred
+    double last_two_dot_dw = std::numeric_limits<double>::quiet_NaN(); // discarded weight of the last
+                                                // two-site sweep: the truncation the stored MPS carries
+    std::vector<double> last_two_dot_E;         // last two-site sweep's energy per root
+    double last_trunc_de = 0.0;                 // stored MPS's RDM energy minus last_two_dot_E, max over roots
+    double last_resolution = 0.0;               // sqrt of the final sweep's Davidson threshold: the solve's energy scale
 
     dmrgci_engine(int n_act_, int n_elec_, int twos_, int twosz_, int mult_, int n_s_,
                   int print_number_, const dmrg_par &c)
@@ -136,7 +149,8 @@ struct host_threads_guard {
     host_threads_guard &operator=(const host_threads_guard &) = delete;
 };
 
-void ensure_block2_runtime(const std::string &save_dir_root, double memory_gb, int n_threads);
+void ensure_block2_runtime(const std::string &save_dir_root, double memory_gb,
+                           double main_stack_gb, int n_threads);
 void remove_tag_files(const std::string &tag);
 void assert_stack_clean(const char *where);
 
@@ -144,6 +158,16 @@ void assert_stack_clean(const char *where);
 // Defined in block2_dmrg.cpp; shared with the transition-RDM / overlap read-outs.
 std::shared_ptr<MPS<SU2, double>>
 extract_root_single(dmrgci_engine &e, int st, const std::string &xtag, const std::string &stag);
+
+// One root pair's spin-summed N-body density in block2's lattice order, from one general-NPDM
+// Expect sweep on transient single-root extracts. The result is unscaled (block2's convention);
+// callers apply sqrt(2)^N and their own gathers.
+std::shared_ptr<GTensor<double>> npdm_lattice(dmrgci_engine &e, int N, int ket_state,
+                                              int bra_state, const char *tag);
+
+
+// State-averaged 2-RDM, the per-state 2-RDMs, 1-RDMs and energies, once per solve.
+void ensure_2rdm(dmrgci_engine &e);
 
 // Fit a lower-bond-dim copy of an MPS (identity-MPO Linear) — a cheaper TRIE for the read-out.
 // Defined engine-side; called from the read-out TU.

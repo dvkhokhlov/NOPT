@@ -8,7 +8,8 @@ std::vector<Shell> basis_lib_read_gbs(molecule * M,  const char * lib_name,
                                       std::vector<std::vector<double>> * lib_coef, 
                                       std::vector<int> * shell_center, bool pure,
                                       std::vector<double> * energy,
-                                      std::vector<int> * is_core);
+                                      std::vector<int> * is_core,
+                                      const std::vector<int> * atom_sel = nullptr);//nullptr = every atom of M
 
 std::vector<Shell> basis_lib_read_exp(molecule * M,  const char * lib_name, 
                                       int in_lib, int start, 

@@ -11,6 +11,8 @@
 # include "CAS.h"
 # include "localizer.h"
 # include "localized_dmrg.h"   // build_loc_orbitals (warm-start rotation)
+# include "tensor_rotate.h"    // rotate1/rotate2 (active-basis transforms)
+# include "dmrg_log.h"         // per-solve block2 sweep log
 # include "aldet_casci_wrap.h"
 #ifdef NOPT_HAS_BLOCK2
 # include "block2_casci_wrap.h"
@@ -392,13 +394,62 @@ int CAS_engine::SCF_alloc(){
 
 }
 
-int CAS_engine::tensors_recalc(int n){
+int CAS_engine::update_ACT_CVEC(){
 
     //transposition of VEC to CVEC
     for(int i=0; i<n_ao ;i++)
     for(int j=0; j<n_act;j++)
         ACT_CVEC[i*n_act+j]=MO_VEC[(j+n_core)*n_ao+i];
     
+    return 0;
+}
+
+// Apply the pending canonicalization to n_blocks consecutive 1-RDM blocks: gamma' = U gamma U^T.
+// rotate1 forbids aliasing, so every block goes through the scratch.
+int CAS_engine::rotate_pending_gamma(double * g, int n_blocks){
+
+    if(U_pending.empty())return 0;
+
+    const size_t blk = (size_t)n_act*n_act;
+    std::vector<double> buf(blk);
+    for(int i=0;i<n_blocks;i++){
+        double * g_i = g+i*blk;
+        rotate1(g_i, U_pending.data(), n_act, buf.data(), /*forward=*/false);
+        memcpy(g_i, buf.data(), blk*sizeof(double));
+    }
+
+    return 0;
+}
+
+// Same for the 2-RDM. The block count must track SCF_alloc's GAMMA sizing -- per-state (aldet) or
+// the single state-averaged block (DMRG) -- or one backend is silently left half-rotated.
+int CAS_engine::rotate_pending_GAMMA(double * G){
+
+    if(U_pending.empty())return 0;
+
+    int n_blocks;
+    if      (ci_solver==CISOLVER_ALDET) n_blocks = CI->n_states();
+    else if (ci_solver==CISOLVER_DMRG ) n_blocks = 1;
+    else{
+        fprintf(out_stream,"ERROR: unknown CISOLVER (%d); accepted: aldet, dmrg\n",ci_solver);
+        exit(0);
+    }
+
+    const size_t blk = (size_t)n_act*n_act*n_act*n_act;
+    std::vector<double> buf(blk);
+    for(int i=0;i<n_blocks;i++){
+        double * G_i = G+i*blk;
+        rotate2(G_i, U_pending.data(), n_act, buf.data(), /*forward=*/false);
+        memcpy(G_i, buf.data(), blk*sizeof(double));
+    }
+
+    return 0;
+}
+
+int CAS_engine::tensors_recalc(int n){
+
+    update_ACT_CVEC();
+
     //calc 1-el density matrices
     calc_DM_C();
     
@@ -478,6 +529,7 @@ int CAS_engine::CI_calc(int primary, int create_track_data,int read){
     int n;
     tensors_recalc(0);
     n = CI->solve(primary, read, create_track_data==0);
+    U_pending.clear();   // the solve hands back RDMs in the current active basis
     if(primary==-1){
         return n;
     }
@@ -619,6 +671,7 @@ int CAS_engine::calc_gamma(){
     
     set_zero_matr(gamma,n_act*n_act*n_s);
     CI->calc_DM_diag(gamma,0);
+    rotate_pending_gamma(gamma,n_s);
     
     return 0;
 }
@@ -788,7 +841,7 @@ int CAS_engine::av_DM_and_F_calc(){
 }
     
     
-int CAS_engine::make_canonical(){
+int CAS_engine::make_canonical(bool with_active){
     
     av_DM_and_F_calc();
     
@@ -796,13 +849,20 @@ int CAS_engine::make_canonical(){
     
     M->diag_X_MO_block(F_tot, 0           , n_core, nullptr);
     M->diag_X_MO_block(F_tot, n_core+n_act, n_vac , nullptr);
+
+    // Core and virtual canonicalization touches neither the active orbitals nor the CI vector.
+    // The active block rotates only where no solve follows: lapack_diag absorbs the ordering
+    // permutation, so its rotation can be improper (det<0), which no warm-started backend carries.
+    if(!with_active)return 0;
+
     // Active-block canonicalization rotates the active orbitals, so the CI vector must
-    // follow via malmqvist. A backend that can't rotate its CI vector (e.g. DMRG) skips
-    // it and keeps the current active basis (cold-start re-solves the next macro-iter);
+    // follow via malmqvist and the basis-dependent caches must be rebuilt -- a stale
+    // ACT_CVEC silently corrupts DM_A and the properties. A backend that can't rotate
+    // its CI vector (e.g. DMRG) keeps its wavefunction and rotates the RDMs instead.
     if(CI->supports_civec_rotation()){
         M->diag_X_MO_block(F_tot, n_core   , n_act , U);
         CI->malmqvist(0, U);
-        CI_calc(0,1,1);
+        tensors_recalc(0);
     }
     if(!CI->supports_civec_rotation() && n_act>0){
         double * U_canon  = nullptr;//to be move to molecule
@@ -813,7 +873,22 @@ int CAS_engine::make_canonical(){
                 U_canon[i*n_act+j]=F_tot[(i+n_core)*n_ao+(j+n_core)];
         lapack_diag(U_canon, M->orb_energy+n_core, n_act);//ir.rep can be broken -- must be rewritten in the "diag_X_MO_block"-style
         normalize_rotation_rows(U_canon, n_act);
-        CI->set_report_rotation(U_canon);
+
+        // The wavefunction sits in the last solved basis, and a canonicalization may still be owed
+        // to it, so this one composes with what is pending: U_total = U_canon * U_pending.
+        // dgemm must not alias, hence the fresh buffer.
+        if(U_pending.empty())
+            U_pending.assign(U_canon, U_canon+(size_t)n_act*n_act);
+        else{
+            std::vector<double> U_total((size_t)n_act*n_act);
+            cblas_dgemm(CblasRowMajor,CblasNoTrans,CblasNoTrans,
+                        n_act,n_act,n_act,1.0,
+                        U_canon,n_act,
+                        U_pending.data(),n_act,0.0,
+                        U_total.data(),n_act);
+            U_pending.swap(U_total);
+        }
+        CI->set_report_rotation(U_pending.data());
         
         double * B  = new double[n_act*n_ao];
         cblas_dgemm(CblasRowMajor,CblasNoTrans,CblasNoTrans,
@@ -825,9 +900,11 @@ int CAS_engine::make_canonical(){
         M->check_orb_symmetry();
         delete[] B;
         
+        // Refresh the active orbital copy. No tensors_recalc here -- it would re-localize and
+        // advance the warm-start frame past the retained wavefunction.
+        update_ACT_CVEC();
+
     }
-    
-    
     
     
     return 0;
@@ -849,6 +926,7 @@ double CAS_engine::SA_grad_hess_calc(){
     
     //calc 2DM
     CI->G_calc(GAMMA);
+    rotate_pending_GAMMA(GAMMA);
     if      (ci_solver==CISOLVER_ALDET){
         average_DM(GAMMA,wstate_actual,n_act*n_act*n_act*n_act,n_s);
     }
@@ -918,6 +996,7 @@ double CAS_engine::SM_grad_hess_calc(){
     
     //calc 2DM
     CI->G_calc(GAMMA);
+    rotate_pending_GAMMA(GAMMA);
     for(int i=0;i<n_s_opt;i++)calc_G(G_ga_state[i], gamma_state[i], GAMMA_state[i]);
     
     
@@ -1004,6 +1083,7 @@ int CAS_engine::Prop_calc_with_num(int n_calc_prop){
     set_zero_matr(gamma,n_act*n_act*n_s*n_s);
     CI->calc_DMA(gamma,0,0);
     CI->calc_DMB(gamma,0,0);
+    rotate_pending_gamma(gamma,n_s*n_s);
     for(int i=0; i<n_calc_prop; i++)
     for(int j=0; j<n_s   ; j++){
         Prop_value[i*n_s*n_s+j*(n_s+1)]=Prop_Core[i]+Prop_nuc[i];
@@ -1022,6 +1102,7 @@ int CAS_engine::TrDM(int a, int b){
     set_zero_matr(gamma,n_act*n_act*n_s*n_s);
     CI->calc_DMA(gamma,0,0);
     CI->calc_DMB(gamma,0,0);
+    rotate_pending_gamma(gamma,n_s*n_s);
     
     for(int j=0;j<n_act*n_act;j++){
         gamma_ab[j]=gamma[(a*n_s+b)*n_act*n_act+j];
@@ -1258,6 +1339,7 @@ CAS_engine::~CAS_engine(){
 
 int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
     
+    dmrg_log_set_job(job_name);
     M->CI[0].PT2_delete_data();
     
     cas->write_info(M->n_act_el_alp[0],
@@ -1280,7 +1362,10 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
     
     int converged=0;
     double rot_step=1.0;
+    double grad_old=0;      // max|g| at the point the current rot_step was taken from
     bool any_maxed=false;   // a macro-iter whose CI solve hit its max sweeps while under-converged
+    bool any_cold=false;    // a macro-iter whose CI solve fell back to a cold start
+    bool any_reset=false;   // a macro-iter whose energy rise restarted the orbital converger
     
     if(IS_SYM){
         int n_ao  = M->n_ao;
@@ -1313,40 +1398,48 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
     jacobi_mcscf_sd_engine j_sd;
     j_sd.init(CAS->G,CAS->B,CAS->n_core, CAS->n_act,CAS->n_vac,CAS->n_ao,CAS->n_s_opt,cas->x_max);
     
+    dmrg_log_set_tag(dmrg_log_tag::primary);
     n_dav_conv = CAS->CI_calc(1,0,0);
-    CAS->make_canonical();
-    printf_timer("Primary CI and calculation canonical orbitals");
-    //reload DMRG-CAS engine after calculation canonical orbitals
-    if(CAS->CI->supports_civec_rotation()==0){
-        delete [] M->CAS;
-        M->CAS = new CAS_engine[1];
-        CAS = M->CAS;
-        CAS->init(cas ,M);
-        CAS->SCF_alloc();
-        n_dav_conv = CAS->CI_calc(1,0,0);
-        printf_timer("Recalculation of DMRG with canonical orbitals");
-    }
     
-    
-    
+    // U_loc belongs to the active orbitals the solve ran on, so dump before canonicalization moves
+    // them: after it the two no longer describe the same orbitals.
     if(cas->dmrg.dump_loc_orbs && CAS->localizer_){
         fprintf(out_stream,"\nDumping localized active orbitals:\n");
         M->LOC_print(job_name, CAS->U_loc.data());
     }
     
+    CAS->make_canonical(/*with_active=*/false);
+    printf_timer("Primary CI and calculation canonical orbitals");
+
     
     
     CAS->print_av_table("CAS_SCF density averaging:");
     fprintf(out_stream,"\n");
     fprintf(out_stream,"Start CAS_SCF iterations\n");
-    fprintf(out_stream,"_________________________________________________________________________________\n");
-    fprintf(out_stream,"  N | E                 | dE         | LAG.ASYM. | ROT.STEP  | N_dav | sweep_dE  |\n");
-    fprintf(out_stream,"____|___________________|____________|___________|___________|_______|___________|\n");
+    // A DMRG solve reports sweeps, a sweep-to-sweep energy and a discarded weight where a
+    // determinant CI reports Davidson iterations and nothing else; the header follows the backend.
+    const bool dmrg_ci = (cas->ci_solver==CISOLVER_DMRG);
+    const char * ni_head = dmrg_ci ? " N_SWP |" : " N_dav |";
+    const char * de_rule = dmrg_ci ? "___________|" : "";
+    const char * de_head = dmrg_ci ? " DMRG_DE   |" : "";
+    const char * dw_rule = dmrg_ci ? "___________|" : "";
+    const char * dw_head = dmrg_ci ? " DMRG_DW   |" : "";
+    // The CI backend's lattice order is pinned across warm solves, so its staleness is a run diagnostic.
+    const bool ord_col = (cas->ci_solver==CISOLVER_DMRG &&
+                          (cas->dmrg.loc_order==DMRG_LOCORDER_FIEDLER ||
+                           cas->dmrg.loc_order==DMRG_LOCORDER_GAOPT));
+    const char * od_rule = ord_col ? "___________|" : "";
+    const char * od_head = ord_col ? " OPTIM.LAT |" : "";
+    fprintf(out_stream,"______________________________________________________________________");
+    if(dmrg_ci)fprintf(out_stream,"________________________");
+    if(ord_col)fprintf(out_stream,"____________");
+    fprintf(out_stream,"\n");
+    fprintf(out_stream,"  N | E                 | dE         | LAG.ASYM. | ROT.STEP  |%s%s%s%s\n",ni_head,de_head,dw_head,od_head);
+    fprintf(out_stream,"____|___________________|____________|___________|___________|_______|%s%s%s\n",de_rule,dw_rule,od_rule);
     disable_print_timers();
     
     while(true){
         if(n_iter>cas->max_it-1){converged=0; break;}
-        
         
         if(cas->method==1)E = CAS->SA_grad_hess_calc();
         if(cas->method==2)E = CAS->SM_grad_hess_calc();
@@ -1355,9 +1448,40 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
         if(cas->method==2)max_grad_el = j_sd.find_max_el();
         
         
+        // An energy rise nothing accounts for: an honest step moves the energy by |g||kappa| to first
+        // order, and a CI solve resolves it only to a fraction of its truncation energy and to what
+        // its stop thresholds bound. Above all three the CI solution itself moved, and the amplitude
+        // behind it is not an error vector the history can fit. Restart, as SCF DIIS does.
+        bool cold_fb = CAS->CI->last_solve_cold();
+        if(cold_fb) any_cold=true;
+        double step_ref = rot_step;                                    // SOSCF returns the step it applied
+        const double ci_floor  = CAS_RESET_TRUNC_FRAC*CAS->CI->last_solve_trunc_de();
+        const double ci_res    = CAS->CI->energy_resolution();
+        double rise_ref = grad_old*step_ref;
+        if(ci_floor>rise_ref) rise_ref = ci_floor;
+        if(ci_res  >rise_ref) rise_ref = ci_res;
+        const bool diis_reset = (n_iter>0 && !cold_fb && E-E_old>0 && E-E_old > rise_ref); // a cold solve's rise is expected, its reset done
+        if(diis_reset){
+            SOSCF.reset_history();
+            any_reset=true;
+        }
         bool hit_max = CAS->CI->last_solve_hit_max();
         if(hit_max) any_maxed=true;
-        fprintf(out_stream,"%3d |% 18.10f | % .3e | %.3e | %.3e | %3d   | %.3e |%s\n",n_iter,E,E-E_old,max_grad_el, rot_step,n_dav_conv,CAS->CI->last_solve_resid(), hit_max?" *":"");
+        char de_val[16]; de_val[0]='\0';
+        if(dmrg_ci)snprintf(de_val,sizeof(de_val)," %.3e |",CAS->CI->last_solve_resid());
+        char dw_val[16]; dw_val[0]='\0';
+        if(dmrg_ci){
+            const double dw = CAS->CI->last_solve_dw();
+            if(std::isnan(dw))snprintf(dw_val,sizeof(dw_val),"     -     |"); // backend never truncates
+            else              snprintf(dw_val,sizeof(dw_val)," %9.2e |",dw);
+        }
+        char od_val[16]; od_val[0]='\0';
+        if(ord_col){
+            const double od = CAS->CI->last_order_drift(); // FALSE: a cheaper lattice order is in hand
+            if(std::isnan(od))snprintf(od_val,sizeof(od_val),"     -     |"); // nothing pinned to price, or a cold re-pin dropped it
+            else snprintf(od_val,sizeof(od_val)," %9s |",od>DMRG_ORD_DRIFT_TOL?"FALSE":"TRUE");
+        }
+        fprintf(out_stream,"%3d |% 18.10f | % .3e | %.3e | %.3e | %3d   |%s%s%s%s%s%s\n",n_iter,E,E-E_old,max_grad_el, rot_step,n_dav_conv, de_val, dw_val, od_val, hit_max?" *":"", cold_fb?" c":"", diis_reset?" r":"");
         fflush(out_stream);
 //         getchar();
 //         exit(0);
@@ -1368,11 +1492,22 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
         if(cas->method==2)rot_step=j_sd.step(CAS->MO_VEC,CAS->MO_BUF);
 //         printf_timer("CAS_step");
 //         converged=0; break;
+        dmrg_log_set_tag(dmrg_log_tag::scf);
         n_dav_conv =CAS->CI_calc(0,0,1);
-        if(rot_step  <cas->s_conv){converged=3; break;}
+        // That solve rebuilt the wavefunction from scratch: the energy surface the converger's
+        // history was accumulated on is gone, so extrapolating across it fits a defunct surface.
+        const bool cold_now = CAS->CI->last_solve_cold();
+        if(cold_now){
+            SOSCF.reset_history();
+            any_cold=true;  // this solve may never reach a row of its own
+        }
+        // rot_step was measured against a surface that no longer exists; judge it one iteration
+        // later, once the rebuilt wavefunction has an energy and a gradient of its own.
+        if(!cold_now && rot_step  <cas->s_conv){converged=3; break;}
                 
 //         printf_timer("CAS-CI");
         E_old=E;
+        grad_old=max_grad_el;
         n_iter++;
 //         PrintMatr(M->nat_orb_occ,M->n_act_orb[0],1,1);
     }
@@ -1381,7 +1516,7 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
     
     char * name = new char[BUF_LINE_LENGTH];
     
-    fprintf(out_stream,"____|___________________|____________|___________|___________|_______|___________|\n");
+    fprintf(out_stream,"____|___________________|____________|___________|___________|_______|%s%s%s\n",de_rule,dw_rule,od_rule);
     if(converged==0)fprintf(out_stream,"\nCASSCF did not converge");
     if(converged==1)fprintf(out_stream,"\nEnergy converged");
     if(converged==2)fprintf(out_stream,"\nLagrangian converged");
@@ -1390,21 +1525,18 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
     if(any_maxed)
         fprintf(out_stream," * CI solve reached the maximum DMRG sweep count without meeting sweep_tol;\n"
                            "   that iteration's CI vector may be under-converged -- raise $DMRG sweeps or m.\n\n");
+    if(any_cold)
+        fprintf(out_stream," c CI solve fell back to a cold start: the wavefunction was rebuilt from\n"
+                           "   scratch, so the energy steps there and the orbital converger was reset.\n\n");
+    if(any_reset)
+        fprintf(out_stream," r energy rose by more than the applied rotation and the CI resolution account\n"
+                           "   for, consistent with that CI solve landing on a different solution: the\n"
+                           "   converger history was restarted.\n\n");
     printf_timer("CAS_SCF iterations");
     
     
     //calculate canonical orbitals
-    CAS->make_canonical();
-    //reload DMRG-CAS engine after calculation canonical orbitals
-    if(CAS->CI->supports_civec_rotation()==0){
-        delete [] M->CAS;
-        M->CAS = new CAS_engine[1];
-        CAS = M->CAS;
-        CAS->init(cas ,M);
-        CAS->SCF_alloc();
-        n_dav_conv = CAS->CI_calc(1,0,0);
-        printf_timer("Recalculation of DMRG with canonical orbitals");
-    }
+    CAS->make_canonical(/*with_active=*/true);
     
     if(LINEAR)CAS->rotate();
     
@@ -1462,6 +1594,10 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
     fprintf(out_stream,"\n");
     fprintf(out_stream,"\n");
     printf_timer("CAS_SCF");
+
+    // A post-SCF module reuses this engine with a solver of its own, already in the canonical
+    // basis, so no rotation may be left owed to its RDM pulls.
+    CAS->U_pending.clear();
 
     delete[] name;
 //     delete[] S_track;

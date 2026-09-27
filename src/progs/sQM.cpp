@@ -10,6 +10,7 @@
 # include "doCI_matr.h"
 # include "matr.h"
 # include "version.h"
+# include "git_stamp.h"
 # include "inp_par_read.h"
 # include "inp_out.h"
 # include "common_vars.h"
@@ -39,6 +40,7 @@ int print_welcome_table(char * P_name){
 #ifndef _NOPT_BLAS_PAR
     fprintf(out_stream,"2) parallel BLAS matrix multiplication");
 #endif    
+    fprintf(out_stream,"\n3) build git commit %s",NOPT_GIT_COMMIT);
     fprintf(out_stream,"\n\n");
 
     

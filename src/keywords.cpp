@@ -23,6 +23,12 @@ vector<const char *>rhf_read{{"read"},
                              {"readmo"},
                              {"read_orb"},
                              {"read_orbs"}};
+
+vector<const char *>guess_kw{{"guess"}};
+
+vector<const char *>guess_huckel_kw{{"huckel"}};
+
+vector<const char *>guess_sad_kw{{"sad"}};
                          
 vector<const char *>max_it_kw{{"maxit"},
                               {"max_iter"},
@@ -190,6 +196,10 @@ vector<const char *>dmrg_save_dir_kw{{"save_dir"}};
 
 vector<const char *>dmrg_memory_kw{{"memory"}};
 
+vector<const char *>dmrg_rdm_passes_kw{{"rdm_passes"}};
+
+vector<const char *>dmrg_main_stack_kw{{"main_stack"}};
+
 vector<const char *>dmrg_localize_kw{{"localize"}};
 vector<const char *>dmrg_localize_off_kw{{"off"}};
 vector<const char *>dmrg_localize_pm_kw{{"pm"}};
@@ -203,6 +213,7 @@ vector<const char *>dmrg_warm_start_kw{{"warm_start"}};
 vector<const char *>dmrg_warm_on_kw{{"on"}};
 vector<const char *>dmrg_warm_off_kw{{"off"}};
 vector<const char *>dmrg_warm_sweeps_kw{{"warm_sweeps"}};
+vector<const char *>dmrg_warm_noise_scale_kw{{"warm_noise_scale"}};
 vector<const char *>dmrg_rot_m_kw{{"rot_m"}};
 vector<const char *>dmrg_rot_steps_kw{{"rot_steps"}};
 vector<const char *>dmrg_warm_start_after_kw{{"warm_start_after"}};
@@ -213,6 +224,17 @@ vector<const char *>dmrg_det_rot_steps_kw{{"det_rot_steps"}};
 vector<const char *>dmrg_extract_m_kw{{"extract_m"}};
 vector<const char *>dmrg_extract_cutoff_kw{{"extract_cutoff"}};
 vector<const char *>dmrg_h2caa_m_kw{{"h2caa_m"}};
+vector<const char *>dmrg_low_m_opt_kw{{"low_m_opt"}};
+
+vector<const char *>avas_group_start{{"$avas"}};
+
+vector<const char *>avas_group_end{{"$avasend"},
+                                   {"$avas_end"},
+                                   {"$end"}};
+
+vector<const char *>avas_atoms_kw{{"atoms"}};
+vector<const char *>avas_shells_kw{{"shells"}};
+vector<const char *>avas_ref_basis_kw{{"ref_basis"}};
 
 vector<const char *>MO_group_start{{"$vec1"},
                                    {"$vec"},

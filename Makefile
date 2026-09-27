@@ -68,7 +68,7 @@ endif
 BLOCK2_DEF:=-D_EXPLICIT_TEMPLATE -D_LARGE_BOND -D_USE_CORE -D_USE_DMRG -D_USE_BIG_SITE -D_USE_SP_DMRG -D_USE_IC -D_USE_SU2SZ $(BLOCK2_BLAS_DEF) -D_USE_GLOBAL_VARIABLE
 BLOCK2_INC:=-I$(BLOCK2_DIR)/include
 BLOCK2_LIB:=-L$(BLOCK2_DIR)/lib -Wl,-rpath,$(BLOCK2_DIR)/lib -lblock2
-BLOCK2_OBJ:=src/block2_dmrg.o src/dmrg_wrap.o src/block2_mps_to_det.o src/mps_rotation.o src/block2_import_dressed.o src/block2_npdm.o
+BLOCK2_OBJ:=src/block2_dmrg.o src/dmrg_wrap.o src/block2_mps_to_det.o src/mps_rotation.o src/block2_import_dressed.o src/block2_npdm.o src/dmrg_gaopt.o
 NOPT_BLOCK2_DEF:=-DNOPT_HAS_BLOCK2
 endif
 
@@ -93,11 +93,23 @@ all:$(progs)
 # auto-generated header dependencies (from -MMD -MP); empty on a fresh tree
 -include $(wildcard src/*.d src/progs/*.d)
 
+# commit the build is made from, -dirty when tracked files differ from it. The header is rewritten
+# only when the stamp changes, so a new commit recompiles the programs' entry points and relinks.
+GIT_STAMP:=$(shell h=$$(git rev-parse --short=12 HEAD 2>/dev/null) && { git diff --quiet HEAD 2>/dev/null || h=$$h-dirty; echo $$h; } || echo unknown)
+GIT_STAMP_DEF:=\#define NOPT_GIT_COMMIT "$(GIT_STAMP)"
+
+include/git_stamp.h:FORCE
+	@echo '$(GIT_STAMP_DEF)' | cmp -s - $@ || echo '$(GIT_STAMP_DEF)' > $@
+
+FORCE:
+
+$(patsubst %.cpp,src/progs/%.o,$(progs_cpp)):include/git_stamp.h
+
 print:
 	@echo $(progs_cpp)
 	@echo $(progs)
 
-run_%:src/progs/%.o src/molecule.o src/molecule2.o src/chem_data.o src/MO2.o src/matr.o src/timer.o src/etc.o src/doCI_matr.o src/libint_link.o src/SCF.o src/converger_2_1.o src/l-bfgs_2_1.o src/libint_functions.o src/ecp.o src/mol_link.o src/CI.o src/inp_out.o src/keywords.o src/doCI_data.o src/inp_par_read.o src/from_hash.o src/XMCQDPT.o src/res_fit.o src/binary_files.o src/xmc_read.o src/aldet.o src/RI.o src/nopa_pt.o src/CAS.o src/davidson.o src/basis_lib_read.o src/common_vars.o src/CDAS_PT.o src/CDAS_PT_rel.o src/U_CDAS_PT.o src/PT_tensors_IPEA.o src/PT_tensors_EE.o src/PT_tensors_EE_rel.o src/UPT_tensors_EE.o src/geom.o src/symmetry.o src/gv_solver.o src/trcamm.o src/z_matrix.o src/QM_calc.o src/pseudo_potential.o src/complex_diag.o src/CIS.o src/MP2.o src/aldet_rel.o src/jacobi.o src/grabbers.o src/casci_solver.o src/aldet_casci_wrap.o src/aldet_npdm.o src/localizer.o src/localized_dmrg.o src/tensor_rotate.o src/dsrg_pt.o src/dsrg_sf_tensors.o src/dsrg_sf_batch.o $(BLOCK2_OBJ)
+run_%:src/progs/%.o src/molecule.o src/molecule2.o src/chem_data.o src/MO2.o src/matr.o src/timer.o src/etc.o src/doCI_matr.o src/libint_link.o src/SCF.o src/converger_2_1.o src/l-bfgs_2_1.o src/libint_functions.o src/ecp.o src/mol_link.o src/CI.o src/inp_out.o src/keywords.o src/doCI_data.o src/inp_par_read.o src/from_hash.o src/XMCQDPT.o src/res_fit.o src/binary_files.o src/xmc_read.o src/aldet.o src/RI.o src/nopa_pt.o src/CAS.o src/davidson.o src/basis_lib_read.o src/common_vars.o src/CDAS_PT.o src/CDAS_PT_rel.o src/U_CDAS_PT.o src/PT_tensors_IPEA.o src/PT_tensors_EE.o src/PT_tensors_EE_rel.o src/UPT_tensors_EE.o src/geom.o src/symmetry.o src/gv_solver.o src/trcamm.o src/z_matrix.o src/QM_calc.o src/pseudo_potential.o src/complex_diag.o src/CIS.o src/MP2.o src/aldet_rel.o src/jacobi.o src/grabbers.o src/casci_solver.o src/aldet_casci_wrap.o src/aldet_npdm.o src/localizer.o src/localized_dmrg.o src/tensor_rotate.o src/dsrg_pt.o src/dsrg_sf_tensors.o src/dsrg_sf_batch.o src/sad_guess.o src/dmrg_log.o src/avas.o $(BLOCK2_OBJ)
 
 	$(CXX) $^ $(OPT_LEVEL) -fopenmp $(LIB_DIRS) $(LIBS)  -o $@
 
@@ -121,6 +133,9 @@ src/block2_import_dressed.o:src/block2_import_dressed.cpp
 src/block2_npdm.o:src/block2_npdm.cpp
 	$(CXX) -o $@ -c $< $(OPT_LEVEL) -fopenmp -MMD -MP $(DEFINITIONS) $(INCLUDE_DIRS) $(BLOCK2_DEF) $(BLOCK2_INC) -fmax-errors=5
 
+src/dmrg_gaopt.o:src/dmrg_gaopt.cpp
+	$(CXX) -o $@ -c $< $(OPT_LEVEL) -fopenmp -MMD -MP $(DEFINITIONS) $(INCLUDE_DIRS) $(BLOCK2_DEF) $(BLOCK2_INC) -fmax-errors=5
+
 %.o:%.cpp
 	$(CXX) -o $@ -c $< $(OPT_LEVEL) -fopenmp -MMD -MP $(DEFINITIONS) $(INCLUDE_DIRS) -fmax-errors=5
 
@@ -128,6 +143,6 @@ src/block2_npdm.o:src/block2_npdm.cpp
 	$(CC) -o $@ -c $< $(OPT_LEVEL) -fopenmp -MMD -MP $(DEFINITIONS) $(INCLUDE_DIRS) -fmax-errors=5
 
 clean:
-	rm -f $(progs) src/*.o src/progs/*.o src/*.d src/progs/*.d
+	rm -f $(progs) src/*.o src/progs/*.o src/*.d src/progs/*.d include/git_stamp.h
 clean_gcov:
 	rm src/*.gcda src/progs/*.gcda src/*.gcno src/progs/*.gcno

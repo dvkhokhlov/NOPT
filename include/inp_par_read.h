@@ -25,6 +25,7 @@ class rhf_par
     public:
         int y;
         //guess
+        int guess;     // guess_kind: HUCKEL (default) | SAD
 //         int huckel_guess;
 //         int h_core_guess;
 //         int read_guess;
@@ -64,6 +65,9 @@ class dav_par
 };
 
 
+// Starting orbitals when the input carries no $VEC group.
+enum guess_kind { GUESS_HUCKEL = 0, GUESS_SAD = 1 };
+
 // CI backend driving the CAS-SCF active-space solve.
 enum cisolver_kind { CISOLVER_ALDET = 0, CISOLVER_DMRG = 1 };
 
@@ -73,6 +77,7 @@ enum dmrg_schedule_kind { DMRG_SCHED_UNKNOWN  = -1, DMRG_SCHED_DEFAULT   = 0 };
 enum dmrg_localize_kind { DMRG_LOC_UNKNOWN = -1, DMRG_LOC_OFF = 0, DMRG_LOC_PM = 1, DMRG_LOC_BOYS = 2 };
 enum dmrg_locorder_kind { DMRG_LOCORDER_UNKNOWN = -1, DMRG_LOCORDER_FIEDLER = 0, DMRG_LOCORDER_GAOPT = 1, DMRG_LOCORDER_NONE = 2 };
 enum dmrg_warm_kind     { DMRG_WARM_UNKNOWN = -1, DMRG_WARM_OFF = 0, DMRG_WARM_ON = 1 };
+enum dmrg_lowm_kind     { DMRG_LOW_M_UNKNOWN = -1, DMRG_LOW_M_OFF = 0, DMRG_LOW_M_ON = 1, DMRG_LOW_M_AUTO = 2 };
 
 // $DSRG group — CCVV source dressing (dsrg_par::read_line).
 enum dsrg_ccvv_src_kind { DSRG_CCVV_SRC_UNKNOWN = -1, DSRG_CCVV_SRC_NORMAL = 0, DSRG_CCVV_SRC_ZERO = 1 };
@@ -92,8 +97,11 @@ class dmrg_par // settings for the DMRG (block2) CI backend; see $DMRG group
         int    loc_order;      // DMRG orbital ordering (dmrg_locorder_kind): fiedler | gaopt | none
         std::string save_dir;  // block2 scratch root (renormalized ops / MPS)
         double memory;         // block2 double-stack size, GB (> 0)
+        double main_stack;     // main double stack, GB (0 = the default share of memory)
+        int    rdm_passes;     // RDM sweeps the operator set is split over (>= 1)
         int    warm_start;       // MPS warm-start across macro-iterations (dmrg_warm_kind): off | on
-        int    warm_sweeps;      // max sweeps for the warm re-solve; 0 = auto (sweeps/2)
+        int    warm_sweeps;      // clean-sweep budget of the warm re-solve; 0 = auto (sweeps/2); +2 noisy sweeps when warm_noise_scale > 0
+        double warm_noise_scale; // warm-schedule noise as a multiple of the last solve's discarded weight
         int    rot_m;            // MPS-rotation time-evolution bond dim (0 = use m)
         int    rot_steps;        // MPS-rotation TE steps (dt = 1/rot_steps; total time 1)
         int    warm_start_after; // cold macro-iterations before freezing the localized frame
@@ -104,6 +112,8 @@ class dmrg_par // settings for the DMRG (block2) CI backend; see $DMRG group
         int    extract_m;        // bond dim the canonical MPS is compressed to before extraction (0 = none)
         double extract_cutoff;   // determinant magnitude cutoff for the extraction search
         int    h2caa_m;          // compressed-intermediate bond dim for the DSRG h2caa overlap (0 = auto: 2m)
+        int    low_m_opt;        // MPO simplification rule (dmrg_lowm_kind): on = store AD/full B explicitly
+                                 //   (faster solve, ~+40% operator stack) | off = transpose-lean | auto by K^2*m^2
 
         dmrg_par();
         int read_group(char * inp);
@@ -111,6 +121,26 @@ class dmrg_par // settings for the DMRG (block2) CI backend; see $DMRG group
         int validate();        // enforces the value checks; exits loudly on a bad value
         int write_info();
         ~dmrg_par();
+
+};
+
+// $AVAS group -- atoms= and shells= are mandatory (avas_par::validate).
+class avas_par
+{
+    public:
+        int y;
+        std::vector<int> atoms;    // 1-based indices of the atoms carrying the target shells
+        std::vector<int> shell_n;  // principal number of each target nl shell
+        std::vector<int> shell_l;  // angular momentum of each target nl shell
+        std::vector<int> shell_atom; // 1-based atom each target label is bound to, 0 = every atom in atoms=
+        std::string ref_basis;     // reference minimal basis the target shells are taken from
+
+        avas_par();
+        int read_group(char * inp);
+        int read_line(char * inp);
+        int validate();            // enforces the mandatory keywords; exits loudly
+        int write_info() const;
+        ~avas_par();
 
 };
 
@@ -306,6 +336,7 @@ class inp_par
         char* point_group;
         
         rhf_par rhf;
+        avas_par avas;
         cas_par cas;
         cis_par cis;
         mp2_par mp2;
