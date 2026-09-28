@@ -1,5 +1,6 @@
 # include <stdio.h>
 # include <math.h>
+# include <limits>
 # include "l-bfgs_2_1.h"
 # include "matr.h"
 // # include "opt_link.h"
@@ -19,41 +20,50 @@ l_bfgs_engine::l_bfgs_engine(){
 
 int l_bfgs_engine::init(int n, int m){
     lbfgs_step_num =0;
+    lbfgs_pair_num =0;
     prev_grad_delta = new double[n*m];
     prev_grad = new double[n];
     for(int i=0;i<n;i++) prev_grad[i]=0;
-    prev_step = new double[m*n];
+    prev_step = new double[(m+1)*n];
     prev_skal_prod = new double[m];
     lbfgs_vec_num=m;
     return 0;
 }
 
 double l_bfgs_engine::step(double * x, double * grad, double * inv_h, int (*g_calc)(int, double *, double * ),int (*inv_h_calc)(int, double *, double * ), int n, double x_max){
-    int vec_num=lbfgs_step_num;
-    if (lbfgs_vec_num<lbfgs_step_num) vec_num=lbfgs_vec_num;
+    if(lbfgs_step_num==0)lbfgs_pair_num=0;
     int i,j;
     double * grad_transformed;
     grad_transformed = new double[n];
     double * s;
     s = new double [n];
     double * alpha;
-    alpha =new double[vec_num];
     //taking grad
     g_calc(n,x,grad);
     //numgrad(calc_OF_by_par,x,grad,n);
     //calulation of gradient delta and skalar product prev_grad x pred_step
     if (lbfgs_vec_num>0)
     if (lbfgs_step_num>0){
-//         printf("%d %d",(lbfgs_step_num-1)%lbfgs_vec_num,lbfgs_vec_num);
-//         getchar();
-        prev_skal_prod[(lbfgs_step_num-1)%lbfgs_vec_num]=0; ////CHECK IT!!!!!
+        double sy=0.0, yy=0.0;
         for(i=0; i<n;i++) {
-            prev_grad_delta[i+(lbfgs_step_num-1)%lbfgs_vec_num*n]=grad[i]-prev_grad[i];
-            prev_skal_prod[(lbfgs_step_num-1)%lbfgs_vec_num]+=prev_step[i+(lbfgs_step_num-1)%lbfgs_vec_num*n]*prev_grad_delta[i+(lbfgs_step_num-1)%lbfgs_vec_num*n];
+            grad_transformed[i]=grad[i]-prev_grad[i];
+            sy+=prev_step[i+lbfgs_vec_num*n]*grad_transformed[i];
+            yy+=grad_transformed[i]*grad_transformed[i];
         }
-        prev_skal_prod[(lbfgs_step_num-1)%lbfgs_vec_num]=1/prev_skal_prod[(lbfgs_step_num-1)%lbfgs_vec_num];
+        if(sy>std::numeric_limits<double>::epsilon()*yy){
+            const int slot=lbfgs_pair_num%lbfgs_vec_num;
+            for(i=0; i<n;i++){
+                prev_grad_delta[i+slot*n]=grad_transformed[i];
+                prev_step[i+slot*n]=prev_step[i+lbfgs_vec_num*n];
+            }
+            prev_skal_prod[slot]=1.0/sy;
+            lbfgs_pair_num++;
+        }
     
     }
+    int vec_num=lbfgs_pair_num;
+    if(lbfgs_vec_num<vec_num)vec_num=lbfgs_vec_num;
+    alpha =new double[vec_num];
     //back up of gradient
     for(i=0; i<n;i++) grad_transformed[i]=grad[i];
     for(i=0; i<n;i++) prev_grad[i]=grad[i];
@@ -66,10 +76,10 @@ double l_bfgs_engine::step(double * x, double * grad, double * inv_h, int (*g_ca
     for(i=0;i<vec_num;i++){
         //alpha=rho*{prev_step x gr}
         alpha[i]=0;
-        for(j=0;j<n;j++) alpha[i]+=prev_step[j+(lbfgs_step_num-i-1)%lbfgs_vec_num*n]*grad_transformed[j];
-        alpha[i]=alpha[i]*prev_skal_prod[(lbfgs_step_num-i-1)%lbfgs_vec_num];
+        for(j=0;j<n;j++) alpha[i]+=prev_step[j+(lbfgs_pair_num-i-1)%lbfgs_vec_num*n]*grad_transformed[j];
+        alpha[i]=alpha[i]*prev_skal_prod[(lbfgs_pair_num-i-1)%lbfgs_vec_num];
         //gr = gr - alpha * prev_grad
-        for(j=0;j<n;j++)grad_transformed[j]-=alpha[i]*prev_grad_delta[j+(lbfgs_step_num-i-1)%lbfgs_vec_num*n];
+        for(j=0;j<n;j++)grad_transformed[j]-=alpha[i]*prev_grad_delta[j+(lbfgs_pair_num-i-1)%lbfgs_vec_num*n];
     }
     //transformation throw diagonal approximate hess
     //Hess is not inverted!!!!!!
@@ -79,10 +89,10 @@ double l_bfgs_engine::step(double * x, double * grad, double * inv_h, int (*g_ca
     for(i=0;i<vec_num;i++){
         //alpha=rho*{prev_grad x s}
         betta=0;
-        for(j=0;j<n;j++) betta+=prev_grad_delta[j+(lbfgs_step_num-vec_num+i)%lbfgs_vec_num*n]*s[j];
-        betta=betta*prev_skal_prod[(lbfgs_step_num-vec_num+i)%lbfgs_vec_num];
+        for(j=0;j<n;j++) betta+=prev_grad_delta[j+(lbfgs_pair_num-vec_num+i)%lbfgs_vec_num*n]*s[j];
+        betta=betta*prev_skal_prod[(lbfgs_pair_num-vec_num+i)%lbfgs_vec_num];
         //s = s + (alpha - betta)* prev_step
-        for(j=0;j<n;j++)s[j]+=(alpha[vec_num-i-1]-betta)*prev_step[j+(lbfgs_step_num-vec_num+i)%lbfgs_vec_num*n];
+        for(j=0;j<n;j++)s[j]+=(alpha[vec_num-i-1]-betta)*prev_step[j+(lbfgs_pair_num-vec_num+i)%lbfgs_vec_num*n];
     }
     double zoom=-1;
     for (int i=0;i<n;i++){
@@ -104,9 +114,10 @@ double l_bfgs_engine::step(double * x, double * grad, double * inv_h, int (*g_ca
 #endif
     }
     //preparation to next step
+    // The spare slot holds the applied step until its curvature pair is accepted.
     if (lbfgs_vec_num>0)
     for(i=0; i<n;i++){
-        prev_step[i+(lbfgs_step_num)%lbfgs_vec_num*n]=s[i]*zoom;
+        prev_step[i+lbfgs_vec_num*n]=s[i]*zoom;
     }
     lbfgs_step_num++;
     delete[] s;
