@@ -1,0 +1,16 @@
+$PAR NUM_THREADS=4 N_MOL=1 RHF=1 MP2=1 CAS=0 D5=1 RI=1 NAME=sic3 $PAREND
+$MOL
+ _CHARGE=0;
+ _BASIS=cc-pvqz;
+ _RI_BASIS=cc-pvqz-jkfit;
+ _UNITS= ang;
+ _xyz
+4
+SiC3 isomer 3a (Rintelman/Gordon), C2v, molecular plane xz; Kollmar JCC 2019 Fig.1
+ Si   0.0000000000   0.0000000000   1.6692513000
+ C    0.7500000000   0.0000000000   0.0000000000
+ C   -0.7500000000   0.0000000000   0.0000000000
+ C    0.0000000000   0.0000000000  -1.2175385000
+$END
+$RHF maxit=100 dE=1e-10 grad=1e-8 $END
+$MP2 nat_orb=1 $END

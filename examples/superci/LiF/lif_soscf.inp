@@ -1,0 +1,17 @@
+$PAR NUM_THREADS=8 N_MOL=1 RHF=0 CAS=1 D5=1 RI=1 NAME=lif $PAREND
+$MOL
+_CHARGE=0;
+_BASIS=aug-cc-pvdz;
+_RI_BASIS=def2-universal-jkfit;
+_UNITS= ang;
+_xyz
+3
+LiF R=3.50 ang
+Li  0.00000000  0.00000000  0.00000000
+F   0.00000000  0.00000000  3.50
+A   1.00000000  0.00000000  0.00000000
+$END
+$act_space n_alp=3 n_bet=3 n_val=12 mult=1 p_n=10 $end
+_MO INP=lif_RHF.orb
+$CAS n_s=3 w_state=all_1; cisolver=aldet maxit=400 dE=1e-12 grad=1e-6 converger=soscf $END
+$dav dr=1E-12 de=1E-10 $end
