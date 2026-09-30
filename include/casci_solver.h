@@ -189,7 +189,8 @@ public:
     virtual void select_operator(int kind);
     // Continue the retained state set on operator kind at bond dimension m: n_sweeps noise-free
     // variational sweeps at Davidson threshold dav_tol, optionally closed by the backend's one-site
-    // tail. The operator selection is restored on return. Returns the variational sweeps executed.
+    // tail; a tailed branch pads to an even count (n_sweeps+1 at most) and closes where it entered.
+    // The operator selection is restored on return. Returns the variational sweeps executed.
     virtual int solve_branch(int kind, int m, int n_sweeps, double dav_tol, bool one_site_tail);
     // Store the retained state set under a name and restore it later; a checkpoint survives any
     // number of solves and is never consumed by loading it.

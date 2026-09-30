@@ -177,7 +177,7 @@ int block2_casci_wrap::solve_branch(int kind, int m, int n_sweeps, double dav_to
 
     // Convergence of the variational phase, as the max over roots. One sweep leaves it
     // unmeasurable (NaN), which counts as not converged rather than faking convergence.
-    const int n2 = (int)dmrg->energies.size();
+    int n2 = (int)dmrg->energies.size();
     if (n2 >= 2) {
         const auto &en1 = dmrg->energies[n2 - 1];
         const auto &en0 = dmrg->energies[n2 - 2];
@@ -193,6 +193,18 @@ int block2_casci_wrap::solve_branch(int kind, int m, int n_sweeps, double dav_to
     }
     e.last_converged = (e.last_sweep_dE < e.cfg.sweep_tol);
     e.last_hit_max = (n2 == n_sweeps && !e.last_converged);
+
+    // A tailed branch closes on the lattice end it entered from: an odd variational phase takes one
+    // more zero-noise two-site sweep, so all branches of one checkpoint close on the same end. The
+    // convergence record above stays that of the phase block2 stopped.
+    if (one_site_tail && n2 % 2 == 1) {
+        dmrg->bond_dims.assign(n2 + 1, (ubond_t)m);
+        dmrg->noises.assign(n2 + 1, 0.0);
+        dmrg->davidson_conv_thrds.assign(n2 + 1, dav_tol);
+        dmrg->solve(n2 + 1, dmrg->forward, /*tol=*/0.0, n2);
+        n2 = (int)dmrg->energies.size();
+        e.last_two_dot_dw = (double)dmrg->discarded_weights.back();
+    }
 
     // The one-site sweeps every solve closes with, at zero noise and tolerance zero: zero noise is a
     // correctness condition, since block2's perturbative noise raises the density-matrix rank.
