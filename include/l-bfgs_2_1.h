@@ -8,6 +8,7 @@ class l_bfgs_engine
 {
     public:
         int lbfgs_step_num;
+        int lbfgs_pair_num; // accepted curvature pairs since restart
         double * prev_grad_delta;
         double * prev_grad;
         double * prev_step;
