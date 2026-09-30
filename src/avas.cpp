@@ -6,6 +6,9 @@
 # include "basis_lib_read.h"
 # include "common_vars.h"
 # include "defaults.h"
+# include "SCF.h"
+# include "RI.h"
+# include "timer.h"
 
 # include <vector>
 # include <cstdio>
@@ -125,6 +128,42 @@ static void avas_print_sigma(const char * title, const double * sigma, int n, in
     fprintf(out_stream,"\n\n");
 }
 
+// Rotates each row block [0,n_frz) [n_frz,n_cor) [n_cor,n_cor+n_act) [n_cor+n_act,n_mo) into the
+// eigenvectors of F = h + 2J[D] - K[D], D over the n_occ occupied rows (invariant under the AVAS
+// rotations); eigenvalues ascending into orb_energy. C1 only.
+static void avas_canonicalize(molecule * M, int n_frz)
+{
+    int n_ao  = M->n_ao;
+    int n_mo  = M->n_mo;
+    int n_occ = M->n_el_calc/2;
+    int n_cor = M->n_cor_orb;
+    int n_act = M->n_act_orb[0];
+
+    std::vector<double> DM(size_t(n_ao)*n_ao), F(size_t(n_ao)*n_ao), B(size_t(n_ao)*n_ao);
+
+    if(RI)gen_RI_AA(M);
+    M->mc=0;
+    gen_HF_DM(DM.data(), M->MO_VEC, n_ao, n_occ);
+    M->calc_F_AO(F.data(), DM.data(), 1.0);
+
+    // MO-basis Fock over the n_mo rows, row stride n_ao as diag_X_MO_block reads it
+    nopt_par_dgemm(CblasRowMajor,CblasNoTrans,CblasTrans,
+                   n_ao,n_mo,n_ao,1.0,
+                   F.data(),n_ao,
+                   M->MO_VEC,n_ao,0.0,
+                   B.data(),n_ao);
+    nopt_par_dgemm(CblasRowMajor,CblasNoTrans,CblasNoTrans,
+                   n_mo,n_mo,n_ao,1.0,
+                   M->MO_VEC,n_ao,
+                   B.data(),n_ao,0.0,
+                   F.data(),n_ao);
+
+    M->diag_X_MO_block(F.data(), 0          , n_frz            , nullptr);
+    M->diag_X_MO_block(F.data(), n_frz      , n_cor-n_frz      , nullptr);
+    M->diag_X_MO_block(F.data(), n_cor      , n_act            , nullptr);
+    M->diag_X_MO_block(F.data(), n_cor+n_act, n_mo-n_cor-n_act , nullptr);
+}
+
 //------------------------------------------------------------------------------------------------------------------------
 int avas_steer(molecule * M, const avas_par & A, char * job_name)
 {
@@ -149,6 +188,13 @@ int avas_steer(molecule * M, const avas_par & A, char * job_name)
         fprintf(out_stream,"ERROR: AVAS supports a single active space (got %d fragments; N_MOL must be 1)\n",M->n_frag);
         exit(EXIT_FAILURE);
     }
+    int n_frz = A.ncore;
+    if((n_frz<0)||(n_frz>M->n_cor_orb)){
+        fprintf(out_stream,"ERROR: $AVAS ncore=%d is out of range; accepted: 0 to %d (the CAS core size)\n",
+                            n_frz,M->n_cor_orb);
+        exit(EXIT_FAILURE);
+    }
+    int n_ob = n_occ-n_frz;
 
     // the reference basis is read for the selected atoms only, so an element it does not
     // carry is an error only when that atom is a target
@@ -182,23 +228,25 @@ int avas_steer(molecule * M, const avas_par & A, char * job_name)
     std::vector<double> S22i(S22);
     inv_matr_constr(S22i.data(),n_ref);
 
-    std::vector<double> U_o(size_t(n_occ)*n_occ), sig_o(n_occ);
+    std::vector<double> U_o(size_t(n_ob )*n_ob ), sig_o(n_ob );
     std::vector<double> U_v(size_t(n_vir)*n_vir), sig_v(n_vir);
 
-    avas_block_projector(M->MO_VEC                    ,n_occ,n_ao,n_ref,S12.data(),S22i.data(),U_o.data(),sig_o.data());
+    double * C_ob = M->MO_VEC+size_t(n_frz)*n_ao;
+
+    avas_block_projector(C_ob                         ,n_ob ,n_ao,n_ref,S12.data(),S22i.data(),U_o.data(),sig_o.data());
     avas_block_projector(M->MO_VEC+size_t(n_occ)*n_ao ,n_vir,n_ao,n_ref,S12.data(),S22i.data(),U_v.data(),sig_v.data());
 
     // rotate the two row blocks in place; ascending sigma leaves the k_o selected occupieds as
     // the last occupied rows, and the reversal below leaves the k_v selected virtuals first
-    std::vector<double> B(size_t(n_occ>n_vir?n_occ:n_vir)*n_ao);
+    std::vector<double> B(size_t(n_ob>n_vir?n_ob:n_vir)*n_ao);
 
-    if(n_occ>0){
-        cblas_dcopy(n_occ*n_ao,M->MO_VEC,1,B.data(),1);
+    if(n_ob>0){
+        cblas_dcopy(n_ob*n_ao,C_ob,1,B.data(),1);
         nopt_par_dgemm(CblasRowMajor,CblasNoTrans,CblasNoTrans,
-                       n_occ,n_ao,n_occ,1.0,
-                       U_o.data(),n_occ,
+                       n_ob,n_ao,n_ob,1.0,
+                       U_o.data(),n_ob,
                        B.data(),n_ao,0.0,
-                       M->MO_VEC,n_ao);
+                       C_ob,n_ao);
     }
 
     if(n_vir>0){
@@ -215,16 +263,16 @@ int avas_steer(molecule * M, const avas_par & A, char * job_name)
         double t=sig_v[i]; sig_v[i]=sig_v[n_vir-1-i]; sig_v[n_vir-1-i]=t;
     }
 
-    for(int i=0;i<n_occ;i++)M->orb_energy[i]       = sig_o[i];
+    for(int i=0;i<n_ob ;i++)M->orb_energy[n_frz+i] = sig_o[i];
     for(int a=0;a<n_vir;a++)M->orb_energy[n_occ+a] = sig_v[a];
 
-    std::vector<double> sig_o_d(n_occ);
-    for(int i=0;i<n_occ;i++)sig_o_d[i]=sig_o[n_occ-1-i];
+    std::vector<double> sig_o_d(n_ob);
+    for(int i=0;i<n_ob;i++)sig_o_d[i]=sig_o[n_ob-1-i];
 
-    avas_print_sigma("AVAS occupied-block sigma (descending)",sig_o_d.data(),n_occ,k_o);
+    avas_print_sigma("AVAS occupied-block sigma (descending)",sig_o_d.data(),n_ob ,k_o);
     avas_print_sigma("AVAS virtual-block  sigma (descending)",sig_v  .data(),n_vir,k_v);
 
-    if((k_o>0)&&(k_o<n_occ)&&(avas_max_gap(sig_o_d.data(),n_occ)!=k_o-1))
+    if((k_o>0)&&(k_o<n_ob)&&(avas_max_gap(sig_o_d.data(),n_ob)!=k_o-1))
         fprintf(out_stream,"NOTE: the occupied boundary after %d orbitals is not the largest gap of its spectrum\n",k_o);
     if((k_v>0)&&(k_v<n_vir)&&(avas_max_gap(sig_v.data(),n_vir)!=k_v-1))
         fprintf(out_stream,"NOTE: the virtual boundary after %d orbitals is not the largest gap of its spectrum\n",k_v);
@@ -240,6 +288,12 @@ int avas_steer(molecule * M, const avas_par & A, char * job_name)
     if(nz_v<k_v)
         fprintf(out_stream,"NOTE: only %d of the %d selected virtual orbitals overlap the reference "
                            "(%d functions); the rest are arbitrary within the virtual space\n",nz_v,k_v,n_ref);
+
+    if(A.canonicalize){
+        avas_canonicalize(M, n_frz);
+        fprintf(out_stream,"\n");
+        printf_timer("AVAS Fock canonicalization");
+    }
 
     M->MO_gamess_format();
 
