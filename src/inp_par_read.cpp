@@ -1245,6 +1245,8 @@ avas_par::avas_par(){
 
     y=0;
     ref_basis = AVAS_REF_BASIS_DEFAULT;
+    ncore        = AVAS_NCORE_DEFAULT;
+    canonicalize = AVAS_CANONICALIZE_DEFAULT;
 
 }
 
@@ -1303,6 +1305,12 @@ int avas_par::read_line(char * inp){
         if(tmp){ ref_basis=tmp; delete[] tmp; }
     }
 
+    if(key_word_comp(inp, avas_ncore_kw))
+        ncore = kw_to_i(inp, avas_ncore_kw, AVAS_NCORE_DEFAULT);
+
+    if(key_word_comp(inp, avas_canonicalize_kw))
+        canonicalize = kw_to_i(inp, avas_canonicalize_kw, AVAS_CANONICALIZE_DEFAULT);
+
     return 0;
 }
 
@@ -1320,6 +1328,10 @@ int avas_par::validate(){
     }
     if(ref_basis.empty()){
         fprintf(out_stream,"ERROR: $AVAS ref_basis must not be empty\n");
+        ok=0;
+    }
+    if((canonicalize!=0)&&(canonicalize!=1)){
+        fprintf(out_stream,"ERROR: $AVAS canonicalize=%d; accepted: 0 (off), 1 (on)\n",canonicalize);
         ok=0;
     }
     // duplicates would repeat reference functions and make the reference overlap singular
@@ -1382,7 +1394,10 @@ int avas_par::write_info() const {
         if(shell_atom[i])fprintf(out_stream," %d:%d%c",shell_atom[i],shell_n[i],avas_l_labels[shell_l[i]]);
         else             fprintf(out_stream," %d%c",shell_n[i],avas_l_labels[shell_l[i]]);
     }
-    fprintf(out_stream,"\n\n");
+    fprintf(out_stream,"\n");
+    fprintf(out_stream,"Excluded core orbitals:           %d\n",ncore);
+    fprintf(out_stream,"Canonicalization:                 %s\n",canonicalize?"on":"off");
+    fprintf(out_stream,"\n");
 
     return 0;
 }
