@@ -243,6 +243,8 @@ vector<const char *>avas_group_end{{"$avasend"},
 vector<const char *>avas_atoms_kw{{"atoms"}};
 vector<const char *>avas_shells_kw{{"shells"}};
 vector<const char *>avas_ref_basis_kw{{"ref_basis"}};
+vector<const char *>avas_ncore_kw{{"ncore"}};
+vector<const char *>avas_canonicalize_kw{{"canonicalize"}};
 
 vector<const char *>MO_group_start{{"$vec1"},
                                    {"$vec"},
