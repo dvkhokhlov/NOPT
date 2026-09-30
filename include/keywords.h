@@ -104,6 +104,8 @@ extern vector<const char *>avas_group_end        ;
 extern vector<const char *>avas_atoms_kw         ;
 extern vector<const char *>avas_shells_kw        ;
 extern vector<const char *>avas_ref_basis_kw     ;
+extern vector<const char *>avas_ncore_kw         ;
+extern vector<const char *>avas_canonicalize_kw  ;
 extern vector<const char *>MO_group_start       ;
 extern vector<const char *>MO_text_group_start  ;
 extern vector<const char *>MO_group_b_start     ;
