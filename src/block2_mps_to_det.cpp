@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "block2_dmrg_engine.h"   // dmrgci_engine, host_threads_guard, shared helpers
+#include "dmrg_log.h"             // dmrg_log_guard
 #include "mps_rotation.h"         // evolve_sa_multimps
 
 using namespace block2;
@@ -143,6 +144,7 @@ static report_basis_change build_report_basis_change(const dmrgci_engine &e, int
 static bool rotate_multimps_to_canonical(dmrgci_engine &e,
                                          const std::shared_ptr<MultiMPS<SU2, double>> &mps,
                                          const double *U, int rot_m, int rot_steps) {
+    dmrg_log_guard log(false); // the rotation's meter goes to the solve's log
     auto res = apply_orbital_rotation_mps(mps, U, e.n_act, e.n_elec, e.twos, e.orbsym,
                                           e.reorder_perm, rot_m, rot_steps, e.cfg.gpu);
     if (res.complex_generator) {
