@@ -869,11 +869,10 @@ int CAS_engine::make_canonical(bool with_active){
         double * U_canon  = nullptr;//to be move to molecule
         U_canon  = new double[n_act*n_act];
         
-        for(int i=0;i<n_act;i++)
-            for(int j=0;j<n_act;j++)
-                U_canon[i*n_act+j]=F_tot[(i+n_core)*n_ao+(j+n_core)];
-        lapack_diag(U_canon, M->orb_energy+n_core, n_act);//ir.rep can be broken -- must be rewritten in the "diag_X_MO_block"-style
-        normalize_rotation_rows(U_canon, n_act);
+        // diag_X_MO_block rotates the active rows by R (per irrep under $SYMM) and returns R^T;
+        // the composition and the report below take R = <canon|solve>, hence the transpose back.
+        M->diag_X_MO_block(F_tot, n_core, n_act, U_canon);
+        transpose(U_canon, n_act, n_act);
 
         // The wavefunction sits in the last solved basis, and a canonicalization may still be owed
         // to it, so this one composes with what is pending: U_total = U_canon * U_pending.
@@ -891,15 +890,7 @@ int CAS_engine::make_canonical(bool with_active){
         }
         CI->set_report_rotation(U_pending.data());
         
-        double * B  = new double[n_act*n_ao];
-        cblas_dgemm(CblasRowMajor,CblasNoTrans,CblasNoTrans,
-                    n_act,n_ao,n_act,1.0,
-                    U_canon,n_act,
-                    M->MO_VEC+n_core*n_ao,n_ao,0.0,
-                    B,n_ao);
-        memcpy(M->MO_VEC+n_core*n_ao, B, n_act*n_ao*sizeof(double));
         M->check_orb_symmetry();
-        delete[] B;
         
         // Refresh the active orbital copy. No tensors_recalc here -- it would re-localize and
         // advance the warm-start frame past the retained wavefunction.
