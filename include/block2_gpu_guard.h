@@ -64,7 +64,6 @@ public:
         block2::gpu_consumer_disengage();
         const std::string stats = block2::gpu_consumer_stats_line();
         std::cout << stats << std::endl;             // per-solve dmrg/*.log
-        fprintf(out_stream, "%s\n", stats.c_str());  // main output
 #endif
     }
 

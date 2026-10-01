@@ -13,7 +13,6 @@
 #include <vector>
 
 #include "block2_gpu_guard.h" // $DMRG gpu=on: the block2 GPU backend for the rotation sweeps
-#include "common_vars.h"      // out_stream
 
 using namespace block2;
 
@@ -36,10 +35,9 @@ void lap(double &acc, rot_clock::time_point &t0) {
     t0 = t1;
 }
 
-// One telemetry line to the per-solve sweep log and to the main output.
+// One telemetry line to the per-solve sweep log (std::cout, redirected by the caller).
 void rot_emit(const char *line) {
     std::cout << line << std::endl;
-    fprintf(out_stream, "%s\n", line);
 }
 
 // exp(t*(H_eff+const_e)) applied independently to each root's center wavefunction. Equivalent to
