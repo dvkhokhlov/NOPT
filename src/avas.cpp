@@ -12,6 +12,9 @@
 
 # include <vector>
 # include <cstdio>
+# include <algorithm>
+# include <numeric>
+# include <string>
 
 //------------------------------------------------------------------------------------------------------------------------
 // sigma spectra beyond the selection boundary are printed only this far
@@ -66,10 +69,30 @@ static std::vector<Shell> avas_ref_shells(molecule * M, const avas_par & A,
     return out;
 }
 
+// (n,l) labels that apply to atom i_a (0-based), sorted
+static std::vector<int> avas_atom_labels(const avas_par & A, int i_a)
+{
+    std::vector<int> nl;
+    for(int k=0;k<int(A.shell_n.size());k++)
+        if((A.shell_atom[k]==0)||(A.shell_atom[k]==i_a+1))nl.push_back(A.shell_n[k]*8+A.shell_l[k]);
+    std::sort(nl.begin(),nl.end());
+    return nl;
+}
+
+static std::string avas_rep_name(molecule * M, int r)
+{
+    std::string s(M->S.rep_name[r]);
+    s.erase(0,s.find_first_not_of(' '));
+    s.erase(s.find_last_not_of(' ')+1);
+    return s;
+}
+
 // A = (C S12) S22^-1 (C S12)^T for one MO row block; U <- eigenvectors in rows, sigma ascending.
+// With lab (the irrep of each block row, all valid) A is diagonalized per irrep, its off-irrep part
+// never read, and lab returns the irrep of each eigenvector row.
 static void avas_block_projector(const double * C, int n_b, int n_ao, int n_ref,
                                  const double * S12, const double * S22i,
-                                 double * U, double * sigma)
+                                 double * U, double * sigma, int * lab, int n_rep)
 {
     if(n_b<=0)return;
 
@@ -95,7 +118,42 @@ static void avas_block_projector(const double * C, int n_b, int n_ao, int n_ref,
                    U,n_b);
 
     symmetrization(U,n_b);
-    lapack_diag(U,sigma,n_b);
+    if(lab==nullptr){
+        lapack_diag(U,sigma,n_b);
+        return;
+    }
+
+    // irrep-major eigenvectors scattered into full-length rows, then one stable ascending sort
+    std::vector<double> Ab(U,U+size_t(n_b)*n_b), V(size_t(n_b)*n_b,0.0), s(n_b);
+    std::vector<int>    l(n_b);
+    int k=0;
+    for(int r=0;r<n_rep;r++){
+        std::vector<int> idx;
+        for(int i=0;i<n_b;i++)if(lab[i]==r)idx.push_back(i);
+        int m=int(idx.size());
+        if(m==0)continue;
+
+        std::vector<double> B(size_t(m)*m), e(m);
+        for(int i=0;i<m;i++)
+        for(int j=0;j<m;j++)
+            B[size_t(i)*m+j]=Ab[size_t(idx[i])*n_b+idx[j]];
+        lapack_diag(B.data(),e.data(),m);
+
+        for(int i=0;i<m;i++,k++){
+            for(int j=0;j<m;j++)V[size_t(k)*n_b+idx[j]]=B[size_t(i)*m+j];
+            s[k]=e[i];
+            l[k]=r;
+        }
+    }
+
+    std::vector<int> ord(n_b);
+    std::iota(ord.begin(),ord.end(),0);
+    std::stable_sort(ord.begin(),ord.end(),[&](int a,int b){ return s[a]<s[b]; });
+    for(int i=0;i<n_b;i++){
+        cblas_dcopy(n_b,V.data()+size_t(ord[i])*n_b,1,U+size_t(i)*n_b,1);
+        sigma[i]=s[ord[i]];
+        lab  [i]=l[ord[i]];
+    }
 }
 
 // index of the largest drop in a descending spectrum
@@ -130,7 +188,7 @@ static void avas_print_sigma(const char * title, const double * sigma, int n, in
 
 // Rotates each row block [0,n_frz) [n_frz,n_cor) [n_cor,n_cor+n_act) [n_cor+n_act,n_mo) into the
 // eigenvectors of F = h + 2J[D] - K[D], D over the n_occ occupied rows (invariant under the AVAS
-// rotations); eigenvalues ascending into orb_energy. C1 only.
+// rotations); eigenvalues ascending into orb_energy. Under $SYMM per irrep, rows regrouped by label.
 static void avas_canonicalize(molecule * M, int n_frz)
 {
     int n_ao  = M->n_ao;
@@ -208,6 +266,30 @@ int avas_steer(molecule * M, const avas_par & A, char * job_name)
         atom_sel[A.atoms[i_sel]-1]=1;
     }
 
+    // Under $SYMM every row needs a label: the rows past ncore rotate per irrep, and every row is
+    // later canonicalized per irrep, which drops an unlabelled one. The reference projector commutes
+    // with the group only if each image of a target atom is a target carrying the same labels.
+    if(IS_SYM){
+        for(int i=0;i<M->n_mo;i++)
+            if((M->rep_num[i]<0)||(M->rep_num[i]>=M->S.n_rep)){
+                fprintf(out_stream,"ERROR: $AVAS under $SYMM needs an irrep label on every orbital, but MO %d has none "
+                                   "(it is not symmetry-adapted); run AVAS in C1\n",i);
+                exit(EXIT_FAILURE);
+            }
+        for(int i_sel=0; i_sel<int(A.atoms.size()); i_sel++){
+            int i_a = A.atoms[i_sel]-1;
+            for(int i_op=0;i_op<M->S.n_op;i_op++){
+                int i_b = M->S.at_refl[i_a*M->S.n_op+i_op];
+                if((atom_sel[i_b]==0)||(avas_atom_labels(A,i_a)!=avas_atom_labels(A,i_b))){
+                    fprintf(out_stream,"ERROR: $AVAS atoms= / shells= are not closed under group %s: atom %d (%s) is the "
+                                       "image of atom %d; select it with the same shells, or run in C1\n",
+                                       M->S.group,i_b+1,M->atom_names[i_b],i_a+1);
+                    exit(EXIT_FAILURE);
+                }
+            }
+        }
+    }
+
     std::vector<int>   ref_center;
     std::vector<Shell> ref_all = basis_lib_read_gbs(M,A.ref_basis.c_str(),1,0,
                                                     nullptr,&ref_center,true,nullptr,nullptr,&atom_sel);
@@ -233,8 +315,17 @@ int avas_steer(molecule * M, const avas_par & A, char * job_name)
 
     double * C_ob = M->MO_VEC+size_t(n_frz)*n_ao;
 
-    avas_block_projector(C_ob                         ,n_ob ,n_ao,n_ref,S12.data(),S22i.data(),U_o.data(),sig_o.data());
-    avas_block_projector(M->MO_VEC+size_t(n_occ)*n_ao ,n_vir,n_ao,n_ref,S12.data(),S22i.data(),U_v.data(),sig_v.data());
+    // block labels in, eigenvector labels out (per-irrep rotation); C1 passes none
+    std::vector<int> lab_o, lab_v;
+    if(IS_SYM){
+        lab_o.assign(M->rep_num+n_frz,M->rep_num+n_occ   );
+        lab_v.assign(M->rep_num+n_occ,M->rep_num+M->n_mo);
+    }
+    int * l_o = IS_SYM?lab_o.data():nullptr;
+    int * l_v = IS_SYM?lab_v.data():nullptr;
+
+    avas_block_projector(C_ob                         ,n_ob ,n_ao,n_ref,S12.data(),S22i.data(),U_o.data(),sig_o.data(),l_o,M->S.n_rep);
+    avas_block_projector(M->MO_VEC+size_t(n_occ)*n_ao ,n_vir,n_ao,n_ref,S12.data(),S22i.data(),U_v.data(),sig_v.data(),l_v,M->S.n_rep);
 
     // rotate the two row blocks in place; ascending sigma leaves the k_o selected occupieds as
     // the last occupied rows, and the reversal below leaves the k_v selected virtuals first
@@ -261,16 +352,35 @@ int avas_steer(molecule * M, const avas_par & A, char * job_name)
     for(int i=0;i<n_vir/2;i++){
         cblas_dswap(n_ao,M->MO_VEC+size_t(n_occ+i)*n_ao,1,M->MO_VEC+size_t(n_occ+n_vir-1-i)*n_ao,1);
         double t=sig_v[i]; sig_v[i]=sig_v[n_vir-1-i]; sig_v[n_vir-1-i]=t;
+        if(IS_SYM){ int lt=lab_v[i]; lab_v[i]=lab_v[n_vir-1-i]; lab_v[n_vir-1-i]=lt; }
     }
 
     for(int i=0;i<n_ob ;i++)M->orb_energy[n_frz+i] = sig_o[i];
     for(int a=0;a<n_vir;a++)M->orb_energy[n_occ+a] = sig_v[a];
+    if(IS_SYM){
+        for(int i=0;i<n_ob ;i++)M->rep_num[n_frz+i] = lab_o[i];
+        for(int a=0;a<n_vir;a++)M->rep_num[n_occ+a] = lab_v[a];
+    }
 
     std::vector<double> sig_o_d(n_ob);
     for(int i=0;i<n_ob;i++)sig_o_d[i]=sig_o[n_ob-1-i];
 
     avas_print_sigma("AVAS occupied-block sigma (descending)",sig_o_d.data(),n_ob ,k_o);
     avas_print_sigma("AVAS virtual-block  sigma (descending)",sig_v  .data(),n_vir,k_v);
+
+    if(IS_SYM){
+        std::vector<int> n_so(M->S.n_rep,0), n_sv(M->S.n_rep,0);
+        for(int i=0;i<k_o;i++)n_so[M->rep_num[n_occ-k_o+i]]++;
+        for(int a=0;a<k_v;a++)n_sv[M->rep_num[n_occ    +a]]++;
+
+        fprintf(out_stream,"AVAS selected orbitals by irrep\n            ");
+        for(int r=0;r<M->S.n_rep;r++)fprintf(out_stream," %4s",avas_rep_name(M,r).c_str());
+        fprintf(out_stream,"\n  occupied  ");
+        for(int r=0;r<M->S.n_rep;r++)fprintf(out_stream," %4d",n_so[r]);
+        fprintf(out_stream,"\n  virtual   ");
+        for(int r=0;r<M->S.n_rep;r++)fprintf(out_stream," %4d",n_sv[r]);
+        fprintf(out_stream,"\n\n");
+    }
 
     if((k_o>0)&&(k_o<n_ob)&&(avas_max_gap(sig_o_d.data(),n_ob)!=k_o-1))
         fprintf(out_stream,"NOTE: the occupied boundary after %d orbitals is not the largest gap of its spectrum\n",k_o);
@@ -293,6 +403,20 @@ int avas_steer(molecule * M, const avas_par & A, char * job_name)
         avas_canonicalize(M, n_frz);
         fprintf(out_stream,"\n");
         printf_timer("AVAS Fock canonicalization");
+    }
+
+    // A rotation within one irrep keeps the block's off-irrep weight but can gather it in one row,
+    // so every label is re-certified by the orbital reader's own test, judged on rep_num.
+    if(IS_SYM){
+        std::vector<int> lab(M->rep_num,M->rep_num+M->n_mo);
+        M->check_orb_symmetry();
+        for(int i=0;i<M->n_mo;i++)
+            if(M->rep_num[i]!=lab[i]){
+                fprintf(out_stream,"ERROR: AVAS orbital %d lost its irrep label (%s -> %s); the input orbitals are not "
+                                   "adapted tightly enough, run AVAS in C1\n",i,avas_rep_name(M,lab[i]).c_str(),
+                                   M->rep_num[i]<0?"none":avas_rep_name(M,M->rep_num[i]).c_str());
+                exit(EXIT_FAILURE);
+            }
     }
 
     M->MO_gamess_format();

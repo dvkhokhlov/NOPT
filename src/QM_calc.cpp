@@ -47,7 +47,7 @@ int single_point_calc( inp_par * P, molecule * Qm){
     }
 
     // AVAS rewrites the reference orbitals so that the active window holds the target atomic
-    // valence span. It fills only the window CAS defines, and it mixes irreps.
+    // valence span. It fills only the window CAS defines; under $SYMM it rotates per irrep.
     if(P->avas.y){
         if(!P->cas.y){
             fprintf(out_stream,"ERROR: $AVAS needs CAS=1 (nothing else consumes the steered active window)\n");
@@ -63,8 +63,9 @@ int single_point_calc( inp_par * P, molecule * Qm){
                                "(two active-space steering mechanisms)\n");
             exit(EXIT_FAILURE);
         }
-        if(IS_SYM){
-            fprintf(out_stream,"ERROR: $AVAS supports C1 only (the rotation mixes irreps)\n");
+        if(IS_SYM && Qm->S.n_rep!=Qm->S.n_op){
+            fprintf(out_stream,"ERROR: $AVAS supports groups with one-dimensional irreps only (Cs, Ci, C2, C2v, C2h, "
+                               "D2, D2h); use one of them or C1\n");
             exit(EXIT_FAILURE);
         }
         if(Qm->PP.size()){
