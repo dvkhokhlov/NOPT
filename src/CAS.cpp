@@ -25,6 +25,7 @@
 # include "timer.h"
 # include "jacobi.h"
 # include "common_vars.h"
+# include <sys/stat.h>
 
 
 extern int num_threads;
@@ -1328,6 +1329,27 @@ CAS_engine::~CAS_engine(){
     
 }
 
+// Writes cas_iter/<job_name>_CAS_it<kkk>.{orb,orb_GAMESS,out} of the current orbitals (the .out core+active
+// only), with diag(F) in their energy field; orb_energy is restored, so the run's state is untouched.
+static void write_iter_orbs(molecule * M, const double * F, const char * job_name, int it){
+    const char * folder = "cas_iter";
+    struct stat st = {0};
+    if (stat (folder, &st) == -1) {
+        mkdir(folder, 0755);
+    }
+    const int n_ao = M->n_ao;
+    std::vector<double> e_backup(M->orb_energy, M->orb_energy+n_ao);
+    for(int i=0;i<n_ao;i++)M->orb_energy[i]=F[i*n_ao+i];
+
+    M->MO_gamess_format();
+    char name[BUF_LINE_LENGTH];
+    snprintf(name,sizeof(name),"%s/%s_CAS_it%03d.out",folder,job_name,it);
+    M->GAMESS_type_out_print(name, M->n_cor_orb+M->n_act_orb[0]);
+    snprintf(name,sizeof(name),"%s/%s_CAS_it%03d.orb",folder,job_name,it);
+    M->MO_print(name);
+
+    memcpy(M->orb_energy, e_backup.data(), sizeof(double)*n_ao);
+}
 
 int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
     
@@ -1491,6 +1513,7 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
         }
         fprintf(out_stream,"%3d |% 18.10f | % .3e | %.3e | %.3e | %3d   |%s%s%s%s%s%s\n",n_iter,E,E-E_old,max_grad_el, rot_step,n_dav_conv, de_val, dw_val, od_val, hit_max?" *":"", cold_fb?" c":"", diis_reset?" r":"");
         fflush(out_stream);
+        write_iter_orbs(M, CAS->F_tot, job_name, n_iter);
 //         getchar();
 //         exit(0);
         if(fabs(E-E_old)<cas->e_conv && max_grad_el<CAS_E_EXIT_GRAD_FACTOR*cas->g_conv){converged=1; break;}
