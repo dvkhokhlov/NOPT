@@ -159,6 +159,7 @@ class cas_par
         //orbital converger
         int converger;     // converger_kind: SOSCF (default) | SXPT
         int lbfgs;         // orbital L-BFGS history depth, 0 = bare step
+        int strict_symm;   // under $SYMM, unlabelled optimized orbitals: 1 abort, 0 rotate without symmetry
         //convergence
         int max_it;
         double e_conv;

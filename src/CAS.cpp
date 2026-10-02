@@ -731,7 +731,7 @@ int CAS_engine::calc_grad(double * G_state, double * F_state, double * G_ga_stat
     for(int i=0;i<n_core;i++)
     for(int t=0;t<n_act;t++){
         g_it[i*n_act+t]=4*F_state[i*n_ao+(t+n_core)]-2*G_ga_state[i*n_act+t];
-	if(rep_num[i]!=rep_num[n_core+t]){
+	if(mask_by_irrep && rep_num[i]!=rep_num[n_core+t]){
             g_it[i*n_act+t]=0;
         }
     }
@@ -739,7 +739,7 @@ int CAS_engine::calc_grad(double * G_state, double * F_state, double * G_ga_stat
     for(int i=0;i<n_core;i++)
     for(int a=0;a<n_vac;a++){
         g_ia[i*n_vac+a]=4*F_state[i*n_ao+(a+n_core+n_act)];
-        if(rep_num[i]!=rep_num[a+n_core+n_act]){
+        if(mask_by_irrep && rep_num[i]!=rep_num[a+n_core+n_act]){
             g_ia[i*n_vac+a]=0;
        }
     }
@@ -747,7 +747,7 @@ int CAS_engine::calc_grad(double * G_state, double * F_state, double * G_ga_stat
     for(int t=0;t<n_act;t++)
     for(int a=0;a<n_vac  ;a++){
         g_ta[t*n_vac+a]=2*G_ga_state[(a+n_core+n_act)*n_act+t];
-        if(rep_num[t+n_core]!=rep_num[a+n_core+n_act]){
+        if(mask_by_irrep && rep_num[t+n_core]!=rep_num[a+n_core+n_act]){
             g_ta[t*n_vac+a]=0;
         }
     }
@@ -1413,11 +1413,34 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
     jacobi_mcscf_sd_engine j_sd;
     j_sd.init(CAS->G,CAS->B,CAS->n_core, CAS->n_act,CAS->n_vac,CAS->n_ao,CAS->n_s_opt,cas->x_max);
 
+    // Under $SYMM the gradient mask and sxpt's per-irrep blocks confine an orbital without an irrep
+    // label to the other unlabelled ones. If an optimized orbital has none, strict_symm=on aborts and
+    // off rotates all orbitals without symmetry (c1_rot; sxpt then reads c1_rep_num, all -1).
+    bool c1_rot = false;
+    std::vector<int> c1_rep_num;
+    if(IS_SYM && cas->max_it>0){
+        const int n_opt = CAS->n_core+CAS->n_act+CAS->n_vac;
+        int n_unlab = 0, first = -1;
+        for(int p=0;p<n_opt;p++)if(M->rep_num[p]<0){ if(first<0)first=p; n_unlab++; }
+        if(n_unlab>0 && cas->strict_symm){
+            fprintf(out_stream,"ERROR: %d optimized orbitals carry no irrep label (first: MO %d); set $CAS strict_symm=off"
+                               " to optimize them without symmetry, or run without $SYMM\n",n_unlab,first);
+            exit(1);
+        }
+        if(n_unlab>0){
+            fprintf(out_stream,"NOTE: %d optimized orbitals carry no irrep label; orbital rotations are not"
+                               " restricted by symmetry in this run\n",n_unlab);
+            c1_rot = true;
+            CAS->mask_by_irrep = false;
+            c1_rep_num.assign(n_opt,-1);
+        }
+    }
+
     //super-CI-PT engine
     superci_pt_engine SXPT;
     if(cas->converger==CONVERGER_SXPT)
-        SXPT.init(CAS->n_core, CAS->n_act, CAS->n_vac, CAS->n_ao, M->rep_num, M->S.n_rep, cas->x_max,
-                  cas->lbfgs);
+        SXPT.init(CAS->n_core, CAS->n_act, CAS->n_vac, CAS->n_ao, c1_rot ? c1_rep_num.data() : M->rep_num,
+                  M->S.n_rep, IS_SYM!=0 && !c1_rot, cas->x_max, cas->lbfgs);
     
     dmrg_log_set_tag(dmrg_log_tag::primary);
     n_dav_conv = CAS->CI_calc(1,0,0);
@@ -1583,6 +1606,7 @@ int CAS_SCF(molecule * M, cas_par * cas, char * job_name){
     
     
     //calculate canonical orbitals
+    if(c1_rot)M->check_orb_symmetry();   // the canonicalization reads the labels the C1 rotations left stale
     CAS->make_canonical(/*with_active=*/true);
     
     if(LINEAR)CAS->rotate();
