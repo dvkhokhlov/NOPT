@@ -214,6 +214,7 @@ cas_par::cas_par(){
     ci_solver = CISOLVER_ALDET;
     converger = CONVERGER_SOSCF;
     lbfgs     = CAS_LBFGS_DEFAULT;
+    strict_symm = 1;
     //convergence
     max_it = CAS_MAX_IT_DEFAULT;
     e_conv = CAS_EN_CON_DEFAULT;
@@ -416,6 +417,15 @@ int cas_par::read_line(char * inp){
         }
     }
 
+    if(key_word_comp(inp, cas_strict_symm_kw)){
+        if      (kw_to_kw_exact(inp, cas_strict_symm_kw, cas_strict_symm_on_kw )) strict_symm = 1;
+        else if (kw_to_kw_exact(inp, cas_strict_symm_kw, cas_strict_symm_off_kw)) strict_symm = 0;
+        else{
+            fprintf(out_stream,"ERROR: unknown STRICT_SYMM value; accepted: on, off\n");
+            exit(1);
+        }
+    }
+
     if(key_word_comp(inp, cas_track_kw)){
         track=1;
     }
@@ -539,6 +549,8 @@ int cas_par::write_info(int n_a, int n_b, int n_o, int n_c, int mult){
         fprintf(out_stream,"Maximum SX-PT step          :     %e\n",x_max);
     }
     else fprintf(out_stream,"Maximum SOSCF step          :     %e\n",x_max);
+    if(strict_symm==0)
+        fprintf(out_stream,"Unlabelled orbitals (strict_symm):  optimized without symmetry\n");
     fprintf(out_stream,"\n");
     if      (ci_solver==CISOLVER_ALDET){
         fprintf(out_stream,"CI solver:                        determinant CI (aldet)\n");
