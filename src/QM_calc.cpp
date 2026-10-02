@@ -67,6 +67,13 @@ int single_point_calc( inp_par * P, molecule * Qm){
         }
     }
 
+    // DSRG-PT2 runs without point-group symmetry only (IS_SYM is 0 for group=C1).
+    if(P->dsrg.y && IS_SYM){
+        fprintf(out_stream,"ERROR: DSRG-PT2 does not support point-group symmetry; "
+                           "run without $SYMM (or with group=C1)\n");
+        exit(EXIT_FAILURE);
+    }
+
     Qm->gen_1el_data();
     fprintf(out_stream,"\n\n");
     printf_timer("Calculation of 1-el matrices");
