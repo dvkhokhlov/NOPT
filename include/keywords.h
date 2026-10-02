@@ -30,6 +30,9 @@ extern vector<const char *>converger_kw         ;
 extern vector<const char *>converger_soscf_kw   ;
 extern vector<const char *>converger_sxpt_kw    ;
 extern vector<const char *>cas_lbfgs_kw         ;
+extern vector<const char *>cas_strict_symm_kw   ;
+extern vector<const char *>cas_strict_symm_on_kw;
+extern vector<const char *>cas_strict_symm_off_kw;
 extern vector<const char *>num_state_kw         ;
 
 extern vector<const char *>num_frozen_orb_kw    ;
