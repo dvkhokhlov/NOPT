@@ -87,6 +87,12 @@ vector<const char *>converger_sxpt_kw{{"sxpt"}};
 
 vector<const char *>cas_lbfgs_kw{{"lbfgs"}};
 
+vector<const char *>cas_strict_symm_kw{{"strict_symm"}};
+
+vector<const char *>cas_strict_symm_on_kw{{"on"}};
+
+vector<const char *>cas_strict_symm_off_kw{{"off"}};
+
 vector<const char *>num_state_kw{{"n_s"},
                                  {"numstate"},
                                  {"num_state"}};
