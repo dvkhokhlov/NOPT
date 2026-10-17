@@ -68,14 +68,17 @@ inline int nopt_engines_initialize(){
         q_g_engines[i] = Engine(Operator::emultipole2,GTO_MAX,L_MAX);
         q_g_engines[i].set_params(std::array<double,3>{0.0, 0.0, 0.0});
         if(RI==1){
+#ifdef _OLD_LIBINT
             r_g_engines[i] = Engine(Operator::coulomb,GTO_MAX,RI_L_MAX);
             r2g_engines[i] = Engine(Operator::coulomb,GTO_MAX,RI_L_MAX);
-#ifdef _OLD_LIBINT
             r_g_engines[i].set_braket(libint2::BraKet::xs_xx);//for libint 2.4
             r2g_engines[i].set_braket(libint2::BraKet::xs_xs);//for libint 2.4
 #else
-            r_g_engines[i].set(libint2::BraKet::xs_xx);//for libint 2.7
-            r2g_engines[i].set(libint2::BraKet::xs_xs);//for libint 2.7
+            // built with their braket: set() after a default (xx_xx) build keeps GTO_MAX^4 scratch
+            r_g_engines[i] = Engine(Operator::coulomb,GTO_MAX,RI_L_MAX,0,std::numeric_limits<double>::epsilon(),
+                                    libint2::default_params(Operator::coulomb),libint2::BraKet::xs_xx);
+            r2g_engines[i] = Engine(Operator::coulomb,GTO_MAX,RI_L_MAX,0,std::numeric_limits<double>::epsilon(),
+                                    libint2::default_params(Operator::coulomb),libint2::BraKet::xs_xs);
 #endif
         }
     }
