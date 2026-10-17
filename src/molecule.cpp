@@ -1977,7 +1977,7 @@ int molecule::GAMESS_type_out_print(const char* out_name, int n_print_mo){
                 for(int iiii=3*ao_num; iiii<3*ao_num+108;iiii++)ao_type[iiii]='K';
             }
             for(k=0;k<s[sh_i].alpha.size();k++){
-                fprintf(out," %3d   %c  %3d%15.6f% 12.6f (% 10.6f) \n",
+                fprintf(out," %3d   %c %4d%15.6f% 12.6f (% 10.6f) \n",
                         shell_num,type_shell,gto_num,
                         s[sh_i].alpha[k],s[sh_i].contr[0].coeff[k],
                         lib_coef[shell_num-1][k]);
