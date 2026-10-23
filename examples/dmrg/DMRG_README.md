@@ -96,8 +96,9 @@ Default shown in parentheses.
 - **sweep_tol** *(1e-8)* — sweep-to-sweep energy convergence threshold.
 - **hf_occ** *(integral)* — initial MPS occupancy scheme. Only `integral` accepted.
 - **schedule** *(default)* — bond-dimension / noise sweep schedule. Only `default` accepted.
-- **save_dir** *(/dev/shm)* — block2 scratch root (renormalized operators, MPS tensors).
-  RAM-backed by default.
+- **save_dir** *(/dev/shm; /tmp on macOS)* — block2 scratch root (renormalized operators, MPS
+  tensors). RAM-backed by default on Linux. In Docker, `/dev/shm` is capped at 64 MB unless the
+  container gets `--shm-size` (see `dockerbuild/README.md`).
 - **memory** *(1.0)* — size of block2's double stack, in GB. This is what a large active space
   or bond dimension exhausts; raise it if block2 aborts on a stack overflow.
 - **low_m_opt** *(absent = auto)* — MPO simplification rule. `on` = faster MPO simplification for

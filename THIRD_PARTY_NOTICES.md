@@ -111,6 +111,31 @@ included.
 
 ---
 
+## 7. block2 — optional
+
+- **Description**: Efficient MPO implementation of quantum chemistry DMRG
+  (density matrix renormalization group).
+- **Authors**: Huanchen Zhai, Garnet Kin-Lic Chan, and contributors.
+- **Homepage**: <https://github.com/block-hczhai/block2-preview>
+- **License**: GNU General Public License v3.0 (GPL-3.0).
+  See `licenses/block2/LICENSE`, or <https://www.gnu.org/licenses/gpl-3.0.html>.
+- **Citation**: Zhai, H.; Larsson, H. R.; Lee, S.; Cui, Z.-H.; Zhu, T.; Sun, C.;
+  Peng, L.; Peng, R.; Liao, K.; Tölle, J.; Yang, J.; Li, S.; Chan, G. K.-L.
+  *Block2: A comprehensive open source framework to develop and apply
+  state-of-the-art DMRG algorithms in electronic structure and beyond.*
+  J. Chem. Phys. **2023**, *159*, 234801. DOI: 10.1063/5.0180424.
+- **Use in NOPT**: Optional DMRG CI solver for CAS-SCF (`cisolver=dmrg`), enabled
+  at compile time with `USE_BLOCK2=yes`.
+- **Linkage**: Dynamic (`libblock2.so`).
+
+> block2 is licensed under GPL-3.0 (not LGPL). A NOPT binary built with
+> `USE_BLOCK2=yes` is a combined work with block2; distributing such a binary
+> (e.g. the `-dmrg` Docker images) is subject to the GPL-3.0 terms, including
+> making the corresponding source available. NOPT's MIT license is compatible
+> with this. Builds without `USE_BLOCK2` do not include block2.
+
+---
+
 ## License Compatibility Summary
 
 NOPT is distributed under the MIT License (see `LICENSE`).
@@ -124,6 +149,7 @@ All required dependencies are licensed under terms compatible with MIT:
 | Boost     | BSL-1.0        | Compatible                     |
 | Eigen     | MPL-2.0        | Compatible (file-level)        |
 | Intel MKL | Proprietary    | Optional; user obligation      |
+| block2    | GPL-3.0        | Optional; GPL-3.0 applies to binaries built with it |
 
 ---
 

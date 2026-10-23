@@ -1,0 +1,200 @@
+# syntax=docker/dockerfile:1.7
+#
+# NOPT — "dispatch" (heavy) image  [amd64 and arm64]
+# =================================================
+# Bundles four microarchitecture builds of run_sQM (+ each one's libint) into a
+# single image and picks the best one for the host CPU at container start.
+#
+# One Dockerfile builds both arches; the source tags are build args (TAG_5 is
+# optional and defaults to TAG_4, i.e. amd64 bundles four levels, arm64 five):
+#
+#   amd64 (default):
+#     docker build -f Dockerfile.dispatch -t REPO:gto27-dmrg-x86-64-dispatch \
+#       --build-arg SRC=REPO --build-arg TAG_PREFIX=gto27-dmrg- \
+#       --build-arg TAG_1=x86-64-v1 --build-arg TAG_2=x86-64-v2 \
+#       --build-arg TAG_3=x86-64-v3 --build-arg TAG_4=x86-64-v4 .
+#
+#   arm64:
+#     docker buildx build -f Dockerfile.dispatch --platform linux/arm64 --load \
+#       -t REPO:gto27-dmrg-arm64-dispatch --build-arg SRC=REPO \
+#       --build-arg TAG_PREFIX=gto27-dmrg- \
+#       --build-arg TAG_1=arm64-v8-a --build-arg TAG_2=arm64-v8.2-a \
+#       --build-arg TAG_3=arm64-v9-a --build-arg TAG_4=apple-m1 \
+#       --build-arg TAG_5=apple-m4 .
+#
+# Why this exists
+# ---------------
+# A manifest list selects images by os/arch/variant. For amd64, containerd-based
+# runtimes can match the microarch *variant* (v2/v3/v4) and pull a slim image
+# directly; plain Docker cannot, and amd64 lands on the no-variant entry — this
+# image — which then dispatches at runtime. For arm64 there is no per-sublevel
+# variant matching at all, so the single linux/arm64 slot is always this image,
+# and runtime dispatch is the only way to get the optimal arm64 build.
+#
+# The build directory layout is /opt/nopt/<tag>/{run_sQM,libint,block2}, where <tag> is
+# the source tag name; the entrypoint's detection table uses those same names.
+#
+# Recompiles nothing — copies artifacts out of the four per-arch tags.
+# Runtime overrides: NOPT_ARCH=<tag> forces a level; NOPT_DEBUG=1 logs the pick.
+
+ARG SRC=pupeza/nopt
+# Variant prefix of the source tags (e.g. "27gto_with_dmrg_"): sources are
+# ${SRC}:${TAG_PREFIX}${TAG_n}, while the bundle dirs stay /opt/nopt/${TAG_n} so
+# the entrypoint's detection table (plain arch names) is variant-agnostic.
+ARG TAG_PREFIX=
+ARG TAG_1=x86-64-v1
+ARG TAG_2=x86-64-v2
+ARG TAG_3=x86-64-v3
+ARG TAG_4=x86-64-v4
+# Optional fifth level; left unset it repeats TAG_4 (copies land in the same dir).
+ARG TAG_5=${TAG_4}
+
+# Same base the per-arch images were built on (ABI match). Override to unpin.
+ARG UBUNTU_BASE=ubuntu:24.04@sha256:c4a8d5503dfb2a3eb8ab5f807da5bc69a85730fb49b5cfca2330194ebcc41c7b
+
+# ---- per-arch artifact sources (used only for COPY --from) -----------------
+FROM ${SRC}:${TAG_PREFIX}${TAG_1} AS s1
+FROM ${SRC}:${TAG_PREFIX}${TAG_2} AS s2
+FROM ${SRC}:${TAG_PREFIX}${TAG_3} AS s3
+FROM ${SRC}:${TAG_PREFIX}${TAG_4} AS s4
+FROM ${SRC}:${TAG_PREFIX}${TAG_5} AS s5
+
+############################################################
+# runtime
+############################################################
+FROM ${UBUNTU_BASE} AS runtime
+
+# Re-declare so the tag names are in scope for the COPY destinations below.
+ARG TAG_1
+ARG TAG_2
+ARG TAG_3
+ARG TAG_4
+ARG TAG_5
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Same runtime closure as the slim image (SOVERSION-named -> ABI-pinned).
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+        libstdc++6 libgcc-s1 libgomp1 libgfortran5 libopenblas0-openmp \
+        gosu ca-certificates; \
+    rm -rf /var/lib/apt/lists/*
+
+# Per-level binary + its matching libint/block2, side by side under /opt/nopt/<tag>/.
+COPY --from=s1 /deps/NOPT/run_sQM /opt/nopt/${TAG_1}/run_sQM
+COPY --from=s2 /deps/NOPT/run_sQM /opt/nopt/${TAG_2}/run_sQM
+COPY --from=s3 /deps/NOPT/run_sQM /opt/nopt/${TAG_3}/run_sQM
+COPY --from=s4 /deps/NOPT/run_sQM /opt/nopt/${TAG_4}/run_sQM
+COPY --from=s5 /deps/NOPT/run_sQM /opt/nopt/${TAG_5}/run_sQM
+
+COPY --from=s1 /opt/libint/lib /opt/nopt/${TAG_1}/libint
+COPY --from=s2 /opt/libint/lib /opt/nopt/${TAG_2}/libint
+COPY --from=s3 /opt/libint/lib /opt/nopt/${TAG_3}/libint
+COPY --from=s4 /opt/libint/lib /opt/nopt/${TAG_4}/libint
+COPY --from=s5 /opt/libint/lib /opt/nopt/${TAG_5}/libint
+
+# block2 (DMRG) is compiled with the same -march, so it is bundled per level too.
+COPY --from=s1 /opt/block2/lib /opt/nopt/${TAG_1}/block2
+COPY --from=s2 /opt/block2/lib /opt/nopt/${TAG_2}/block2
+COPY --from=s3 /opt/block2/lib /opt/nopt/${TAG_3}/block2
+COPY --from=s4 /opt/block2/lib /opt/nopt/${TAG_4}/block2
+COPY --from=s5 /opt/block2/lib /opt/nopt/${TAG_5}/block2
+
+# Basis-set library: arch-independent, path baked into every binary via
+# -DNOPT_LIB at compile time, so it must live at exactly /deps/NOPT/NOPT_lib.
+COPY --from=s1 /deps/NOPT/NOPT_lib /deps/NOPT/NOPT_lib
+
+# License + third-party notices (identical in every level).
+COPY --from=s1 /usr/share/doc/nopt /usr/share/doc/nopt
+
+# OpenBLAS built from source in the per-arch images (arm64; empty on amd64), identical in every
+# level since it dispatches kernels at runtime itself.
+COPY --from=s1 /opt/openblas/lib /opt/openblas/lib
+
+# ----- entrypoint: detect CPU level, then drop privileges ---------------
+COPY <<'EOF' /usr/local/bin/docker-entrypoint.sh
+#!/bin/sh
+set -eu
+
+# --- pick the best build the host CPU supports among what is bundled ------
+# Only ever selects a level whose directory is actually present, so the same
+# entrypoint is safe in both the amd64 and arm64 dispatch images.
+have() { [ -x "/opt/nopt/$1/run_sQM" ]; }
+LEVEL=
+
+case "$(uname -m)" in
+  x86_64)
+    LEVEL=x86-64-v1
+    # glibc's loader reports usable x86-64-vN levels; "(supported" (open paren)
+    # cannot match "(unsupported".
+    if HW=$(/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2 --help 2>/dev/null); then
+        for c in x86-64-v2 x86-64-v3 x86-64-v4; do
+            if printf '%s\n' "$HW" | grep -qF "${c} (supported" && have "$c"; then LEVEL=$c; fi
+        done
+    fi
+    ;;
+  aarch64|arm64)
+    LEVEL=arm64-v8-a
+    impl=$(grep -m1 -i 'CPU implementer' /proc/cpuinfo 2>/dev/null || true)
+    feats=$(grep -m1 -i '^Features' /proc/cpuinfo 2>/dev/null || true)
+    # Apple Silicon (implementer 0x61) -> the apple-tuned builds: apple-m4
+    # (armv8.7-a) for M4 and newer, else apple-m1 (armv8.4-a). M4+ is told by
+    # SME, or — since Docker Desktop's VM hides SME — by the ARMv8.7 markers
+    # afp+rpres alongside the v8.6 i8mm+bf16 that -march=armv8.7-a may emit.
+    # Otherwise pick by ISA feature: SVE => v9, FP16/DotProd (>=v8.2) => v8.2,
+    # else baseline.
+    v87=1
+    for f in afp rpres i8mm bf16 frint flagm2 sb; do
+        printf '%s' "$feats" | grep -qw "$f" || v87=0
+    done
+    if printf '%s' "$impl" | grep -qi '0x61' && have apple-m4 && \
+       { printf '%s' "$feats" | grep -qw 'sme' || [ "$v87" = 1 ]; }; then
+        LEVEL=apple-m4
+    elif printf '%s' "$impl" | grep -qi '0x61' && have apple-m1; then
+        LEVEL=apple-m1
+    elif printf '%s' "$feats" | grep -qw 'sve' && have arm64-v9-a; then
+        LEVEL=arm64-v9-a
+    elif printf '%s' "$feats" | grep -qwE 'asimddp|asimdhp|fphp' && have arm64-v8.2-a; then
+        LEVEL=arm64-v8.2-a
+    fi
+    ;;
+esac
+
+# Explicit override wins (benchmarking / misdetect workaround).
+if [ -n "${NOPT_ARCH:-}" ]; then LEVEL=$NOPT_ARCH; fi
+
+# Final safety net: if the chosen level is missing, use any bundled build.
+if ! have "$LEVEL"; then
+    for d in /opt/nopt/*/; do
+        if [ -x "${d}run_sQM" ]; then LEVEL=$(basename "$d"); break; fi
+    done
+fi
+
+BIN="/opt/nopt/${LEVEL}/run_sQM"
+# LD_LIBRARY_PATH outranks the binary's /opt/block2/lib RUNPATH, so the
+# level-matched libblock2 is the one loaded.
+export LD_LIBRARY_PATH="/opt/openblas/lib:/opt/nopt/${LEVEL}/libint:/opt/nopt/${LEVEL}/block2"
+[ -n "${NOPT_DEBUG:-}" ] && echo "nopt: dispatching to ${LEVEL}" >&2
+
+# --- drop privileges to the owner of /data (matches the slim image) ------
+TARGET_UID="${HOST_UID:-$(stat -c '%u' /data)}"
+TARGET_GID="${HOST_GID:-$(stat -c '%g' /data)}"
+
+if [ "${TARGET_UID}" = "0" ] && [ -z "${HOST_UID:-}" ]; then
+    echo "warning: /data is owned by root; pass -e HOST_UID=\$(id -u) -e HOST_GID=\$(id -g) to override" >&2
+fi
+
+if ! getent group "${TARGET_GID}" >/dev/null 2>&1; then
+    groupadd -g "${TARGET_GID}" runner
+fi
+if ! getent passwd "${TARGET_UID}" >/dev/null 2>&1; then
+    useradd -M -N -u "${TARGET_UID}" -g "${TARGET_GID}" -s /usr/sbin/nologin runner
+fi
+
+exec gosu "${TARGET_UID}:${TARGET_GID}" "$BIN" "$@"
+EOF
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+WORKDIR /data
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
