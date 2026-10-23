@@ -2520,8 +2520,6 @@ int res_fit_data::calc_RF_1_CA(double * P_CA){
     ED = new double[N_fit];
 //     int i_CI=0;
     double * CAAA;
-    double * CACC_J;
-    double * CACC_K;
     double * H1a;
     
     CAAA = new double[n_c*n_a*n_a*n_a];
@@ -2593,8 +2591,6 @@ int res_fit_data::calc_RF_1_CA(double * P_CA){
     sym_AB_CA(RF_PV_AB, RF_PV,n_a, N_fit);
     
     delete[] CAAA;
-    delete[] CACC_J;
-    delete[] CACC_K;
     delete[] RF_PH_tmp;
     
     return 0;
