@@ -14,6 +14,7 @@
 # include "matr.h"
 # include "defaults.h"
 #include "timer.h"
+#include <cstring>
 # include "grabbers.h"
 # include "mp2.h"
 # include "avas.h"
@@ -246,7 +247,8 @@ int hessian_calc(inp_par * P, molecule * Qm){
     int n_c=3*Qm->n_atoms;
     size_t num_states = P->cas.n_s;
     // size_t num_states = 1;
-    double Hessian[num_states][n_c][n_c] = {0.0};
+    double Hessian[num_states][n_c][n_c];
+    memset(Hessian, 0, sizeof(Hessian)); // a VLA cannot take an initializer (clang rejects it)
     double Ea[num_states], Eb[num_states], Ec[num_states], Ed[num_states];
 
     fprintf(stderr,"num of sates: %d \n",num_states);

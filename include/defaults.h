@@ -42,7 +42,11 @@
 #define DMRG_M_DEFAULT 0            // bond dimension: 0 = unset (required when CISOLVER=dmrg)
 #define DMRG_SWEEPS_DEFAULT 40
 #define DMRG_SWEEP_TOL_DEFAULT 1e-8
+#ifdef __APPLE__
+#define DMRG_SAVE_DIR_DEFAULT "/tmp"       // block2 scratch root (macOS has no /dev/shm)
+#else
 #define DMRG_SAVE_DIR_DEFAULT "/dev/shm"   // block2 scratch root (RAM-backed by default)
+#endif
 #define DMRG_MEMORY_DEFAULT 1.0            // block2 double-stack size, GB
 #define DMRG_RDM_PASSES_DEFAULT 1          // RDM sweeps the operator set is split over
 #define DMRG_MAIN_STACK_DEFAULT 0.0        // main double stack, GB; 0 = the ratio below

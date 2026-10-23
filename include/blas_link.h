@@ -3,9 +3,21 @@
 
 #include "common_vars.h"
 #include "omp.h"
+// NOPT_BLAS_CBLAS_ONLY (set for the block2 TUs by the Makefile): CBLAS + thread control only.
+// block2 declares its own Fortran LAPACK prototypes, which clang rejects as conflicting with
+// lapack.h's (GCC lets them pass); those TUs call no LAPACK themselves.
 #ifdef _OPENBLAS
-# include "cblas.h"
-# include "lapacke.h"
+# ifdef _ACCELERATE
+#  include "accelerate_compat.h"
+# else
+#  include "cblas.h"
+#  ifndef NOPT_BLAS_CBLAS_ONLY
+#   include "lapacke.h"
+#  endif
+# endif
+# ifndef lapack_int
+#  define lapack_int int
+# endif
 #endif
 #ifdef _MKL
 # include "mkl_cblas.h"
