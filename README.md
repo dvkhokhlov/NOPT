@@ -55,4 +55,8 @@ NOPT is distributed under the MIT License - see [LICENSE](LICENSE) for details.
 
 Third-party dependencies retain their own licenses;
 see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for full attribution.
-# NOPT
+
+# Contact
+
+For any questions please contact the NOPT maintainers:
+glebov_io@phys.chem.msu.ru, glebov_io@mail.ru, glebov-io@gmail.com
