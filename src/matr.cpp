@@ -270,10 +270,14 @@ int normalize_rotation_rows(double * U, int n) {
 
 double * comp_values;
 
+// qsort needs a three-way result. The old `a > b` (0/1, never -1) is not a valid comparator:
+// glibc's merge sort happened to order with it, macOS/BSD qsort does not -- the wrong orbitals then
+// get picked. Ties fall back to the index (the arrays start as 0..n-1), matching glibc's stable sort.
 int compare(const void * i, const void * j){
-    
-    return (comp_values[*(int*)i]>comp_values[*(int*)j]);
-
+    const int a = *(const int*)i, b = *(const int*)j;
+    if (comp_values[a] < comp_values[b]) return -1;
+    if (comp_values[a] > comp_values[b]) return  1;
+    return (a > b) - (a < b);
 }
 
 int sorter(const void *a, const void *b)
