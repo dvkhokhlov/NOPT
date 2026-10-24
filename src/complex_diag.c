@@ -4,8 +4,12 @@
 #include <math.h>
 
 #ifdef _OPENBLAS
-# include "cblas.h"
-# include "lapacke.h"
+# ifdef _ACCELERATE
+#  include "accelerate_compat.h"
+# else
+#  include "cblas.h"
+#  include "lapacke.h"
+# endif
 #endif
 #ifdef _MKL
 # include "mkl_cblas.h"
