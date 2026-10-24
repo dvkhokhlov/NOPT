@@ -43,4 +43,4 @@ and questions about the codebase.
 ## Contact
 
 For questions about the contribution policy or licensing, please contact
-the NOPT maintainers: glebov_io@phys.chem.msu.ru, glebov_io@mail.ru
+the NOPT maintainers: glebov_io@phys.chem.msu.ru, glebov_io@mail.ru, glebov-io@gmail.com
