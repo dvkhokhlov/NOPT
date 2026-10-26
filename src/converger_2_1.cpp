@@ -110,8 +110,9 @@ int soscf_engine::step(double * VEC, double * BUF){
           
     ortogonalization(rot_matr, n_ao);//ortogonalization of rot matrix
     //rotation of vectors
-    cblas_dgemm(CblasRowMajor,CblasNoTrans,CblasNoTrans,n_ao,n_ao,n_ao,1.0, rot_matr  ,n_ao,VEC,n_ao,0.0,BUF,n_ao);//TMP = C * U^T
-    for(int i=0;i<n_ao*n_ao;i++)VEC[i]=BUF[i];
+    //only the first n_mo rows are orbitals (n_mo < n_ao with spherical d); 0*NaN in the rows beyond would spread into them
+    cblas_dgemm(CblasRowMajor,CblasNoTrans,CblasNoTrans,n_mo,n_ao,n_mo,1.0, rot_matr  ,n_ao,VEC,n_ao,0.0,BUF,n_ao);//TMP = C * U^T
+    for(int i=0;i<n_mo*n_ao;i++)VEC[i]=BUF[i];
     
 //     PrintMatr(VEC,n_ao,n_ao,0);
 //     exit(0);
@@ -726,7 +727,7 @@ double soscf_engine_MCSCF::step(double * VEC, double * BUF){
     ortogonalization(rot_matr, n_mo);//ortogonalization of rot matrix
     //rotation of vectors
     cblas_dgemm(CblasRowMajor,CblasNoTrans,CblasNoTrans,n_mo,n_ao,n_mo,1.0, rot_matr  ,n_mo,VEC,n_ao,0.0,BUF,n_ao);//TMP = C * U^T
-    for(int i=0;i<n_ao*n_ao;i++)VEC[i]=BUF[i];
+    for(int i=0;i<n_mo*n_ao;i++)VEC[i]=BUF[i];//BUF holds n_mo rows only: copying n_ao rows filled the rest of VEC with uninitialized memory
     
     return step;
     
