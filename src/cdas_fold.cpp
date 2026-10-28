@@ -5,11 +5,13 @@
 
 namespace {
 
-// Pins BLAS to one thread for the lifetime of the object: the OpenMP loops below own the
-// cores and call BLAS from inside the parallel region. Restores the count on exit.
+// Pins BLAS to one thread and OpenMP to num_threads for the lifetime of the object: the OpenMP
+// loops below own the cores and call BLAS from inside the parallel region. Restores both on exit,
+// OpenMP last: an OpenMP-threaded OpenBLAS up to 0.3.21 resets it in openblas_set_num_threads.
 struct blas_serial_guard {
     int saved;
-    blas_serial_guard() : saved(1) {
+    int omp_saved;
+    blas_serial_guard() : saved(1), omp_saved(omp_get_max_threads()) {
 #ifdef _OPENBLAS
         saved = openblas_get_num_threads();
         openblas_set_num_threads(1);
@@ -18,6 +20,7 @@ struct blas_serial_guard {
         saved = mkl_get_max_threads();
         mkl_set_num_threads(1);
 #endif
+        omp_set_num_threads(num_threads);
     }
     ~blas_serial_guard() {
 #ifdef _OPENBLAS
@@ -26,6 +29,7 @@ struct blas_serial_guard {
 #ifdef _MKL
         mkl_set_num_threads(saved);
 #endif
+        omp_set_num_threads(omp_saved);
     }
     blas_serial_guard(const blas_serial_guard &) = delete;
     blas_serial_guard &operator=(const blas_serial_guard &) = delete;
