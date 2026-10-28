@@ -106,6 +106,12 @@ struct Block2Runtime {
             ThreadingTypes::OperatorBatchedGEMM | ThreadingTypes::Global,
             n_threads, n_threads, 1);
         threading_()->seq_type = SeqTypes::Tasked;
+        // Threading also turns nesting on and MKL dynamic off, which block2 needs only when its
+        // own BLAS is threaded (n_threads_mkl > 1); the host's regions must not nest.
+        omp_set_max_active_levels(1);
+#ifdef _MKL
+        mkl_set_dynamic(1);
+#endif
     }
 
     ~Block2Runtime() {

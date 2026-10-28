@@ -99,6 +99,7 @@ void block2_casci_wrap::import_named_operator(int kind, const double *h1, const 
                             " (no frozen Fiedler order)\n");
         exit(EXIT_FAILURE);
     }
+    host_threads_guard htg;
     const std::string tag = (kind == OP_FOLDED) ? "HF" : "HD";
     std::shared_ptr<MPO<SU2, double>> &h = handle_of(e, kind);
     h = build_general_mpo(e, h1, h2, h3, c, tag);
